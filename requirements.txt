@@ -1,0 +1,33 @@
+# 考试排考系统依赖清单
+# 基础框架
+fastapi==0.111.0
+uvicorn[standard]==0.30.0
+
+# 数据库
+sqlalchemy==2.0.30
+alembic==1.13.1
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# 配置与环境变量
+pydantic==2.7.1
+pydantic-settings==2.2.1
+
+# OR-Tools 排考引擎
+ortools==9.10.4067
+
+# 测试
+pytest==8.2.1
+pytest-asyncio==0.23.7
+httpx==0.27.0
+factory-boy==3.3.0
+
+# 工具
+python-multipart==0.0.9
+openpyxl==3.1.2
+python-dotenv==1.0.1
+jinja2==3.1.4
+
+# 开发调试（可选）
+# ipython==8.24.0
+# rich==13.7.1

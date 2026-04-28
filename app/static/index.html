@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>考试排考系统</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Tailwind Config -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        'primary-dark': '#2563EB',
+                        'primary-light': '#DBEAFE',
+                        success: '#10B981',
+                        warning: '#F59E0B',
+                        danger: '#EF4444',
+                        info: '#06B6D4',
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        /* Base Styles */
+        *, *::before, *::after { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; background-color: #F3F4F6; color: #1F2937; min-width: 1280px; overflow-x: auto; }
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #F3F4F6; }
+        ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+        /* Page Transitions */
+        .page-section { display: none; animation: fadeIn 0.3s ease; }
+        .page-section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        /* Loading Spinner */
+        .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid #E5E7EB; border-top-color: #3B82F6; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        /* Toast Notifications */
+        .toast-container { position: fixed; top: 80px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+        .toast { padding: 12px 20px; border-radius: 8px; color: white; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards; max-width: 360px; display: flex; align-items: center; gap: 8px; }
+        .toast.success { background: #10B981; }
+        .toast.error { background: #EF4444; }
+        .toast.warning { background: #F59E0B; }
+        .toast.info { background: #3B82F6; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOut { to { opacity: 0; transform: translateX(100%); } }
+        /* Modal Overlay */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9000; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
+        .modal-content { background: white; border-radius: 12px; max-height: 85vh; overflow-y: auto; min-width: 480px; max-width: 700px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); animation: modalSlide 0.3s ease; }
+        @keyframes modalSlide { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        /* Tab Navigation */
+        .nav-tab { cursor: pointer; padding: 10px 16px; font-size: 14px; font-weight: 500; color: #6B7280; border-radius: 6px; transition: all 0.2s; white-space: nowrap; }
+        .nav-tab:hover { color: #3B82F6; background: #EFF6FF; }
+        .nav-tab.active { color: #3B82F6; background: #DBEAFE; }
+        /* Sub Tab */
+        .sub-tab { cursor: pointer; padding: 8px 16px; font-size: 13px; font-weight: 500; color: #6B7280; border-bottom: 2px solid transparent; transition: all 0.2s; }
+        .sub-tab:hover { color: #3B82F6; }
+        .sub-tab.active { color: #3B82F6; border-bottom-color: #3B82F6; }
+        /* Card */
+        .card { background: white; border-radius: 10px; border: 1px solid #E5E7EB; box-shadow: 0 1px 3px rgba(0,0,0,0.04); overflow: hidden; }
+        .card-header { padding: 16px 20px; border-bottom: 1px solid #E5E7EB; display: flex; align-items: center; justify-content: space-between; }
+        .card-body { padding: 20px; }
+        /* Table Styles */
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table thead th { padding: 10px 14px; text-align: left; font-size: 12px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.5px; background: #F9FAFB; border-bottom: 1px solid #E5E7EB; position: sticky; top: 0; z-index: 10; }
+        .data-table tbody td { padding: 12px 14px; font-size: 13px; color: #374151; border-bottom: 1px solid #F3F4F6; }
+        .data-table tbody tr:hover td { background: #F8FAFC; }
+        .data-table tbody tr:last-child td { border-bottom: none; }
+        /* Buttons */
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; font-size: 13px; font-weight: 500; border-radius: 6px; border: 1px solid transparent; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #3B82F6; color: white; border-color: #3B82F6; }
+        .btn-primary:hover { background: #2563EB; }
+        .btn-success { background: #10B981; color: white; border-color: #10B981; }
+        .btn-success:hover { background: #059669; }
+        .btn-danger { background: #EF4444; color: white; border-color: #EF4444; }
+        .btn-danger:hover { background: #DC2626; }
+        .btn-warning { background: #F59E0B; color: white; border-color: #F59E0B; }
+        .btn-warning:hover { background: #D97706; }
+        .btn-secondary { background: #F3F4F6; color: #374151; border-color: #E5E7EB; }
+        .btn-secondary:hover { background: #E5E7EB; }
+        .btn-sm { padding: 5px 10px; font-size: 12px; }
+        .btn-xs { padding: 3px 8px; font-size: 11px; }
+        /* Form Elements */
+        .form-input { width: 100%; padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px; color: #374151; transition: all 0.2s; outline: none; }
+        .form-input:focus { border-color: #3B82F6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+        .form-input:disabled { background: #F3F4F6; cursor: not-allowed; }
+        .form-label { display: block; font-size: 12px; font-weight: 500; color: #374151; margin-bottom: 4px; }
+        .form-group { margin-bottom: 16px; }
+        /* Select */
+        .form-select { width: 100%; padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px; color: #374151; background: white; outline: none; }
+        .form-select:focus { border-color: #3B82F6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+        /* Checkbox */
+        .form-checkbox { width: 16px; height: 16px; accent-color: #3B82F6; cursor: pointer; }
+        /* Progress Bar */
+        .progress-bar { width: 100%; height: 8px; background: #E5E7EB; border-radius: 4px; overflow: hidden; }
+        .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #3B82F6, #60A5FA); border-radius: 4px; transition: width 0.5s ease; }
+        /* Matrix Grid */
+        .matrix-grid { display: grid; gap: 1px; background: #E5E7EB; border: 1px solid #E5E7EB; border-radius: 8px; overflow: hidden; }
+        .matrix-cell { background: white; padding: 10px; font-size: 12px; min-height: 80px; position: relative; }
+        .matrix-header { background: #F9FAFB; font-weight: 600; font-size: 12px; color: #6B7280; padding: 10px; text-align: center; }
+        /* Gantt Chart */
+        .gantt-row { display: flex; align-items: center; border-bottom: 1px solid #F3F4F6; min-height: 48px; }
+        .gantt-label { width: 140px; padding: 8px 12px; font-size: 12px; font-weight: 500; color: #374151; flex-shrink: 0; border-right: 1px solid #E5E7EB; }
+        .gantt-timeline { flex: 1; display: flex; position: relative; }
+        .gantt-slot { flex: 1; border-right: 1px solid #F3F4F6; position: relative; min-height: 48px; }
+        .gantt-block { position: absolute; top: 6px; bottom: 6px; border-radius: 4px; font-size: 11px; color: white; display: flex; align-items: center; padding: 0 8px; overflow: hidden; white-space: nowrap; }
+        /* Upload Zone */
+        .upload-zone { border: 2px dashed #D1D5DB; border-radius: 10px; padding: 40px; text-align: center; transition: all 0.2s; cursor: pointer; }
+        .upload-zone:hover { border-color: #3B82F6; background: #EFF6FF; }
+        .upload-zone.dragover { border-color: #3B82F6; background: #DBEAFE; }
+        /* Status Badge */
+        .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 500; }
+        .badge-success { background: #D1FAE5; color: #065F46; }
+        .badge-warning { background: #FEF3C7; color: #92400E; }
+        .badge-danger { background: #FEE2E2; color: #991B1B; }
+        .badge-info { background: #DBEAFE; color: #1E40AF; }
+        .badge-gray { background: #F3F4F6; color: #4B5563; }
+        /* Animations */
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        /* Empty State */
+        .empty-state { text-align: center; padding: 60px 20px; color: #9CA3AF; }
+        .empty-state i { font-size: 48px; margin-bottom: 16px; color: #D1D5DB; }
+        /* Tooltip */
+        .tooltip { position: relative; }
+        .tooltip:hover::after { content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); padding: 4px 8px; background: #1F2937; color: white; font-size: 11px; border-radius: 4px; white-space: nowrap; z-index: 1000; pointer-events: none; }
+        /* Conflicting */
+        .conflict-cell { border: 2px solid #EF4444 !important; position: relative; }
+        .conflict-cell::after { content: '!'; position: absolute; top: 2px; right: 4px; color: #EF4444; font-weight: bold; font-size: 14px; }
+        /* Pagination */
+        .pagination { display: flex; align-items: center; gap: 4px; }
+        .pagination button { padding: 6px 10px; font-size: 12px; border: 1px solid #E5E7EB; background: white; border-radius: 4px; cursor: pointer; color: #374151; }
+        .pagination button:hover { background: #F3F4F6; }
+        .pagination button.active { background: #3B82F6; color: white; border-color: #3B82F6; }
+        .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+        /* Stats Card */
+        .stat-card { background: white; border-radius: 10px; padding: 20px; border: 1px solid #E5E7EB; box-shadow: 0 1px 3px rgba(0,0,0,0.04); transition: all 0.2s; }
+        .stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
+        .stat-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+        /* Fixed Header */
+        .top-navbar { position: sticky; top: 0; z-index: 1000; }
+    </style>
+</head>
+<body>
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Modal Container -->
+    <div id="modalContainer"></div>
+
+    <!-- Top Navigation Bar -->
+    <nav class="top-navbar bg-white border-b border-gray-200 shadow-sm">
+        <div class="flex items-center justify-between px-6" style="height: 56px;">
+            <!-- Logo & System Name -->
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-primary flex items-center justify-center text-white font-bold text-lg">
+                    <i class="fas fa-calendar-check"></i>
+                </div>
+                <span class="text-lg font-bold text-gray-800">考试排考系统</span>
+            </div>
+            <!-- Navigation Tabs -->
+            <div class="flex items-center gap-1" id="mainNav">
+                <div class="nav-tab active" data-page="dashboard">
+                    <i class="fas fa-chart-line mr-1"></i>仪表盘
+                </div>
+                <div class="nav-tab" data-page="baseData">
+                    <i class="fas fa-database mr-1"></i>基础数据
+                </div>
+                <div class="nav-tab" data-page="scheduler">
+                    <i class="fas fa-magic mr-1"></i>自动排考
+                </div>
+                <div class="nav-tab" data-page="results">
+                    <i class="fas fa-table mr-1"></i>排考结果
+                </div>
+                <div class="nav-tab" data-page="adjustments">
+                    <i class="fas fa-sliders-h mr-1"></i>手动微调
+                </div>
+                <div class="nav-tab" data-page="transfer">
+                    <i class="fas fa-exchange-alt mr-1"></i>教师调剂
+                </div>
+                <div class="nav-tab" data-page="importExport">
+                    <i class="fas fa-file-import mr-1"></i>导入导出
+                </div>
+                <div class="nav-tab" data-page="auditLogs">
+                    <i class="fas fa-history mr-1"></i>审计日志
+                </div>
+            </div>
+            <!-- Right Side Actions -->
+            <div class="flex items-center gap-2">
+                <span class="badge badge-info" id="currentVersionBadge">
+                    <i class="fas fa-code-branch mr-1"></i>版本 <span id="currentVersion">--</span>
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="p-6" id="mainContent">
+
+        <!-- ==================== 1. 仪表盘 ==================== -->
+        <section id="page-dashboard" class="page-section active">
+            <div class="flex items-center justify-between mb-5">
+                <h1 class="text-xl font-bold text-gray-800">仪表盘</h1>
+                <div class="flex items-center gap-2">
+                    <button class="btn btn-primary" onclick="App.pages.scheduler()">
+                        <i class="fas fa-magic"></i> 一键排考
+                    </button>
+                    <button class="btn btn-success" onclick="App.handlers.exportExcel()">
+                        <i class="fas fa-file-excel"></i> 导出Excel
+                    </button>
+                </div>
+            </div>
+            <!-- KPI Cards Row 1 -->
+            <div class="grid grid-cols-4 gap-4 mb-4">
+                <div class="stat-card">
+                    <div class="flex items-center gap-3">
+                        <div class="stat-icon" style="background: #DBEAFE; color: #3B82F6;">
+                            <i class="fas fa-chalkboard-teacher"></i>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-gray-800" id="statTeachers">--</div>
+                            <div class="text-xs text-gray-500">教师总数</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="flex items-center gap-3">
+                        <div class="stat-icon" style="background: #D1FAE5; color: #10B981;">
+                            <i class="fas fa-door-open"></i>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-gray-800" id="statClassrooms">--</div>
+                            <div class="text-xs text-gray-500">教室总数</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="flex items-center gap-3">
+                        <div class="stat-icon" style="background: #FEF3C7; color: #F59E0B;">
+                            <i class="fas fa-book"></i>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-gray-800" id="statCourses">--</div>
+                            <div class="text-xs text-gray-500">课程总数</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="flex items-center gap-3">
+                        <div class="stat-icon" style="background: #F3E8FF; color: #A855F7;">
+                            <i class="fas fa-user-graduate"></i>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-gray-800" id="statStudents">--</div>
+                            <div class="text-xs text-gray-500">学生总数</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- KPI Cards Row 2 -->
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <div class="stat-card">
+                    <div class="flex items-center gap-3">
+                        <div class="stat-icon" style="background: #DBEAFE; color: #3B82F6;">
+                            <i class="fas fa-clipboard-check"></i>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-gray-800" id="statScheduled">--</div>
+                            <div class="text-xs text-gray-500">已排考试</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="flex items-center gap-3">
+                        <div class="stat-icon" style="background: #FEE2E2; color: #EF4444;">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-gray-800" id="statPending">--</div>
+                            <div class="text-xs text-gray-500">待排考试</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="flex items-center gap-3">
+                        <div class="stat-icon" style="background: #F0FDFA; color: #14B8A6;">
+                            <i class="fas fa-code-branch"></i>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-gray-800" id="statVersion">--</div>
+                            <div class="text-xs text-gray-500">当前排考版本</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Quick Actions -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="font-semibold text-gray-800"><i class="fas fa-bolt text-warning mr-2"></i>快捷操作</h3>
+                </div>
+                <div class="card-body">
+                    <div class="grid grid-cols-4 gap-3" id="quickActions">
+                        <button class="btn btn-secondary justify-center py-3" onclick="App.nav.to('baseData')">
+                            <i class="fas fa-database text-primary"></i> 管理基础数据
+                        </button>
+                        <button class="btn btn-secondary justify-center py-3" onclick="App.nav.to('scheduler')">
+                            <i class="fas fa-magic text-warning"></i> 自动排考
+                        </button>
+                        <button class="btn btn-secondary justify-center py-3" onclick="App.nav.to('results')">
+                            <i class="fas fa-table text-success"></i> 查看排考结果
+                        </button>
+                        <button class="btn btn-secondary justify-center py-3" onclick="App.nav.to('adjustments')">
+                            <i class="fas fa-sliders-h text-danger"></i> 手动微调
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <!-- Recent Activity -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h3 class="font-semibold text-gray-800"><i class="fas fa-list-alt text-primary mr-2"></i>最新操作记录</h3>
+                </div>
+                <div class="card-body" id="recentActivity">
+                    <div class="empty-state">
+                        <i class="fas fa-inbox"></i>
+                        <p>暂无操作记录</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 2. 基础数据 ==================== -->
+        <section id="page-baseData" class="page-section">
+            <div class="flex items-center justify-between mb-5">
+                <h1 class="text-xl font-bold text-gray-800">基础数据管理</h1>
+            </div>
+            <!-- Sub Tabs -->
+            <div class="flex border-b border-gray-200 mb-4" id="baseDataSubTabs">
+                <div class="sub-tab active" data-type="teachers"><i class="fas fa-chalkboard-teacher mr-1"></i>教师</div>
+                <div class="sub-tab" data-type="classrooms"><i class="fas fa-door-open mr-1"></i>教室</div>
+                <div class="sub-tab" data-type="courses"><i class="fas fa-book mr-1"></i>课程</div>
+                <div class="sub-tab" data-type="classes"><i class="fas fa-users mr-1"></i>班级</div>
+                <div class="sub-tab" data-type="students"><i class="fas fa-user-graduate mr-1"></i>学生</div>
+                <div class="sub-tab" data-type="majors"><i class="fas fa-graduation-cap mr-1"></i>专业</div>
+                <div class="sub-tab" data-type="timeSlots"><i class="fas fa-clock mr-1"></i>时段</div>
+            </div>
+            <!-- Toolbar -->
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                    <input type="text" class="form-input" style="width: 280px;" id="baseDataSearch" placeholder="搜索...">
+                    <button class="btn btn-primary btn-sm" onclick="App.handlers.searchBaseData()">
+                        <i class="fas fa-search"></i> 搜索
+                    </button>
+                    <button class="btn btn-danger btn-sm" id="btnBatchDelete" onclick="App.handlers.batchDelete()" disabled>
+                        <i class="fas fa-trash"></i> 批量删除 (<span id="batchDeleteCount">0</span>)
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="App.handlers.goToImportPage()">
+                        <i class="fas fa-upload"></i> 批量导入
+                    </button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-500">每页</span>
+                    <select class="form-select" style="width: 70px;" id="baseDataPageSize" onchange="App.handlers.changePageSize()">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                    </select>
+                    <button class="btn btn-success btn-sm" onclick="App.handlers.openAddModal()">
+                        <i class="fas fa-plus"></i> 新增
+                    </button>
+                </div>
+            </div>
+            <!-- Data Table -->
+            <div class="card" style="min-height: 400px;">
+                <div class="card-body p-0" style="overflow-x: auto;">
+                    <table class="data-table" id="baseDataTable">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- Pagination -->
+            <div class="flex items-center justify-between mt-3">
+                <span class="text-xs text-gray-500" id="baseDataPaginationInfo"></span>
+                <div class="pagination" id="baseDataPagination"></div>
+            </div>
+        </section>
+
+        <!-- ==================== 3. 自动排考 ==================== -->
+        <section id="page-scheduler" class="page-section">
+            <div class="flex items-center justify-between mb-5">
+                <h1 class="text-xl font-bold text-gray-800">自动排考</h1>
+            </div>
+            <div class="grid grid-cols-3 gap-5">
+                <!-- Left: Configuration -->
+                <div class="col-span-1">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h3 class="font-semibold text-gray-800"><i class="fas fa-cog text-primary mr-2"></i>排考配置</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label class="form-label">排考策略</label>
+                                <select class="form-select" id="schedulerStrategy">
+                                    <option value="all">全部课程</option>
+                                    <option value="public">仅公共课</option>
+                                    <option value="major">仅专业课</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">最大求解时间（秒）</label>
+                                <input type="number" class="form-input" id="schedulerTimeout" value="300" min="30" max="3600">
+                            </div>
+                            <button class="btn btn-primary w-full justify-center" id="btnStartScheduler" onclick="App.handlers.startScheduler()">
+                                <i class="fas fa-play"></i> 开始自动排考
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Progress Panel -->
+                    <div class="card" id="schedulerProgressPanel" style="display: none;">
+                        <div class="card-header">
+                            <h3 class="font-semibold text-gray-800"><i class="fas fa-spinner text-primary mr-2"></i>排考进度</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-xs font-medium text-gray-600" id="progressLabel">准备中...</span>
+                                    <span class="text-xs font-bold text-primary" id="progressPercent">0%</span>
+                                </div>
+                                <div class="progress-bar">
+                                    <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
+                                </div>
+                            </div>
+                            <div class="bg-gray-50 rounded-lg p-3" style="max-height: 200px; overflow-y: auto; font-size: 11px; font-family: monospace;" id="schedulerLogs"></div>
+                            <div class="flex justify-end mt-3">
+                                <button class="btn btn-danger btn-sm" id="btnStopScheduler" onclick="App.handlers.stopScheduler()">
+                                    <i class="fas fa-stop"></i> 停止排考
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Right: Course Selection -->
+                <div class="col-span-2">
+                    <div class="card" style="min-height: 500px;">
+                        <div class="card-header">
+                            <h3 class="font-semibold text-gray-800"><i class="fas fa-list text-primary mr-2"></i>选择排考课程</h3>
+                            <div class="flex items-center gap-2">
+                                <button class="btn btn-secondary btn-sm" onclick="App.handlers.selectAllCourses(true)">
+                                    <i class="fas fa-check-square"></i> 全选
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="App.handlers.selectAllCourses(false)">
+                                    <i class="fas fa-square"></i> 取消全选
+                                </button>
+                                <input type="text" class="form-input" style="width: 200px;" id="courseFilterInput" placeholder="过滤课程..." oninput="App.handlers.filterCourseList()">
+                            </div>
+                        </div>
+                        <div class="card-body p-0" style="max-height: 500px; overflow-y: auto;">
+                            <table class="data-table" id="schedulerCourseTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 40px;"><input type="checkbox" class="form-checkbox" id="courseSelectAll" onchange="App.handlers.toggleSelectAll()"></th>
+                                        <th>课程名称</th>
+                                        <th>课程类型</th>
+                                        <th>选课人数</th>
+                                        <th>考试形式</th>
+                                        <th>状态</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="schedulerCourseList"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <!-- Result Panel -->
+                    <div class="card mt-4" id="schedulerResultPanel" style="display: none;">
+                        <div class="card-header">
+                            <h3 class="font-semibold text-gray-800"><i class="fas fa-check-circle text-success mr-2"></i>排考结果</h3>
+                        </div>
+                        <div class="card-body" id="schedulerResultBody"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 4. 排考结果 ==================== -->
+        <section id="page-results" class="page-section">
+            <div class="flex items-center justify-between mb-5">
+                <h1 class="text-xl font-bold text-gray-800">排考结果</h1>
+                <div class="flex items-center gap-2">
+                    <select class="form-select" id="resultVersionSelect" style="width: 160px;" onchange="App.handlers.switchVersion()">
+                        <option value="">最新版本</option>
+                    </select>
+                    <button class="btn btn-success btn-sm" onclick="App.handlers.exportExcel()">
+                        <i class="fas fa-file-excel"></i> 导出Excel
+                    </button>
+                </div>
+            </div>
+            <!-- View Mode Tabs -->
+            <div class="flex border-b border-gray-200 mb-4" id="resultsSubTabs">
+                <div class="sub-tab active" data-view="overview"><i class="fas fa-th mr-1"></i>总览视图</div>
+                <div class="sub-tab" data-view="teacher"><i class="fas fa-user-clock mr-1"></i>教师视图</div>
+                <div class="sub-tab" data-view="classroom"><i class="fas fa-door-open mr-1"></i>教室视图</div>
+                <div class="sub-tab" data-view="class"><i class="fas fa-users mr-1"></i>班级视图</div>
+                <div class="sub-tab" data-view="course"><i class="fas fa-book mr-1"></i>课程视图</div>
+            </div>
+            <!-- View Containers -->
+            <div id="resultsViews">
+                <!-- 4a. Overview Matrix -->
+                <div id="results-overview" class="results-view active">
+                    <div class="flex items-center gap-4 mb-3">
+                        <span class="text-sm text-gray-600"><i class="fas fa-circle text-blue-400 mr-1"></i> 公共课</span>
+                        <span class="text-sm text-gray-600"><i class="fas fa-circle text-green-400 mr-1"></i> 专业课</span>
+                        <span class="text-sm text-gray-600"><i class="fas fa-circle text-purple-400 mr-1"></i> AB卷</span>
+                    </div>
+                    <div class="card" style="overflow-x: auto;">
+                        <div class="card-body p-0" id="overviewMatrixContainer">
+                            <div class="empty-state">
+                                <i class="fas fa-table"></i>
+                                <p>暂无排考数据，请先执行自动排考</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 4b. Teacher Gantt -->
+                <div id="results-teacher" class="results-view" style="display: none;">
+                    <div class="flex items-center gap-4 mb-3">
+                        <span class="text-sm text-gray-600"><i class="fas fa-square text-blue-500 mr-1"></i> 固定监考</span>
+                        <span class="text-sm text-gray-600"><i class="fas fa-square text-orange-400 mr-1"></i> 流动监考</span>
+                        <span class="text-sm text-gray-600"><i class="fas fa-square text-red-500 mr-1"></i> 当日超2场</span>
+                    </div>
+                    <div class="card" style="overflow-x: auto;">
+                        <div class="card-body p-0" id="teacherGanttContainer">
+                            <div class="empty-state">
+                                <i class="fas fa-user-clock"></i>
+                                <p>暂无排考数据</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 4c. Classroom Matrix -->
+                <div id="results-classroom" class="results-view" style="display: none;">
+                    <div class="flex items-center gap-4 mb-3">
+                        <span class="text-sm text-gray-600"><i class="fas fa-circle text-green-400 mr-1"></i> 低利用率 &lt;70%</span>
+                        <span class="text-sm text-gray-600"><i class="fas fa-circle text-yellow-400 mr-1"></i> 中利用率 70-90%</span>
+                        <span class="text-sm text-gray-600"><i class="fas fa-circle text-red-400 mr-1"></i> 高利用率 &gt;90%</span>
+                    </div>
+                    <div class="card" style="overflow-x: auto;">
+                        <div class="card-body p-0" id="classroomMatrixContainer">
+                            <div class="empty-state">
+                                <i class="fas fa-door-open"></i>
+                                <p>暂无排考数据</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 4d. Class Schedule -->
+                <div id="results-class" class="results-view" style="display: none;">
+                    <div class="flex items-center gap-2 mb-3">
+                        <label class="text-sm text-gray-600">选择班级：</label>
+                        <select class="form-select" id="classScheduleSelect" style="width: 240px;" onchange="App.handlers.loadClassSchedule()">
+                            <option value="">--请选择班级--</option>
+                        </select>
+                    </div>
+                    <div class="card" style="overflow-x: auto;">
+                        <div class="card-body p-0" id="classScheduleContainer">
+                            <div class="empty-state">
+                                <i class="fas fa-users"></i>
+                                <p>请选择班级查看排考安排</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 4e. Course Detail -->
+                <div id="results-course" class="results-view" style="display: none;">
+                    <div class="flex items-center gap-2 mb-3">
+                        <label class="text-sm text-gray-600">选择课程：</label>
+                        <select class="form-select" id="courseDetailSelect" style="width: 240px;" onchange="App.handlers.loadCourseDetail()">
+                            <option value="">--请选择课程--</option>
+                        </select>
+                    </div>
+                    <div id="courseDetailContainer">
+                        <div class="card mb-4">
+                            <div class="card-body empty-state">
+                                <i class="fas fa-book"></i>
+                                <p>请选择课程查看详细安排</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 5. 手动微调 ==================== -->
+        <section id="page-adjustments" class="page-section">
+            <div class="flex items-center justify-between mb-5">
+                <h1 class="text-xl font-bold text-gray-800">手动微调</h1>
+                <div class="flex items-center gap-2">
+                    <input type="text" class="form-input" style="width: 240px;" id="adjustmentSearch" placeholder="搜索课程、教师、教室..." oninput="App.handlers.filterAdjustments()">
+                    <select class="form-select" id="adjustmentFilterType" style="width: 140px;" onchange="App.handlers.filterAdjustments()">
+                        <option value="">全部类型</option>
+                        <option value="public">公共课</option>
+                        <option value="major">专业课</option>
+                    </select>
+                </div>
+            </div>
+            <!-- Validation Summary -->
+            <div class="card mb-4" id="validationSummary" style="display: none;">
+                <div class="card-body" id="validationSummaryBody"></div>
+            </div>
+            <!-- Adjustment Table -->
+            <div class="card" style="overflow-x: auto;">
+                <div class="card-body p-0">
+                    <table class="data-table" id="adjustmentTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;"><input type="checkbox" class="form-checkbox" id="adjustSelectAll"></th>
+                                <th>日期</th>
+                                <th>时段</th>
+                                <th>课程</th>
+                                <th>类型</th>
+                                <th>教室</th>
+                                <th>固定监考</th>
+                                <th>流动监考</th>
+                                <th>状态</th>
+                                <th style="min-width: 260px;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adjustmentTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="flex items-center justify-between mt-3">
+                <span class="text-xs text-gray-500" id="adjustmentPaginationInfo"></span>
+                <div class="pagination" id="adjustmentPagination"></div>
+            </div>
+        </section>
+
+        <!-- ==================== 6. 教师调剂 ==================== -->
+        <section id="page-transfer" class="page-section">
+            <div class="flex items-center justify-between mb-5">
+                <h1 class="text-xl font-bold text-gray-800">教师调剂</h1>
+                <button class="btn btn-secondary btn-sm" onclick="App.handlers.undoLastTransfer()">
+                    <i class="fas fa-undo"></i> 撤销最近操作
+                </button>
+            </div>
+            <!-- Search Row -->
+            <div class="flex items-center gap-4 mb-4">
+                <div class="flex items-center gap-2">
+                    <label class="text-sm font-medium text-gray-700">教师A（调出方）：</label>
+                    <select class="form-select" id="teacherASelect" style="width: 200px;" onchange="App.handlers.loadTeacherAAssignments()"></select>
+                </div>
+                <div class="flex items-center gap-2">
+                    <label class="text-sm font-medium text-gray-700">教师B（调入方）：</label>
+                    <select class="form-select" id="teacherBSelect" style="width: 200px;" onchange="App.handlers.loadTeacherBAssignments()"></select>
+                </div>
+            </div>
+            <!-- Three Column Layout -->
+            <div class="grid grid-cols-3 gap-4">
+                <!-- Left: Teacher A -->
+                <div class="card">
+                    <div class="card-header" style="background: #FEE2E2;">
+                        <h4 class="font-semibold text-gray-800 text-sm"><i class="fas fa-user-minus text-danger mr-2"></i>教师A 监考场次</h4>
+                        <span class="badge badge-danger" id="teacherACount">0场</span>
+                    </div>
+                    <div class="card-body p-0" style="max-height: 450px; overflow-y: auto;" id="teacherAList"></div>
+                </div>
+                <!-- Center: Operations -->
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="font-semibold text-gray-800 text-sm"><i class="fas fa-cogs text-primary mr-2"></i>调剂操作</h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label class="form-label">调剂类型</label>
+                            <select class="form-select" id="transferType" onchange="App.handlers.onTransferTypeChange()">
+                                <option value="">--请选择--</option>
+                                <option value="swap">交换监考</option>
+                                <option value="transfer">转移监考</option>
+                                <option value="batch-transfer">批量转交</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">选择A的场次</label>
+                            <select class="form-select" id="transferSlotA" size="4" style="min-height: 80px;"></select>
+                        </div>
+                        <div class="form-group" id="transferSlotBGroup">
+                            <label class="form-label">选择B的场次</label>
+                            <select class="form-select" id="transferSlotB" size="4" style="min-height: 80px;"></select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">调剂原因</label>
+                            <textarea class="form-input" id="transferReason" rows="2" placeholder="请输入调剂原因..."></textarea>
+                        </div>
+                        <!-- Validation Result -->
+                        <div class="form-group" id="transferValidationResult" style="display: none;"></div>
+                        <button class="btn btn-primary w-full justify-center" id="btnExecuteTransfer" onclick="App.handlers.executeTransfer()">
+                            <i class="fas fa-check"></i> 执行调剂
+                        </button>
+                    </div>
+                </div>
+                <!-- Right: Teacher B -->
+                <div class="card">
+                    <div class="card-header" style="background: #D1FAE5;">
+                        <h4 class="font-semibold text-gray-800 text-sm"><i class="fas fa-user-plus text-success mr-2"></i>教师B 监考场次</h4>
+                        <span class="badge badge-success" id="teacherBCount">0场</span>
+                    </div>
+                    <div class="card-body p-0" style="max-height: 450px; overflow-y: auto;" id="teacherBList"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 7. 导入导出 ==================== -->
+        <section id="page-importExport" class="page-section">
+            <div class="flex items-center justify-between mb-5">
+                <h1 class="text-xl font-bold text-gray-800">导入导出</h1>
+            </div>
+            <div class="grid grid-cols-2 gap-5">
+                <!-- Import Section -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-gray-800"><i class="fas fa-file-import text-primary mr-2"></i>Excel 批量导入</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-4">
+                            <label class="form-label">1. 选择要导入的数据类型并下载模板：</label>
+                            <select class="form-select mb-3" id="importTypeSelect">
+                                <option value="teachers">教师数据</option>
+                                <option value="classrooms">教室数据</option>
+                                <option value="courses">课程数据</option>
+                                <option value="classes">班级数据</option>
+                                <option value="students">学生数据</option>
+                                <option value="majors">专业数据</option>
+                                <option value="course-classes">课程-班级关联</option>
+                                <option value="time-slots">考试时段</option>
+                            </select>
+                            <div class="flex flex-wrap gap-2 mb-3">
+                                <button class="btn btn-secondary btn-xs" onclick="App.handlers.downloadTemplate('teachers')">
+                                    <i class="fas fa-download"></i> 教师模板
+                                </button>
+                                <button class="btn btn-secondary btn-xs" onclick="App.handlers.downloadTemplate('classrooms')">
+                                    <i class="fas fa-download"></i> 教室模板
+                                </button>
+                                <button class="btn btn-secondary btn-xs" onclick="App.handlers.downloadTemplate('courses')">
+                                    <i class="fas fa-download"></i> 课程模板
+                                </button>
+                                <button class="btn btn-secondary btn-xs" onclick="App.handlers.downloadTemplate('classes')">
+                                    <i class="fas fa-download"></i> 班级模板
+                                </button>
+                                <button class="btn btn-secondary btn-xs" onclick="App.handlers.downloadTemplate('students')">
+                                    <i class="fas fa-download"></i> 学生模板
+                                </button>
+                                <button class="btn btn-secondary btn-xs" onclick="App.handlers.downloadTemplate('majors')">
+                                    <i class="fas fa-download"></i> 专业模板
+                                </button>
+                                <button class="btn btn-secondary btn-xs" onclick="App.handlers.downloadTemplate('course-classes')">
+                                    <i class="fas fa-download"></i> 课程-班级模板
+                                </button>
+                                <button class="btn btn-secondary btn-xs" onclick="App.handlers.downloadTemplate('time-slots')">
+                                    <i class="fas fa-download"></i> 时段模板
+                                </button>
+                                <button class="btn btn-warning btn-xs" onclick="App.handlers.initTimeSlots()">
+                                    <i class="fas fa-sync-alt"></i> 重置标准时段
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Upload Zone -->
+                        <div class="mb-4">
+                            <label class="form-label">2. 填写数据后上传 Excel 文件：</label>
+                            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('importFileInput').click()">
+                                <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                                <p class="text-sm text-gray-600 font-medium">点击上传或拖拽文件到此处</p>
+                                <p class="text-xs text-gray-400 mt-1">请上传 .xlsx 格式的 Excel 文件</p>
+                                <input type="file" id="importFileInput" style="display: none;" accept=".xlsx" onchange="App.handlers.handleFileUpload(event)">
+                            </div>
+                        </div>
+                        <!-- Upload Preview -->
+                        <div class="mt-3" id="uploadPreview" style="display: none;">
+                            <div class="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
+                                <i class="fas fa-file text-primary"></i>
+                                <span class="text-sm text-gray-700 flex-1" id="uploadFileName"></span>
+                                <span class="text-xs text-gray-500" id="uploadFileSize"></span>
+                                <button class="btn btn-danger btn-xs" onclick="App.handlers.clearUpload()">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                            <button class="btn btn-primary w-full justify-center mt-3" id="btnConfirmImport" onclick="App.handlers.confirmImport()">
+                                <i class="fas fa-check"></i> 开始导入
+                            </button>
+                        </div>
+                        <!-- Import Result -->
+                        <div class="mt-4" id="importResultPanel" style="display: none;">
+                            <div class="p-3 rounded-lg mb-2" id="importSuccessAlert" style="display: none; background: #D1FAE5; color: #065F46;">
+                                <i class="fas fa-check-circle mr-1"></i> <span></span>
+                            </div>
+                            <div class="p-3 rounded-lg mb-2" id="importErrorAlert" style="display: none; background: #FEE2E2; color: #991B1B;">
+                                <i class="fas fa-exclamation-circle mr-1"></i> <span></span>
+                            </div>
+                            <div class="card mt-2" id="importErrorTable" style="display: none;">
+                                <div class="card-header" style="padding: 10px 16px;">
+                                    <h4 class="text-xs font-semibold text-gray-700">错误信息</h4>
+                                </div>
+                                <div class="card-body p-0" style="overflow-x: auto;">
+                                    <table class="data-table">
+                                        <thead><tr><th>错误信息</th></tr></thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="card mt-2" id="importWarningTable" style="display: none;">
+                                <div class="card-header" style="padding: 10px 16px;">
+                                    <h4 class="text-xs font-semibold text-gray-700">警告信息</h4>
+                                </div>
+                                <div class="card-body p-0" style="overflow-x: auto;">
+                                    <table class="data-table">
+                                        <thead><tr><th>警告信息</th></tr></thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Export Section -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-gray-800"><i class="fas fa-file-export text-success mr-2"></i>数据导出</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="space-y-3">
+                            <div class="p-4 border border-gray-200 rounded-lg hover:border-primary hover:bg-blue-50 transition-all cursor-pointer" onclick="App.handlers.exportExcel()">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center text-green-600">
+                                        <i class="fas fa-file-excel text-lg"></i>
+                                    </div>
+                                    <div class="flex-1">
+                                        <div class="font-medium text-gray-800 text-sm">Excel 导出</div>
+                                        <div class="text-xs text-gray-500 mt-0.5">导出排考结果为Excel文件，含多个工作表</div>
+                                    </div>
+                                    <i class="fas fa-download text-gray-400"></i>
+                                </div>
+                            </div>
+                            <div class="p-4 border border-gray-200 rounded-lg hover:border-primary hover:bg-blue-50 transition-all cursor-pointer" onclick="App.handlers.exportJSON()">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                                        <i class="fas fa-file-code text-lg"></i>
+                                    </div>
+                                    <div class="flex-1">
+                                        <div class="font-medium text-gray-800 text-sm">JSON 导出</div>
+                                        <div class="text-xs text-gray-500 mt-0.5">导出完整的排考数据为JSON格式</div>
+                                    </div>
+                                    <i class="fas fa-download text-gray-400"></i>
+                                </div>
+                            </div>
+                            <div class="p-4 border border-gray-200 rounded-lg hover:border-primary hover:bg-blue-50 transition-all cursor-pointer" onclick="App.handlers.exportSQL()">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600">
+                                        <i class="fas fa-database text-lg"></i>
+                                    </div>
+                                    <div class="flex-1">
+                                        <div class="font-medium text-gray-800 text-sm">SQL 导出</div>
+                                        <div class="text-xs text-gray-500 mt-0.5">导出排考数据为SQL INSERT语句</div>
+                                    </div>
+                                    <i class="fas fa-download text-gray-400"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Excel Sheets Info -->
+                        <div class="mt-4 p-3 bg-gray-50 rounded-lg">
+                            <div class="text-xs font-semibold text-gray-600 mb-2">Excel 导出包含以下工作表：</div>
+                            <div class="flex flex-wrap gap-1">
+                                <span class="badge badge-info">排考总览</span>
+                                <span class="badge badge-info">教师安排</span>
+                                <span class="badge badge-info">教室安排</span>
+                                <span class="badge badge-info">班级安排</span>
+                                <span class="badge badge-info">课程详情</span>
+                                <span class="badge badge-info">约束报告</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 8. 审计日志 ==================== -->
+        <section id="page-auditLogs" class="page-section">
+            <div class="flex items-center justify-between mb-5">
+                <h1 class="text-xl font-bold text-gray-800">审计日志</h1>
+            </div>
+            <!-- Filters -->
+            <div class="flex items-center gap-3 mb-4 flex-wrap">
+                <select class="form-select" id="auditOperationType" style="width: 140px;" onchange="App.handlers.loadAuditLogs()">
+                    <option value="">全部操作</option>
+                    <option value="CREATE">创建</option>
+                    <option value="UPDATE">修改</option>
+                    <option value="DELETE">删除</option>
+                    <option value="SCHEDULE">排考</option>
+                    <option value="ADJUST">微调</option>
+                    <option value="TRANSFER">调剂</option>
+                    <option value="IMPORT">导入</option>
+                    <option value="EXPORT">导出</option>
+                </select>
+                <input type="date" class="form-input" id="auditDateFrom" style="width: 140px;" onchange="App.handlers.loadAuditLogs()">
+                <span class="text-gray-400">至</span>
+                <input type="date" class="form-input" id="auditDateTo" style="width: 140px;" onchange="App.handlers.loadAuditLogs()">
+                <input type="text" class="form-input" id="auditSearch" style="width: 200px;" placeholder="搜索操作人、实体..." oninput="App.handlers.loadAuditLogs()">
+                <button class="btn btn-secondary btn-sm" onclick="App.handlers.resetAuditFilters()">
+                    <i class="fas fa-refresh"></i> 重置
+                </button>
+            </div>
+            <!-- Log Table -->
+            <div class="card" style="overflow-x: auto;">
+                <div class="card-body p-0">
+                    <table class="data-table" id="auditLogTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 80px;">ID</th>
+                                <th style="width: 160px;">时间</th>
+                                <th style="width: 100px;">操作人</th>
+                                <th style="width: 90px;">操作类型</th>
+                                <th>实体</th>
+                                <th style="width: 200px;">变更前</th>
+                                <th style="width: 200px;">变更后</th>
+                                <th style="width: 140px;">原因</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditLogTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="flex items-center justify-between mt-3">
+                <span class="text-xs text-gray-500" id="auditPaginationInfo"></span>
+                <div class="pagination" id="auditPagination"></div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- JavaScript -->
+    <script src="/static/js/app.js?v=12"></script>
+</body>
+</html>

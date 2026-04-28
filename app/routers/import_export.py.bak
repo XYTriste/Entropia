@@ -1,0 +1,171 @@
+"""
+考试排考系统 - 导入导出路由
+
+提供 CSV 导入和多种格式导出:
+- CSV 导入: 教师、教室、学生、课程、课程-班级关联
+- 数据校验
+- Excel 导出 (多 Sheet)
+- JSON 导出
+- SQL 导出
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi.responses import FileResponse, Response, StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.services.export_service import export_excel, export_json, export_sql
+from app.services.import_service import (
+    import_classrooms_csv,
+    import_course_classes_csv,
+    import_courses_csv,
+    import_students_csv,
+    import_teachers_csv,
+    validate_all_data,
+)
+
+router = APIRouter()
+
+
+# ============================================================
+# CSV 导入
+# ============================================================
+
+
+@router.post("/import/teachers", response_model=dict)
+async def import_teachers(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """CSV 导入教师"""
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="请上传 CSV 文件")
+
+    content = (await file.read()).decode("utf-8-sig")
+    report = await import_teachers_csv(db, content)
+    await db.commit()
+    return {"code": 0, **report.to_dict()}
+
+
+@router.post("/import/classrooms", response_model=dict)
+async def import_classrooms(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """CSV 导入教室"""
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="请上传 CSV 文件")
+
+    content = (await file.read()).decode("utf-8-sig")
+    report = await import_classrooms_csv(db, content)
+    await db.commit()
+    return {"code": 0, **report.to_dict()}
+
+
+@router.post("/import/students", response_model=dict)
+async def import_students(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """CSV 导入学生"""
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="请上传 CSV 文件")
+
+    content = (await file.read()).decode("utf-8-sig")
+    report = await import_students_csv(db, content)
+    await db.commit()
+    return {"code": 0, **report.to_dict()}
+
+
+@router.post("/import/courses", response_model=dict)
+async def import_courses(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """CSV 导入课程"""
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="请上传 CSV 文件")
+
+    content = (await file.read()).decode("utf-8-sig")
+    report = await import_courses_csv(db, content)
+    await db.commit()
+    return {"code": 0, **report.to_dict()}
+
+
+@router.post("/import/course-classes", response_model=dict)
+async def import_course_classes(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """CSV 导入课程-班级关联"""
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="请上传 CSV 文件")
+
+    content = (await file.read()).decode("utf-8-sig")
+    report = await import_course_classes_csv(db, content)
+    await db.commit()
+    return {"code": 0, **report.to_dict()}
+
+
+# ============================================================
+# 数据校验
+# ============================================================
+
+
+@router.get("/import/validate", response_model=dict)
+async def validate_data(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """校验全部数据的完整性与一致性"""
+    result = await validate_all_data(db)
+    return {"code": 0, "message": "success", "data": result}
+
+
+# ============================================================
+# Excel 导出
+# ============================================================
+
+
+@router.get("/export/excel")
+async def export_excel_file(
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Excel 导出排考结果 (多 Sheet)"""
+    excel_bytes = await export_excel(db)
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=exam_schedule.xlsx"},
+    )
+
+
+# ============================================================
+# JSON 导出
+# ============================================================
+
+
+@router.get("/export/json", response_model=dict)
+async def export_json_file(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """JSON 导出排考结果"""
+    result = await export_json(db)
+    return {"code": 0, "message": "success", "data": result}
+
+
+# ============================================================
+# SQL 导出
+# ============================================================
+
+
+@router.get("/export/sql")
+async def export_sql_file(
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """SQL 导出排考结果"""
+    sql_content = await export_sql(db)
+    return Response(
+        content=sql_content.encode("utf-8"),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=exam_schedule.sql"},
+    )

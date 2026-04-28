@@ -1,0 +1,131 @@
+# =============================================
+# 考试排考系统 - Docker Compose 编排文件
+# 服务链：PostgreSQL -> FastAPI API -> Nginx
+# =============================================
+
+version: "3.8"
+
+services:
+  # --------------------------------------------
+  # PostgreSQL 数据库服务
+  # --------------------------------------------
+  db:
+    image: postgres:15-alpine
+    container_name: exam-scheduler-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scheduler
+      POSTGRES_PASSWORD: scheduler
+      POSTGRES_DB: exam_scheduler
+      # 中文排序支持
+      LC_COLLATE: zh_CN.UTF-8
+      LC_CTYPE: zh_CN.UTF-8
+    volumes:
+      # 数据持久化卷
+      - postgres_data:/var/lib/postgresql/data
+      # 初始化SQL脚本（首次启动时执行）
+      - ./scripts/init_sql:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scheduler -d exam_scheduler"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - scheduler-network
+
+  # --------------------------------------------
+  # FastAPI 应用服务
+  # --------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: exam-scheduler-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy  # 确保数据库就绪后才启动
+    environment:
+      # 数据库连接（使用异步驱动）
+      SCHEDULER_DATABASE_URL: postgresql+asyncpg://scheduler:scheduler@db:5432/exam_scheduler
+      # 数据库连接（同步驱动，用于alembic迁移）
+      SCHEDULER_DATABASE_SYNC_URL: postgresql://scheduler:scheduler@db:5432/exam_scheduler
+      # 应用配置
+      SCHEDULER_DEBUG: "false"
+      SCHEDULER_SECRET_KEY: ${SCHEDULER_SECRET_KEY:-change-me-in-production}
+      # 排考引擎配置
+      SCHEDULER_MAX_SOLVE_TIME: "300"
+    ports:
+      - "8000:8000"
+    volumes:
+      # 开发模式：代码热重载（生产环境可注释掉）
+      - ./app:/app/app:ro
+      # 脚本目录同步（避免每次修改脚本都要重建镜像）
+      - ./scripts:/app/scripts:ro
+      # 日志持久化
+      - api_logs:/app/logs
+    # 开发模式启用热重载，生产环境去掉 --reload
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        sleep 2 &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - scheduler-network
+
+  # --------------------------------------------
+  # Nginx 反向代理服务
+  # --------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: exam-scheduler-nginx
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      # HTTPS（可选，需配置SSL证书）
+      # - "443:443"
+    volumes:
+      # Nginx配置文件
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # 静态文件目录（可选：直接由Nginx提供服务）
+      - ./app/static:/usr/share/nginx/html/static:ro
+      # SSL证书（可选）
+      # - ./ssl:/etc/nginx/ssl:ro
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - scheduler-network
+
+# --------------------------------------------
+# 命名卷定义（数据持久化）
+# --------------------------------------------
+volumes:
+  postgres_data:
+    name: exam-scheduler-postgres-data
+  api_logs:
+    name: exam-scheduler-api-logs
+
+# --------------------------------------------
+# 网络定义
+# --------------------------------------------
+networks:
+  scheduler-network:
+    name: exam-scheduler-network
+    driver: bridge
