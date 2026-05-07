@@ -513,17 +513,29 @@ async def validate_all_data(db: AsyncSession) -> dict[str, Any]:
 
 
 async def _import_classes_from_rows(db: AsyncSession, rows: list[dict]) -> ImportErrorReport:
-    """从字典列表导入班级"""
+    """从字典列表导入班级（支持 major_id 或 major_name 引用专业）"""
     report = ImportErrorReport()
-    required = {"name", "major_id", "grade"}
-    if not required.issubset(set(rows[0].keys())):
-        missing = required - set(rows[0].keys())
+    has_major_id = "major_id" in rows[0]
+    has_major_name = "major_name" in rows[0]
+    if not has_major_id and not has_major_name:
+        report.add_error("缺少必要列: major_id 或 major_name 至少提供一个")
+        return report
+    if "name" not in rows[0] or "grade" not in rows[0]:
+        missing = []
+        if "name" not in rows[0]:
+            missing.append("name")
+        if "grade" not in rows[0]:
+            missing.append("grade")
         report.add_error(f"缺少必要列: {missing}")
         return report
 
-    # 预加载所有专业ID
-    result = await db.execute(select(Major.id))
-    major_ids = set(result.scalars().all())
+    # 预加载所有专业 (id -> Major, name -> id)
+    result = await db.execute(select(Major))
+    major_by_id = {}
+    major_by_name = {}
+    for m in result.scalars().all():
+        major_by_id[m.id] = m
+        major_by_name[m.name] = m.id
 
     classes_to_create = []
     for line_no, row in enumerate(rows, 2):
@@ -531,14 +543,31 @@ async def _import_classes_from_rows(db: AsyncSession, rows: list[dict]) -> Impor
         if not name:
             report.add_error(f"第{line_no}行: 班级名称为空")
             continue
-        try:
-            major_id = int(row["major_id"])
-            if major_id not in major_ids:
-                report.add_error(f"第{line_no}行: 专业ID {major_id} 不存在")
+
+        # 解析 major_id
+        major_id = None
+        if has_major_id and row.get("major_id", "").strip():
+            try:
+                major_id = int(row["major_id"])
+            except (ValueError, TypeError):
+                report.add_error(f"第{line_no}行: major_id 必须是整数")
                 continue
-        except (ValueError, TypeError):
-            report.add_error(f"第{line_no}行: major_id 必须是整数")
+        elif has_major_name:
+            major_name = str(row.get("major_name", "")).strip()
+            if major_name:
+                if major_name in major_by_name:
+                    major_id = major_by_name[major_name]
+                else:
+                    report.add_error(f"第{line_no}行: 专业名称 '{major_name}' 不存在")
+                    continue
+
+        if major_id is None:
+            report.add_error(f"第{line_no}行: 未提供有效的 major_id 或 major_name")
             continue
+        if major_id not in major_by_id:
+            report.add_error(f"第{line_no}行: 专业ID {major_id} 不存在")
+            continue
+
         try:
             grade = int(row["grade"])
             if grade < 1 or grade > 4:
@@ -693,12 +722,13 @@ TEMPLATE_CONFIG = {
         "sheet_name": "班级导入模板",
         "columns": [
             {"key": "name", "required": True, "desc": "班级名称，如 计算机科学与技术大一1班", "example": "计算机科学与技术大一1班"},
-            {"key": "major_id", "required": True, "desc": "所属专业ID，系统中专业表的主键(整数)", "example": 1},
+            {"key": "major_name", "required": True, "desc": "所属专业名称（与专业Sheet中的name对应）", "example": "计算机科学"},
             {"key": "grade", "required": True, "desc": "年级: 1=大一, 2=大二, 3=大三, 4=大四", "example": 1},
             {"key": "student_count", "required": False, "desc": "学生人数，整数，默认0", "example": 30},
         ],
         "notes": [
-            "导入前请确保对应专业已存在于系统中",
+            "支持通过 major_name 引用专业（级联导入推荐）",
+            "如需单独导入，也可使用 major_id 列替代 major_name",
             "同一专业下，(name, grade) 联合唯一",
         ],
     },

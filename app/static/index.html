@@ -56,7 +56,7 @@
         @keyframes fadeOut { to { opacity: 0; transform: translateX(100%); } }
         /* Modal Overlay */
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9000; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
-        .modal-content { background: white; border-radius: 12px; max-height: 85vh; overflow-y: auto; min-width: 480px; max-width: 700px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); animation: modalSlide 0.3s ease; }
+        .modal-content { background: white; border-radius: 12px; max-height: 85vh; overflow-y: auto; min-width: 480px; max-width: 900px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); animation: modalSlide 0.3s ease; }
         @keyframes modalSlide { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         /* Tab Navigation */
         .nav-tab { cursor: pointer; padding: 10px 16px; font-size: 14px; font-weight: 500; color: #6B7280; border-radius: 6px; transition: all 0.2s; white-space: nowrap; }
@@ -418,9 +418,33 @@
                                 </select>
                             </div>
                             <div class="form-group">
+                                <label class="form-label">每教室固定监考人数</label>
+                                <div class="flex gap-4">
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="radio" name="fixedTeachersPerRoom" value="1" class="form-radio">
+                                        <span class="text-sm">1人</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="radio" name="fixedTeachersPerRoom" value="2" class="form-radio" checked>
+                                        <span class="text-sm">2人</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="form-group">
                                 <label class="form-label">最大求解时间（秒）</label>
                                 <input type="number" class="form-input" id="schedulerTimeout" value="300" min="30" max="3600">
                             </div>
+                            <div class="form-group">
+                                <label class="form-label">流动监考分组规则</label>
+                                <div class="text-xs text-gray-500 bg-gray-50 rounded p-2 space-y-1">
+                                    <div><i class="fas fa-user-shield text-blue-500 mr-1"></i>分组A：5-2xx教室 + 理东二</div>
+                                    <div><i class="fas fa-user-shield text-orange-500 mr-1"></i>分组B：5-3xx教室</div>
+                                    <div class="text-gray-400 mt-1">每上午/下午各2名流动监考</div>
+                                </div>
+                            </div>
+                            <button class="btn btn-secondary w-full justify-center mb-2" onclick="App.handlers.saveScheduleConfig()">
+                                <i class="fas fa-save"></i> 保存配置
+                            </button>
                             <button class="btn btn-primary w-full justify-center" id="btnStartScheduler" onclick="App.handlers.startScheduler()">
                                 <i class="fas fa-play"></i> 开始自动排考
                             </button>
@@ -509,7 +533,9 @@
             <div class="flex border-b border-gray-200 mb-4" id="resultsSubTabs">
                 <div class="sub-tab active" data-view="overview"><i class="fas fa-th mr-1"></i>总览视图</div>
                 <div class="sub-tab" data-view="teacher"><i class="fas fa-user-clock mr-1"></i>教师视图</div>
+                <div class="sub-tab" data-view="teacher-load"><i class="fas fa-chart-bar mr-1"></i>教师负荷</div>
                 <div class="sub-tab" data-view="classroom"><i class="fas fa-door-open mr-1"></i>教室视图</div>
+                <div class="sub-tab" data-view="patrol"><i class="fas fa-walking mr-1"></i>流动监考</div>
                 <div class="sub-tab" data-view="class"><i class="fas fa-users mr-1"></i>班级视图</div>
                 <div class="sub-tab" data-view="course"><i class="fas fa-book mr-1"></i>课程视图</div>
             </div>
@@ -533,7 +559,15 @@
                 </div>
                 <!-- 4b. Teacher Gantt -->
                 <div id="results-teacher" class="results-view" style="display: none;">
-                    <div class="flex items-center gap-4 mb-3">
+                    <div class="flex items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+                        <label class="text-sm text-gray-600 font-medium"><i class="fas fa-user-tie mr-1"></i>选择教师：</label>
+                        <select class="form-select" id="teacherGanttSelect" style="width: 200px;" onchange="App.handlers.loadTeacherGantt()">
+                            <option value="">--请选择教师--</option>
+                        </select>
+                        <button class="btn btn-secondary btn-sm" onclick="App.handlers.loadTeacherGantt()">
+                            <i class="fas fa-sync-alt"></i> 刷新
+                        </button>
+                        <div class="flex-1"></div>
                         <span class="text-sm text-gray-600"><i class="fas fa-square text-blue-500 mr-1"></i> 固定监考</span>
                         <span class="text-sm text-gray-600"><i class="fas fa-square text-orange-400 mr-1"></i> 流动监考</span>
                         <span class="text-sm text-gray-600"><i class="fas fa-square text-red-500 mr-1"></i> 当日超2场</span>
@@ -542,6 +576,20 @@
                         <div class="card-body p-0" id="teacherGanttContainer">
                             <div class="empty-state">
                                 <i class="fas fa-user-clock"></i>
+                                <p>请选择教师查看监考安排</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 4b-2. Teacher Load -->
+                <div id="results-teacher-load" class="results-view" style="display: none;">
+                    <div class="flex items-center gap-3 mb-4" id="teacherLoadSummary">
+                        <!-- 统计卡片由JS动态生成 -->
+                    </div>
+                    <div class="card" style="overflow-x: auto;">
+                        <div class="card-body p-0" id="teacherLoadContainer">
+                            <div class="empty-state">
+                                <i class="fas fa-chart-bar"></i>
                                 <p>暂无排考数据</p>
                             </div>
                         </div>
@@ -580,7 +628,21 @@
                         </div>
                     </div>
                 </div>
-                <!-- 4e. Course Detail -->
+                <!-- 4e. Patrol Matrix -->
+                <div id="results-patrol" class="results-view" style="display: none;">
+                    <div class="flex items-center gap-4 mb-3" id="patrolLegend">
+                        <!-- 图例由JS动态生成 -->
+                    </div>
+                    <div class="card" style="overflow-x: auto;">
+                        <div class="card-body p-0" id="patrolMatrixContainer">
+                            <div class="empty-state">
+                                <i class="fas fa-walking"></i>
+                                <p>暂无排考数据</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 4f. Course Detail -->
                 <div id="results-course" class="results-view" style="display: none;">
                     <div class="flex items-center gap-2 mb-3">
                         <label class="text-sm text-gray-600">选择课程：</label>
@@ -742,6 +804,7 @@
                                 <option value="majors">专业数据</option>
                                 <option value="course-classes">课程-班级关联</option>
                                 <option value="time-slots">考试时段</option>
+                                <option value="all-in-one">【全量级联导入】</option>
                             </select>
                             <div class="flex flex-wrap gap-2 mb-3">
                                 <button class="btn btn-secondary btn-xs" onclick="App.handlers.downloadTemplate('teachers')">
@@ -770,6 +833,12 @@
                                 </button>
                                 <button class="btn btn-warning btn-xs" onclick="App.handlers.initTimeSlots()">
                                     <i class="fas fa-sync-alt"></i> 重置标准时段
+                                </button>
+                                <button class="btn btn-success btn-xs" onclick="App.handlers.downloadTemplate('all-in-one')">
+                                    <i class="fas fa-file-excel"></i> 全量模板
+                                </button>
+                                <button class="btn btn-danger btn-xs" onclick="App.handlers.clearAllData()">
+                                    <i class="fas fa-trash-alt"></i> 清除全部数据
                                 </button>
                             </div>
                         </div>
@@ -946,6 +1015,6 @@
     </main>
 
     <!-- JavaScript -->
-    <script src="/static/js/app.js?v=12"></script>
+    <script src="/static/js/app.js?v=37"></script>
 </body>
 </html>

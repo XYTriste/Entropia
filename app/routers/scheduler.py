@@ -30,6 +30,7 @@ from app.models.exam_classroom import ExamClassroom
 from app.models.exam_classroom_class import ExamClassroomClass
 from app.models.exam_teacher import ExamTeacher, ExamTeacherRole
 from app.models.patrol_teacher import PatrolTeacher
+from app.models.schedule_config import ScheduleConfig
 from app.models.schedule_version import ScheduleVersion, ScheduleVersionStatus
 from app.models.teacher import Teacher
 from app.models.time_slot import TimeSlot
@@ -139,7 +140,22 @@ async def run_scheduler(
             TimeSlot as EngineTimeSlot,
         )
 
-        engine = SchedulingEngine(max_solve_time=300)
+        # 读取排考配置
+        config_result = await db.execute(select(ScheduleConfig).order_by(ScheduleConfig.id.desc()).limit(1))
+        config = config_result.scalar_one_or_none()
+        fixed_teachers_per_room = config.fixed_teachers_per_room if config else 2
+        patrol_teacher_count = config.patrol_teacher_count_per_slot_pair if config else 2
+        import json
+        patrol_group_rules = json.loads(config.patrol_group_rules) if config and config.patrol_group_rules else None
+        classroom_priority_rules = json.loads(config.classroom_priority_rules) if config and config.classroom_priority_rules else None
+
+        engine = SchedulingEngine(
+            max_solve_time=300,
+            fixed_teachers_per_room=fixed_teachers_per_room,
+            patrol_teacher_count=patrol_teacher_count,
+            patrol_group_rules=patrol_group_rules,
+            classroom_priority_rules=classroom_priority_rules,
+        )
 
         engine_courses = []
         for c in courses:
@@ -199,26 +215,41 @@ async def run_scheduler(
         )
 
         version_no = datetime.now().strftime("%Y%m%d-%H%M%S")
+        # 使用原始 Exam 对象生成 snapshot，保留 A/B 卷独立记录及 classroom_id
         snapshot = {
             "exams": [
                 {
-                    "exam_id": er.exam_id,
-                    "course_id": er.course_id,
-                    "course_name": er.course_name,
-                    "time_slot_id": er.time_slot_id,
-                    "day_of_week": er.day_of_week,
-                    "slot_code": er.slot_code,
-                    "exam_label": er.exam_label,
+                    "exam_id": exam.id,
+                    "course_id": exam.course_id,
+                    "course_name": exam.course.name if exam.course else "",
+                    "time_slot_id": exam.time_slot_id,
+                    "exam_label": exam.exam_label,
                     "classrooms": [
-                        {"classroom_id": cr.classroom_id, "student_count": cr.student_count, "class_ids": cr.class_ids}
-                        for cr in er.classrooms
+                        {
+                            "classroom_id": ec.classroom_id,
+                            "student_count": ec.total_students,
+                            "class_ids": [ca.class_id for ca in ec.class_assignments],
+                            "class_assignments": [
+                                {
+                                    "class_id": ca.class_id,
+                                    "student_count": ca.student_count,
+                                }
+                                for ca in ec.class_assignments
+                            ],
+                        }
+                        for ec in exam.classroom_assignments
                     ],
                     "teachers": [
-                        {"teacher_id": tr.teacher_id, "role": tr.role}
-                        for tr in er.teachers
+                        {
+                            "teacher_id": et.teacher_id,
+                            "role": et.role,
+                            "classroom_id": et.classroom_id,
+                            "patrol_group_name": getattr(et, "patrol_group_name", None),
+                        }
+                        for et in exam.teacher_assignments
                     ],
                 }
-                for er in schedule_result.exams
+                for exam in schedule_result.raw_exams
             ],
             "patrol_teachers": [
                 {
@@ -325,6 +356,11 @@ async def apply_schedule_version(
             exam_label = ExamLabel.A
         elif label_str == "B":
             exam_label = ExamLabel.B
+        elif label_str == "A+B":
+            # A+B 表示合并展示，实际应创建两场考试
+            # 这里保持 compatibility：如果 snapshot 存的是 A+B，
+            # 说明是旧版合并结果，按单场无标签处理
+            exam_label = None
 
         exam = Exam(
             course_id=er["course_id"],
@@ -355,21 +391,43 @@ async def apply_schedule_version(
             db.add(ec)
             await db.flush()
 
-            # 班级分配 (snapshot 中 class_ids 可能没有，兼容处理)
-            class_ids = list(dict.fromkeys(info["class_ids"]))  # 去重保留顺序
-            total = info["student_count"]
-            if class_ids:
-                base = total // len(class_ids)
-                rem = total % len(class_ids)
-                for idx, cid in enumerate(class_ids):
-                    if not cid:
+            # 班级分配：优先使用 snapshot 中的 class_assignments（含具体人数）
+            # 兼容旧版 snapshot 没有 class_assignments 的情况，退化为平均分配
+            class_assignments = []
+            for cr in er.get("classrooms", []):
+                if cr.get("classroom_id") == rid:
+                    class_assignments = cr.get("class_assignments", [])
+                    break
+
+            if class_assignments:
+                # 使用 snapshot 中的具体人数
+                seen_class_ids = set()
+                for ca in class_assignments:
+                    cid = ca.get("class_id")
+                    if not cid or cid in seen_class_ids:
                         continue
-                    count = base + (1 if idx < rem else 0)
+                    seen_class_ids.add(cid)
                     db.add(ExamClassroomClass(
                         exam_classroom_id=ec.id,
                         class_id=cid,
-                        student_count=count,
+                        student_count=ca.get("student_count", 0),
                     ))
+            else:
+                # 兼容旧版 snapshot：按 class_ids 平均分配
+                class_ids = list(dict.fromkeys(info["class_ids"]))
+                total = info["student_count"]
+                if class_ids:
+                    base = total // len(class_ids)
+                    rem = total % len(class_ids)
+                    for idx, cid in enumerate(class_ids):
+                        if not cid:
+                            continue
+                        count = base + (1 if idx < rem else 0)
+                        db.add(ExamClassroomClass(
+                            exam_classroom_id=ec.id,
+                            class_id=cid,
+                            student_count=count,
+                        ))
 
         # 教师分配 (去重：同一考试同一教师同一角色只出现一次)
         seen_teachers = set()
@@ -383,6 +441,8 @@ async def apply_schedule_version(
                 exam_id=exam.id,
                 teacher_id=tr["teacher_id"],
                 role=role,
+                classroom_id=tr.get("classroom_id"),
+                patrol_group_name=tr.get("patrol_group_name"),
             ))
 
     # 4. 流动监考 (去重)
@@ -398,7 +458,31 @@ async def apply_schedule_version(
                 teacher_id=tid,
             ))
 
-    # 5. 更新版本状态
+    # 5. 更新教师 current_slots（统计每个教师被分配的总场次）
+    teacher_slot_counts: dict[int, set[int]] = {}  # teacher_id -> set of time_slot_ids
+    # 在创建 ExamTeacher 时已经遍历过 teachers，直接利用 seen_teachers 和 snapshot 数据
+    for er in snapshot.get("exams", []):
+        time_slot_id = er.get("time_slot_id")
+        for tr in er.get("teachers", []):
+            tid = tr["teacher_id"]
+            if tid not in teacher_slot_counts:
+                teacher_slot_counts[tid] = set()
+            if time_slot_id:
+                teacher_slot_counts[tid].add(time_slot_id)
+    # 流动监考也计入场次
+    for pr in snapshot.get("patrol_teachers", []):
+        for tid in pr.get("teacher_ids", []):
+            if tid not in teacher_slot_counts:
+                teacher_slot_counts[tid] = set()
+            teacher_slot_counts[tid].add(pr["time_slot_id"])
+    # 写入数据库
+    for tid, slots in teacher_slot_counts.items():
+        teacher = await db.get(Teacher, tid)
+        if teacher:
+            teacher.current_slots = len(slots)
+            db.add(teacher)
+
+    # 6. 更新版本状态
     version.status = ScheduleVersionStatus.PUBLISHED
     db.add(version)
     await db.commit()
@@ -497,3 +581,86 @@ async def rollback_schedule_version(
     await db.commit()
 
     return {"code": 0, "message": f"已回滚到版本 {version.version_no}", "data": {"version_id": version_id}}
+
+
+# ============================================================
+# 排考配置管理
+# ============================================================
+
+
+class ScheduleConfigUpdate(BaseModel):
+    """更新排考配置请求"""
+    fixed_teachers_per_room: int = Field(2, ge=1, le=2, description="每教室固定监考人数")
+    patrol_teacher_count_per_slot_pair: int = Field(2, ge=1, le=5, description="每时段对流动监考人数")
+    patrol_group_rules: list[dict] = Field(default_factory=list, description="流动监考分组规则")
+    classroom_priority_rules: list[dict] = Field(default_factory=list, description="教室优先级规则")
+
+
+@router.get("/config", response_model=dict)
+async def get_schedule_config(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """获取排考配置"""
+    result = await db.execute(select(ScheduleConfig).order_by(ScheduleConfig.id.desc()).limit(1))
+    config = result.scalar_one_or_none()
+    if not config:
+        return {
+            "code": 0,
+            "message": "success",
+            "data": {
+                "fixed_teachers_per_room": 2,
+                "patrol_teacher_count_per_slot_pair": 2,
+                "patrol_group_rules": [
+                    {"group_name": "5-2及理东二", "patterns": ["5-2*", "理东二"]},
+                    {"group_name": "5-3", "patterns": ["5-3*"]},
+                ],
+                "classroom_priority_rules": [
+                    {"priority": 1, "patterns": ["5-2*"]},
+                    {"priority": 2, "patterns": ["5-3*"]},
+                ],
+            },
+        }
+    import json
+    return {
+        "code": 0,
+        "message": "success",
+        "data": {
+            "fixed_teachers_per_room": config.fixed_teachers_per_room,
+            "patrol_teacher_count_per_slot_pair": config.patrol_teacher_count_per_slot_pair,
+            "patrol_group_rules": json.loads(config.patrol_group_rules) if config.patrol_group_rules else [],
+            "classroom_priority_rules": json.loads(config.classroom_priority_rules) if config.classroom_priority_rules else [],
+        },
+    }
+
+
+@router.put("/config", response_model=dict)
+async def update_schedule_config(
+    req: ScheduleConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """更新排考配置"""
+    import json
+    result = await db.execute(select(ScheduleConfig).order_by(ScheduleConfig.id.desc()).limit(1))
+    config = result.scalar_one_or_none()
+    if not config:
+        config = ScheduleConfig()
+        db.add(config)
+
+    config.fixed_teachers_per_room = req.fixed_teachers_per_room
+    config.patrol_teacher_count_per_slot_pair = req.patrol_teacher_count_per_slot_pair
+    config.patrol_group_rules = json.dumps(req.patrol_group_rules, ensure_ascii=False)
+    config.classroom_priority_rules = json.dumps(req.classroom_priority_rules, ensure_ascii=False)
+
+    await db.commit()
+    await db.refresh(config)
+
+    return {
+        "code": 0,
+        "message": "配置已更新",
+        "data": {
+            "fixed_teachers_per_room": config.fixed_teachers_per_room,
+            "patrol_teacher_count_per_slot_pair": config.patrol_teacher_count_per_slot_pair,
+            "patrol_group_rules": req.patrol_group_rules,
+            "classroom_priority_rules": req.classroom_priority_rules,
+        },
+    }

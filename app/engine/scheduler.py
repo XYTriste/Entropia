@@ -29,7 +29,7 @@ from .constraints import (
     add_hc01_same_day_constraint,
     add_hc04_capacity_constraint,
     add_hc05_teacher_max_slots,
-    add_hc06_exactly_three_patrol,
+    add_hc06_patrol_per_slot_pair,
     add_hc07_no_split_class_for_ab,
     add_hc08_major_course_free_slots,
     add_hc09_compact_scheduling,
@@ -54,6 +54,7 @@ from .models import (
 )
 from .objectives import build_total_objective
 from .teacher_alloc import (
+    TeacherAssignment,
     allocate_teachers_fixed,
     allocate_teachers_patrol,
     create_teacher_usage_tracker,
@@ -87,12 +88,29 @@ class SchedulingEngine:
     2. 专业课贪心+CP排考（填充空闲时段，全局优化）
     """
 
-    def __init__(self, max_solve_time: int = 300) -> None:
+    def __init__(
+        self,
+        max_solve_time: int = 300,
+        fixed_teachers_per_room: int = 2,
+        patrol_teacher_count: int = 2,
+        patrol_group_rules: list[dict] | None = None,
+        classroom_priority_rules: list[dict] | None = None,
+    ) -> None:
         """
         参数:
             max_solve_time: 求解器最大运行时间（秒），默认300秒
+            fixed_teachers_per_room: 每教室固定监考人数 (1 或 2)
+            patrol_teacher_count: 每时段对流动监考人数
+            patrol_group_rules: 流动监考分组规则
+            classroom_priority_rules: 教室优先级规则
         """
         self.max_solve_time: int = max_solve_time
+        self.fixed_teachers_per_room: int = fixed_teachers_per_room
+        self.patrol_teacher_count: int = patrol_teacher_count
+        self.patrol_group_rules: list[dict] | None = patrol_group_rules
+        self.classroom_priority_rules: list[dict] | None = classroom_priority_rules
+        self._patrol_slot_pairs_used: set[tuple[int, int]] = set()
+        self.force_one_teacher_per_room: bool = False
 
     # --------------------------------------------------------
     # 主入口：运行排考
@@ -130,20 +148,81 @@ class SchedulingEngine:
         public_courses: list[Course] = [c for c in courses if c.course_type == "public"]
         major_courses: list[Course] = [c for c in courses if c.course_type == "major"]
 
+        # 公共课按学生总数降序排列，大课优先分配教室
+        def _course_total_students(c: Course) -> int:
+            return sum(link.class_.student_count for link in c.class_links)
+
+        public_courses.sort(key=_course_total_students, reverse=True)
+
         # 追踪状态
         all_exams: list[Exam] = []  # 所有生成的考试
         used_time_slots: set[int] = set()  # 已被使用的时段
         teacher_usage: dict[int, list[int]] = create_teacher_usage_tracker(teachers)  # 教师->时段列表
+        room_slot_usage: dict[int, set[int]] = {}  # 时段ID -> 已占用教室ID集合
         exam_results: list[ExamResult] = []  # 结果
         patrol_results: list[PatrolResult] = []  # 流动监考结果
         violations: list[str] = []  # 违规信息
+
+        # 计算教室总容量
+        total_capacity: int = sum(
+            r.capacity for r in classrooms if getattr(r, "is_active", True)
+        )
+
+        # 全局教师紧张度判断：若预估总需求超过总容量，全局降为1人/考场
+        import math
+        avg_cap = total_capacity / max(len(classrooms), 1)
+        est_rooms = sum(
+            math.ceil(sum(link.class_.student_count for link in c.class_links) / avg_cap)
+            for c in courses
+        )
+        total_teacher_cap = sum(t.max_slots for t in teachers)
+        total_slots = sum(2 if c.needs_ab else 1 for c in courses)
+        est_patrol = ((total_slots + 1) // 2) * self.patrol_teacher_count
+        if est_rooms * self.fixed_teachers_per_room + est_patrol > total_teacher_cap:
+            self.force_one_teacher_per_room = True
+
+        # 计算每门公共课的学生总数，并预分配时段
+        # 如果指定时段容量不足，直接报告不可行，不再自动回退
+        slot_public_demand: dict[int, int] = {}  # 时段ID -> 已分配公共课总需求
+
+        for course in public_courses:
+            total_students = sum(link.class_.student_count for link in course.class_links)
+            # AB卷每场约一半人数，按上取整计算单场最大需求
+            import math
+            per_exam_need = math.ceil(total_students / 2) if course.needs_ab else total_students
+            orig_slot = course.dept_assigned_time_slot_id
+            if orig_slot <= 0:
+                violations.append(f"公共课 {course.name} 未指定时段")
+                continue
+
+            # 检查指定时段是否足够（AB卷需同时检查A卷和B卷时段）
+            demand = slot_public_demand.get(orig_slot, 0)
+            if demand + per_exam_need > total_capacity:
+                violations.append(
+                    f"公共课 {course.name} 指定时段{orig_slot}容量不足，无法安排"
+                )
+                continue
+
+            # AB卷还需检查B卷连续时段
+            if course.needs_ab:
+                next_id = orig_slot + 1 if orig_slot % 4 in (1, 3) else orig_slot
+                if next_id in time_slot_map:
+                    next_demand = slot_public_demand.get(next_id, 0)
+                    if next_demand + per_exam_need > total_capacity:
+                        violations.append(
+                            f"公共课 {course.name} 指定B卷时段{next_id}容量不足，无法安排"
+                        )
+                        continue
+                    slot_public_demand[next_id] = next_demand + per_exam_need
+
+            # 更新A卷时段需求
+            slot_public_demand[orig_slot] = demand + per_exam_need
 
         # =====================================================
         # 阶段一：公共课排考
         # =====================================================
         for course in public_courses:
             if course.dept_assigned_time_slot_id <= 0:
-                violations.append(f"公共课 {course.name} 未指定时段")
                 continue
 
             result = self._schedule_public_course(
@@ -156,6 +235,7 @@ class SchedulingEngine:
                 teacher_usage=teacher_usage,
                 id_gen=id_gen,
                 used_time_slots=used_time_slots,
+                room_slot_usage=room_slot_usage,
                 violations=violations,
             )
             if result:
@@ -168,47 +248,193 @@ class SchedulingEngine:
                     patrol_results.append(result["patrol"])
 
         # =====================================================
-        # 阶段二：专业课排考
+        # 阶段二：专业课排考（允许多课程同一时段并行）
         # =====================================================
         # 获取空闲时段（按时间顺序）
         free_slots: list[int] = [
             s.id for s in time_slots if s.id not in used_time_slots
         ]
         free_slots.sort()
+        free_slots_set: set[int] = set(free_slots)
 
         if not free_slots and major_courses:
             violations.append("公共课排完后无空闲时段，无法安排专业课")
 
-        slot_idx: int = 0
-        for course in major_courses:
-            if slot_idx >= len(free_slots):
-                violations.append(f"专业课 {course.name} 无可用时段")
-                continue
+        # 专业课按学生总数降序，大课优先分配
+        major_courses.sort(key=_course_total_students, reverse=True)
 
-            # 获取当前可用时段
-            available_slots = free_slots[slot_idx:]
-            result = self._schedule_major_course(
-                course=course,
-                classrooms=classrooms,
-                teachers=teachers,
-                time_slot_map=time_slot_map,
-                classroom_map=classroom_map,
-                teacher_map=teacher_map,
-                teacher_usage=teacher_usage,
-                id_gen=id_gen,
-                used_time_slots=used_time_slots,
-                available_slots=available_slots,
-                violations=violations,
-            )
-            if result:
-                all_exams.extend(result["exams"])
-                exam_results.append(result["exam_result"])
-                # 支持AB卷的多时段流动监考
-                if result.get("patrols"):
-                    patrol_results.extend(result["patrols"])
-                elif result.get("patrol"):
-                    patrol_results.append(result["patrol"])
-                slot_idx += result["slots_used"]
+        for course in major_courses:
+            classes: list[Class] = [link.class_ for link in course.class_links]
+            total_students: int = sum(c.student_count for c in classes)
+            created_exams: list[Exam] = []
+
+            if course.needs_ab:
+                group_a, group_b = split_ab_classes(classes)
+                placed = False
+
+                for slot_id in sorted(free_slots):
+                    if slot_id % 4 not in (1, 3):
+                        continue
+                    next_slot_id = slot_id + 1
+                    if next_slot_id not in free_slots_set:
+                        continue
+
+                    excluded_a = room_slot_usage.get(slot_id, set())
+                    test_a = allocate_classrooms(
+                        student_count=sum(c.student_count for c in group_a),
+                        classes=group_a,
+                        classrooms=classrooms,
+                        excluded_room_ids=excluded_a,
+                        priority_rules=self.classroom_priority_rules,
+                    )
+                    if not test_a:
+                        continue
+
+                    excluded_b = room_slot_usage.get(next_slot_id, set())
+                    test_b = allocate_classrooms(
+                        student_count=sum(c.student_count for c in group_b),
+                        classes=group_b,
+                        classrooms=classrooms,
+                        excluded_room_ids=excluded_b,
+                        priority_rules=self.classroom_priority_rules,
+                    )
+                    if not test_b:
+                        continue
+
+                    time_slot_a = time_slot_map[slot_id]
+                    time_slot_b = time_slot_map[next_slot_id]
+                    used_time_slots.add(slot_id)
+                    used_time_slots.add(next_slot_id)
+
+                    exam_a = self._create_single_exam(
+                        course=course,
+                        classes=group_a,
+                        classrooms=classrooms,
+                        teachers=teachers,
+                        time_slot=time_slot_a,
+                        label="A",
+                        classroom_map=classroom_map,
+                        teacher_usage=teacher_usage,
+                        id_gen=id_gen,
+                        excluded_room_ids=excluded_a,
+                        violations=violations,
+                    )
+                    if exam_a:
+                        for ec in exam_a.classroom_assignments:
+                            room_slot_usage.setdefault(slot_id, set()).add(ec.classroom_id)
+
+                    exam_b = self._create_single_exam(
+                        course=course,
+                        classes=group_b,
+                        classrooms=classrooms,
+                        teachers=teachers,
+                        time_slot=time_slot_b,
+                        label="B",
+                        classroom_map=classroom_map,
+                        teacher_usage=teacher_usage,
+                        id_gen=id_gen,
+                        excluded_room_ids=excluded_b,
+                        violations=violations,
+                    )
+                    if exam_b:
+                        for ec in exam_b.classroom_assignments:
+                            room_slot_usage.setdefault(next_slot_id, set()).add(ec.classroom_id)
+
+                    # AB卷必须同时成功，否则回退并尝试下一对时段
+                    if not exam_a or not exam_b:
+                        if exam_a:
+                            for ec in exam_a.classroom_assignments:
+                                room_slot_usage.get(slot_id, set()).discard(ec.classroom_id)
+                            for et in exam_a.teacher_assignments:
+                                tid = et.teacher_id
+                                if tid in teacher_usage and time_slot_a.id in teacher_usage[tid]:
+                                    teacher_usage[tid].remove(time_slot_a.id)
+                        if exam_b:
+                            for ec in exam_b.classroom_assignments:
+                                room_slot_usage.get(next_slot_id, set()).discard(ec.classroom_id)
+                            for et in exam_b.teacher_assignments:
+                                tid = et.teacher_id
+                                if tid in teacher_usage and time_slot_b.id in teacher_usage[tid]:
+                                    teacher_usage[tid].remove(time_slot_b.id)
+                        used_time_slots.discard(slot_id)
+                        used_time_slots.discard(next_slot_id)
+                        continue  # 尝试下一对连续时段
+
+                    created_exams.append(exam_a)
+                    created_exams.append(exam_b)
+
+                    merged = self._merge_ab_results(
+                        course=course,
+                        exam_a=exam_a,
+                        exam_b=exam_b,
+                        time_slot=time_slot_a,
+                        next_slot=time_slot_b,
+                        total_students=total_students,
+                    )
+                    all_exams.extend(created_exams)
+                    exam_results.append(merged["exam_result"])
+                    if merged.get("patrols"):
+                        patrol_results.extend(merged["patrols"])
+                    elif merged.get("patrol"):
+                        patrol_results.append(merged["patrol"])
+
+                    placed = True
+                    break
+
+                if not placed:
+                    violations.append(f"专业课 {course.name} 找不到可用连续时段或教室不足（AB卷）")
+            else:
+                placed = False
+                for slot_id in sorted(free_slots):
+                    excluded = room_slot_usage.get(slot_id, set())
+                    test = allocate_classrooms(
+                        student_count=total_students,
+                        classes=classes,
+                        classrooms=classrooms,
+                        excluded_room_ids=excluded,
+                        priority_rules=self.classroom_priority_rules,
+                    )
+                    if not test:
+                        continue
+
+                    time_slot = time_slot_map[slot_id]
+                    used_time_slots.add(slot_id)
+
+                    exam = self._create_single_exam(
+                        course=course,
+                        classes=classes,
+                        classrooms=classrooms,
+                        teachers=teachers,
+                        time_slot=time_slot,
+                        label=None,
+                        classroom_map=classroom_map,
+                        teacher_usage=teacher_usage,
+                        id_gen=id_gen,
+                        excluded_room_ids=excluded,
+                        violations=violations,
+                    )
+                    if exam:
+                        for ec in exam.classroom_assignments:
+                            room_slot_usage.setdefault(slot_id, set()).add(ec.classroom_id)
+                        created_exams.append(exam)
+
+                        result = self._exam_to_result(
+                            course=course,
+                            exam=exam,
+                            time_slot=time_slot,
+                            total_students=total_students,
+                            created_exams=created_exams,
+                        )
+                        all_exams.extend(created_exams)
+                        exam_results.append(result["exam_result"])
+                        if result.get("patrol"):
+                            patrol_results.append(result["patrol"])
+
+                        placed = True
+                        break
+
+                if not placed:
+                    violations.append(f"专业课 {course.name} 找不到可用时段或教室不足")
 
         # =====================================================
         # 阶段三：全局验证与冲突分析
@@ -223,8 +449,13 @@ class SchedulingEngine:
         # 验证排满策略HC-09
         self._verify_compact_scheduling(exam_results, time_slots, violations)
 
-        # 验证HC-06：每个有考试的时段恰好3名流动监考
-        self._verify_patrol_coverage(patrol_results, used_time_slots, violations)
+        # 统一补充：确保每个有考试的时段都有 PatrolResult（同 slot_pair 复用）
+        patrol_results = self._fill_patrol_for_all_slots(
+            patrol_results, used_time_slots, time_slot_map, violations
+        )
+
+        # 验证HC-06：每个有考试的上下午场次对恰好有 patrol_count 名流动监考
+        self._verify_patrol_coverage(patrol_results, used_time_slots, time_slot_map, violations)
 
         solve_time: float = time.time() - start_time
 
@@ -235,6 +466,7 @@ class SchedulingEngine:
             violations=violations,
             conflict_report=conflict_report,
             solve_time=solve_time,
+            raw_exams=all_exams,
         )
 
     # --------------------------------------------------------
@@ -251,6 +483,7 @@ class SchedulingEngine:
         teacher_usage: dict[int, list[int]],
         id_gen: _IdGenerator,
         used_time_slots: set[int],
+        room_slot_usage: dict[int, set[int]],
         violations: list[str],
     ) -> dict[str, Any] | None:
         """
@@ -276,6 +509,7 @@ class SchedulingEngine:
             # HC-07: AB卷，班级不可拆分
             group_a, group_b = split_ab_classes(classes)
             # 创建A卷考试
+            excluded_a = room_slot_usage.get(time_slot.id, set())
             exam_a = self._create_single_exam(
                 course=course,
                 classes=group_a,
@@ -286,8 +520,13 @@ class SchedulingEngine:
                 classroom_map=classroom_map,
                 teacher_usage=teacher_usage,
                 id_gen=id_gen,
+                excluded_room_ids=excluded_a,
                 violations=violations,
             )
+            if exam_a:
+                for ec in exam_a.classroom_assignments:
+                    room_slot_usage.setdefault(time_slot.id, set()).add(ec.classroom_id)
+
             # 创建B卷考试（连续时段）
             next_slot_id = assigned_slot_id + 1 if assigned_slot_id % 4 in (1, 3) else assigned_slot_id
             if next_slot_id not in time_slot_map:
@@ -295,6 +534,7 @@ class SchedulingEngine:
             next_slot = time_slot_map[next_slot_id]
             used_time_slots.add(next_slot_id)
 
+            excluded_b = room_slot_usage.get(next_slot.id, set())
             exam_b = self._create_single_exam(
                 course=course,
                 classes=group_b,
@@ -305,13 +545,44 @@ class SchedulingEngine:
                 classroom_map=classroom_map,
                 teacher_usage=teacher_usage,
                 id_gen=id_gen,
+                excluded_room_ids=excluded_b,
                 violations=violations,
             )
-
-            if exam_a:
-                created_exams.append(exam_a)
             if exam_b:
-                created_exams.append(exam_b)
+                for ec in exam_b.classroom_assignments:
+                    room_slot_usage.setdefault(next_slot.id, set()).add(ec.classroom_id)
+
+            # AB卷必须同时成功，否则回退已分配的资源和时段
+            if not exam_a or not exam_b:
+                # 回退A卷占用的教室
+                if exam_a:
+                    for ec in exam_a.classroom_assignments:
+                        room_slot_usage.get(time_slot.id, set()).discard(ec.classroom_id)
+                    # 回退A卷占用的教师场次
+                    for et in exam_a.teacher_assignments:
+                        tid = et.teacher_id
+                        if tid in teacher_usage and time_slot.id in teacher_usage[tid]:
+                            teacher_usage[tid].remove(time_slot.id)
+                # 回退B卷占用的教室
+                if exam_b:
+                    for ec in exam_b.classroom_assignments:
+                        room_slot_usage.get(next_slot.id, set()).discard(ec.classroom_id)
+                    # 回退B卷占用的教师场次
+                    for et in exam_b.teacher_assignments:
+                        tid = et.teacher_id
+                        if tid in teacher_usage and next_slot.id in teacher_usage[tid]:
+                            teacher_usage[tid].remove(next_slot.id)
+                # 回退时段标记
+                used_time_slots.discard(assigned_slot_id)
+                used_time_slots.discard(next_slot_id)
+                violations.append(
+                    f"公共课 {course.name} AB卷无法同时安排："
+                    f"A卷{'成功' if exam_a else '失败'}，B卷{'成功' if exam_b else '失败'}"
+                )
+                return None
+
+            created_exams.append(exam_a)
+            created_exams.append(exam_b)
 
             # 合并结果
             merged_result = self._merge_ab_results(
@@ -325,6 +596,7 @@ class SchedulingEngine:
             return merged_result
         else:
             # 非AB卷，单场考试
+            excluded = room_slot_usage.get(time_slot.id, set())
             exam = self._create_single_exam(
                 course=course,
                 classes=classes,
@@ -335,9 +607,12 @@ class SchedulingEngine:
                 classroom_map=classroom_map,
                 teacher_usage=teacher_usage,
                 id_gen=id_gen,
+                excluded_room_ids=excluded,
                 violations=violations,
             )
             if exam:
+                for ec in exam.classroom_assignments:
+                    room_slot_usage.setdefault(time_slot.id, set()).add(ec.classroom_id)
                 created_exams.append(exam)
                 return self._exam_to_result(
                     course=course,
@@ -362,6 +637,7 @@ class SchedulingEngine:
         teacher_usage: dict[int, list[int]],
         id_gen: _IdGenerator,
         used_time_slots: set[int],
+        room_slot_usage: dict[int, set[int]],
         available_slots: list[int],
         violations: list[str],
     ) -> dict[str, Any] | None:
@@ -394,6 +670,7 @@ class SchedulingEngine:
             used_time_slots.add(slot_a_id)
             used_time_slots.add(slot_b_id)
 
+            excluded_a = room_slot_usage.get(time_slot_a.id, set())
             exam_a = self._create_single_exam(
                 course=course,
                 classes=group_a,
@@ -404,8 +681,14 @@ class SchedulingEngine:
                 classroom_map=classroom_map,
                 teacher_usage=teacher_usage,
                 id_gen=id_gen,
+                excluded_room_ids=excluded_a,
                 violations=violations,
             )
+            if exam_a:
+                for ec in exam_a.classroom_assignments:
+                    room_slot_usage.setdefault(time_slot_a.id, set()).add(ec.classroom_id)
+
+            excluded_b = room_slot_usage.get(time_slot_b.id, set())
             exam_b = self._create_single_exam(
                 course=course,
                 classes=group_b,
@@ -416,13 +699,39 @@ class SchedulingEngine:
                 classroom_map=classroom_map,
                 teacher_usage=teacher_usage,
                 id_gen=id_gen,
+                excluded_room_ids=excluded_b,
                 violations=violations,
             )
-
-            if exam_a:
-                created_exams.append(exam_a)
             if exam_b:
-                created_exams.append(exam_b)
+                for ec in exam_b.classroom_assignments:
+                    room_slot_usage.setdefault(time_slot_b.id, set()).add(ec.classroom_id)
+
+            # AB卷必须同时成功，否则回退
+            if not exam_a or not exam_b:
+                if exam_a:
+                    for ec in exam_a.classroom_assignments:
+                        room_slot_usage.get(time_slot_a.id, set()).discard(ec.classroom_id)
+                    for et in exam_a.teacher_assignments:
+                        tid = et.teacher_id
+                        if tid in teacher_usage and time_slot_a.id in teacher_usage[tid]:
+                            teacher_usage[tid].remove(time_slot_a.id)
+                if exam_b:
+                    for ec in exam_b.classroom_assignments:
+                        room_slot_usage.get(time_slot_b.id, set()).discard(ec.classroom_id)
+                    for et in exam_b.teacher_assignments:
+                        tid = et.teacher_id
+                        if tid in teacher_usage and time_slot_b.id in teacher_usage[tid]:
+                            teacher_usage[tid].remove(time_slot_b.id)
+                used_time_slots.discard(slot_a_id)
+                used_time_slots.discard(slot_b_id)
+                violations.append(
+                    f"专业课 {course.name} AB卷无法同时安排："
+                    f"A卷{'成功' if exam_a else '失败'}，B卷{'成功' if exam_b else '失败'}"
+                )
+                return None
+
+            created_exams.append(exam_a)
+            created_exams.append(exam_b)
 
             slots_used = 2
             merged = self._merge_ab_results(
@@ -445,6 +754,7 @@ class SchedulingEngine:
             time_slot = time_slot_map[slot_id]
             used_time_slots.add(slot_id)
 
+            excluded = room_slot_usage.get(time_slot.id, set())
             exam = self._create_single_exam(
                 course=course,
                 classes=classes,
@@ -455,9 +765,12 @@ class SchedulingEngine:
                 classroom_map=classroom_map,
                 teacher_usage=teacher_usage,
                 id_gen=id_gen,
+                excluded_room_ids=excluded,
                 violations=violations,
             )
             if exam:
+                for ec in exam.classroom_assignments:
+                    room_slot_usage.setdefault(time_slot.id, set()).add(ec.classroom_id)
                 created_exams.append(exam)
                 result = self._exam_to_result(
                     course=course,
@@ -485,6 +798,7 @@ class SchedulingEngine:
         classroom_map: dict[int, Classroom],
         teacher_usage: dict[int, list[int]],
         id_gen: _IdGenerator,
+        excluded_room_ids: set[int],
         violations: list[str],
     ) -> Exam | None:
         """
@@ -496,16 +810,36 @@ class SchedulingEngine:
         """
         total_students: int = sum(c.student_count for c in classes)
 
-        # 1. 教室分配
+        # 1. 教室分配（排除当前时段已占用的教室）
         room_assignments = allocate_classrooms(
             student_count=total_students,
             classes=classes,
             classrooms=classrooms,
+            excluded_room_ids=excluded_room_ids,
+            priority_rules=self.classroom_priority_rules,
         )
         if not room_assignments:
+            available_rooms = [
+                r for r in classrooms
+                if getattr(r, "is_active", True) and r.id not in excluded_room_ids
+            ]
+            available_cap = sum(r.capacity for r in available_rooms)
+            excluded_detail = ""
+            if excluded_room_ids:
+                excluded_rooms = [
+                    f"{classroom_map[r_id].name}({classroom_map[r_id].capacity}人)"
+                    for r_id in excluded_room_ids
+                    if r_id in classroom_map
+                ]
+                excluded_detail = (
+                    f"；该时段已占用{len(excluded_rooms)}间教室"
+                    f"({sum(classroom_map[r_id].capacity for r_id in excluded_room_ids if r_id in classroom_map)}人)"
+                    f"：{', '.join(excluded_rooms)}"
+                )
             violations.append(
                 f"课程 {course.name}({label or '主考'}) 教室分配失败: "
-                f"学生{total_students}人"
+                f"需要{total_students}人，当前时段可用教室总容量仅{available_cap}人"
+                f"（剩余{len(available_rooms)}间教室）{excluded_detail}"
             )
             return None
 
@@ -514,7 +848,7 @@ class SchedulingEngine:
         for ra in room_assignments:
             used_room_ids.add(ra.classroom_id)
 
-        # 过滤可用教师（排除已满的）
+        # 过滤可用教师（排除已满的，排除已在当前时段有任务的）
         from .teacher_alloc import TeacherState
         teacher_states = [TeacherState(t) for t in teachers]
         # 更新已使用场次
@@ -522,15 +856,21 @@ class SchedulingEngine:
             for ts in teacher_states:
                 if ts.teacher.id == tid:
                     ts.assigned_slots = len(slots)
+        # 排除已在当前时段被分配的教师（避免同一时段不同考试重复分配同一人）
+        teacher_states = [
+            ts for ts in teacher_states
+            if time_slot.id not in teacher_usage.get(ts.teacher.id, [])
+        ]
 
         # 2. 固定监考分配
         fixed_teachers = allocate_teachers_fixed(
             exam_id=id_gen.next(),
             classrooms=room_assignments,
             teacher_states=teacher_states,
+            teachers_per_room=self.fixed_teachers_per_room,
         )
         if not fixed_teachers and room_assignments:
-            violations.append(f"课程 {course.name} 固定监考分配失败")
+            violations.append(f"课程 {course.name} 固定监考分配失败：无可用教师")
             return None
 
         # 更新教师使用追踪
@@ -540,13 +880,27 @@ class SchedulingEngine:
             if time_slot.id not in teacher_usage[ft.teacher_id]:
                 teacher_usage[ft.teacher_id].append(time_slot.id)
 
-        # 3. 流动监考分配（每个时段3名）
-        # 构造existing（该时段已有的固定监考教师，避免重复）
-        existing = []
+        # 3. 流动监考分配
+        # 构造existing（该时段已有的固定监考教师，避免同一教师同时担任两种角色）
+        existing = [
+            TeacherAssignment(
+                teacher_id=ft.teacher_id,
+                teacher_name=ft.teacher_name,
+                role="fixed",
+                classroom_id=ft.classroom_id,
+            )
+            for ft in fixed_teachers
+        ]
         patrol_teachers = allocate_teachers_patrol(
             time_slot_id=time_slot.id,
+            slot_pair=time_slot.slot_pair,
+            day_of_week=time_slot.day_of_week,
             teacher_states=teacher_states,
             existing_assignments=existing,
+            patrol_count=self.patrol_teacher_count,
+            group_rules=self.patrol_group_rules,
+            used_slot_pairs=self._patrol_slot_pairs_used,
+            classrooms_in_slot=[classroom_map[r.classroom_id] for r in room_assignments],
         )
 
         # 更新教师使用追踪
@@ -603,6 +957,7 @@ class SchedulingEngine:
                     teacher_id=pt.teacher_id,
                     role="patrol",
                     classroom_id=None,
+                    patrol_group_name=pt.patrol_group_name,
                 )
             )
 
@@ -837,26 +1192,96 @@ class SchedulingEngine:
                         break  # 只报告第一个
 
     # --------------------------------------------------------
+    # 为所有已用时段补充 PatrolResult（同 slot_pair 复用）
+    # --------------------------------------------------------
+    def _fill_patrol_for_all_slots(
+        self,
+        patrol_results: list[PatrolResult],
+        used_time_slots: set[int],
+        time_slot_map: dict[int, TimeSlot],
+        violations: list[str],
+    ) -> list[PatrolResult]:
+        """
+        确保每个有考试的时段都有 PatrolResult。
+        如果某时段没有，则查找同 (day, slot_pair) 的已有 PatrolResult 进行复用。
+        """
+        # 按 (day, slot_pair) -> teacher_ids 映射
+        slot_pair_patrol_map: dict[tuple[int, int], list[int]] = {}
+        for pr in patrol_results:
+            ts = time_slot_map.get(pr.time_slot_id)
+            if ts:
+                key = (ts.day_of_week, ts.slot_pair)
+                slot_pair_patrol_map[key] = pr.teacher_ids
+
+        final: list[PatrolResult] = []
+        seen_slot_ids: set[int] = set()
+        for pr in patrol_results:
+            final.append(pr)
+            seen_slot_ids.add(pr.time_slot_id)
+
+        for slot_id in used_time_slots:
+            if slot_id in seen_slot_ids:
+                continue
+            ts = time_slot_map.get(slot_id)
+            if not ts:
+                continue
+            key = (ts.day_of_week, ts.slot_pair)
+            if key in slot_pair_patrol_map:
+                final.append(PatrolResult(
+                    time_slot_id=slot_id,
+                    day_of_week=ts.day_of_week,
+                    slot_code=ts.slot_code,
+                    teacher_ids=slot_pair_patrol_map[key].copy(),
+                ))
+            else:
+                violations.append(
+                    f"HC-06流动监考违规: 周{ts.day_of_week} {ts.slot_code}无流动监考"
+                )
+
+        return final
+
+    # --------------------------------------------------------
     # 验证流动监考覆盖
     # --------------------------------------------------------
     def _verify_patrol_coverage(
         self,
         patrol_results: list[PatrolResult],
         used_time_slots: set[int],
+        time_slot_map: dict[int, TimeSlot],
         violations: list[str],
     ) -> None:
         """
-        HC-06: 验证每个有考试的时段恰好有3名流动监考。
+        HC-06: 验证每个有考试的上下午场次对恰好有 patrol_count 名流动监考。
+        同一场次对（T1/T2 或 T3/T4）共享同一组流动监考。
         """
-        slot_patrol_count: dict[int, int] = {}
+        # 按 (day_of_week, slot_pair) 聚合 PatrolResult
+        slot_pair_patrol: dict[tuple[int, int], list[int]] = {}
         for pr in patrol_results:
-            slot_patrol_count[pr.time_slot_id] = len(pr.teacher_ids)
+            ts = time_slot_map.get(pr.time_slot_id)
+            if ts:
+                key = (ts.day_of_week, ts.slot_pair)
+                # 取该 slot_pair 下任意一个 PatrolResult 的 teacher_ids
+                slot_pair_patrol[key] = pr.teacher_ids
 
+        # 按 (day_of_week, slot_pair) 统计有考试的时段
+        used_slot_pairs: dict[tuple[int, int], set[int]] = {}
         for slot_id in used_time_slots:
-            count = slot_patrol_count.get(slot_id, 0)
-            if count != 3:
+            ts = time_slot_map.get(slot_id)
+            if ts:
+                key = (ts.day_of_week, ts.slot_pair)
+                used_slot_pairs.setdefault(key, set()).add(slot_id)
+
+        for key, slots in used_slot_pairs.items():
+            count = len(slot_pair_patrol.get(key, []))
+            period = "上午" if key[1] == 1 else "下午"
+            if count == 0:
                 violations.append(
-                    f"HC-06流动监考违规: 时段{slot_id}有{count}名流动监考（应为3名）"
+                    f"HC-06流动监考违规: 周{key[0]}{period}无流动监考"
+                )
+            elif count < self.patrol_teacher_count:
+                violations.append(
+                    f"HC-06流动监考警告: 周{key[0]}{period}有{count}名流动监考"
+                    f"（建议{self.patrol_teacher_count}名）"
                 )
 
     # --------------------------------------------------------
@@ -889,18 +1314,24 @@ class SchedulingEngine:
             )
 
         total_teacher_slots: int = sum(t.max_slots for t in teachers)
-        # 计算所需的教师场次：每场考试需要 2*教室数(固定) + 3(流动)
+        # 计算所需的教师场次
         required_teacher_slots: int = 0
         slot_exam_count: dict[int, int] = {}
         for exam in all_exams:
             num_rooms = len(exam.classroom_assignments)
-            required_teacher_slots += num_rooms * 2  # 固定监考
+            required_teacher_slots += num_rooms * self.fixed_teachers_per_room  # 固定监考
             slot_id = exam.time_slot_id
             slot_exam_count[slot_id] = slot_exam_count.get(slot_id, 0) + 1
 
-        # 流动监考：每个有考试的时段需要3名
+        # 流动监考：每个有考试的上下午场次对需要 patrol_teacher_count 名
+        time_slot_map_local = {t.id: t for t in time_slots}
+        slot_pairs = set()
+        for exam in all_exams:
+            ts = time_slot_map_local.get(exam.time_slot_id)
+            if ts:
+                slot_pairs.add((ts.day_of_week, ts.slot_pair))
+        required_teacher_slots += len(slot_pairs) * self.patrol_teacher_count
         unique_slots = len(slot_exam_count)
-        required_teacher_slots += unique_slots * 3
 
         bottlenecks: list[str] = []
         suggestions: list[str] = []
@@ -983,6 +1414,12 @@ if __name__ == "__main__":
             self.start_time = "08:30"
             self.end_time = "10:10"
             self.is_continuous = slot_code in ("T1", "T3")
+
+        @property
+        def slot_pair(self) -> int:
+            if self.slot_code in ("T1", "T2"):
+                return 1
+            return 2
 
     class MockCourseClass:
         def __init__(self, course_id: int, class_: MockClass):

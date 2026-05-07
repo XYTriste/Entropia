@@ -1,24 +1,18 @@
 """
-考试排考系统 - 导出服务
-
-提供排考结果的多种格式导出：
-- Excel 多 Sheet 导出 (openpyxl)
-  - 总览表、教师监考表、班级通知表、考场签到表、流动监考巡查表
-- JSON 格式导出
-- SQL 格式导出
+从数据库导出排考结果为 Excel 文件
 """
+import os
+import sys
+sys.path.insert(0, "/app")
 
-import json
 from datetime import datetime
 from io import BytesIO
-from typing import Any, Optional
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker, selectinload
 
 from app.models.class_ import Class
 from app.models.classroom import Classroom
@@ -31,11 +25,9 @@ from app.models.patrol_teacher import PatrolTeacher
 from app.models.teacher import Teacher
 from app.models.time_slot import TimeSlot
 
-
 # ============================================================
 # 样式常量
 # ============================================================
-
 HEADER_FILL = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
 HEADER_FONT = Font(color="FFFFFF", bold=True, size=11)
 BORDER = Border(
@@ -49,7 +41,6 @@ DAY_NAMES = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五"}
 
 
 def _set_header_style(cell):
-    """设置表头样式"""
     cell.fill = HEADER_FILL
     cell.font = HEADER_FONT
     cell.alignment = CENTER_ALIGN
@@ -57,13 +48,11 @@ def _set_header_style(cell):
 
 
 def _set_cell_style(cell):
-    """设置普通单元格样式"""
     cell.alignment = Alignment(vertical="center", wrap_text=True)
     cell.border = BORDER
 
 
-def _auto_width(worksheet, min_width: int = 10, max_width: int = 40):
-    """自动调整列宽"""
+def _auto_width(worksheet, min_width=10, max_width=40):
     for column_cells in worksheet.columns:
         length = max(len(str(cell.value or "")) for cell in column_cells)
         col_letter = get_column_letter(column_cells[0].column)
@@ -71,14 +60,13 @@ def _auto_width(worksheet, min_width: int = 10, max_width: int = 40):
         worksheet.column_dimensions[col_letter].width = adjusted_width
 
 
-# ============================================================
-# 数据加载
-# ============================================================
+def main():
+    db_url = "postgresql://scheduler:scheduler@db:5432/exam_scheduler"
+    engine = create_engine(db_url)
+    Session = sessionmaker(bind=engine)
+    session = Session()
 
-
-async def _load_exams_with_relations(db: AsyncSession) -> list[Exam]:
-    """加载所有考试及其关联数据"""
-    result = await db.execute(
+    exams = session.execute(
         select(Exam)
         .options(
             selectinload(Exam.course),
@@ -88,52 +76,19 @@ async def _load_exams_with_relations(db: AsyncSession) -> list[Exam]:
             selectinload(Exam.teacher_assignments).selectinload(ExamTeacher.teacher),
         )
         .order_by(Exam.time_slot_id)
-    )
-    return list(result.scalars().all())
+    ).scalars().all()
 
-
-async def _load_time_slots(db: AsyncSession) -> list[TimeSlot]:
-    """加载所有时段"""
-    result = await db.execute(
+    time_slots = session.execute(
         select(TimeSlot)
         .options(selectinload(TimeSlot.patrol_teachers).selectinload(PatrolTeacher.teacher))
         .order_by(TimeSlot.id)
-    )
-    return list(result.scalars().all())
+    ).scalars().all()
 
+    teachers = session.execute(select(Teacher)).scalars().all()
+    classrooms_data = session.execute(select(Classroom)).scalars().all()
+    classes_data = session.execute(select(Class)).scalars().all()
 
-async def _load_teachers(db: AsyncSession) -> list[Teacher]:
-    """加载所有教师"""
-    result = await db.execute(select(Teacher))
-    return list(result.scalars().all())
-
-
-async def _load_classrooms(db: AsyncSession) -> list[Classroom]:
-    """加载所有教室"""
-    result = await db.execute(select(Classroom))
-    return list(result.scalars().all())
-
-
-async def _load_classes(db: AsyncSession) -> list[Class]:
-    """加载所有班级"""
-    result = await db.execute(select(Class))
-    return list(result.scalars().all())
-
-
-# ============================================================
-# Excel 导出 - 主入口
-# ============================================================
-
-
-async def export_excel(db: AsyncSession) -> bytes:
-    """导出排考结果为 Excel 文件 (多 Sheet)"""
     wb = Workbook()
-
-    exams = await _load_exams_with_relations(db)
-    time_slots = await _load_time_slots(db)
-    teachers = await _load_teachers(db)
-    classrooms_data = await _load_classrooms(db)
-    classes_data = await _load_classes(db)
 
     # Sheet 1: 排考总览表
     _build_overview_sheet(wb.active, exams, time_slots, classrooms_data, teachers)
@@ -155,21 +110,19 @@ async def export_excel(db: AsyncSession) -> bytes:
     wb.create_sheet("流动监考巡查表")
     _build_patrol_sheet(wb["流动监考巡查表"], time_slots, teachers)
 
-    buffer = BytesIO()
-    wb.save(buffer)
-    buffer.seek(0)
-    return buffer.read()
-
-
-# ---------- Sheet 1: 排考总览表 ----------
+    output_dir = "/app/output_results"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, "schedule_result.xlsx")
+    wb.save(output_path)
+    print(f"Excel saved to: {output_path}")
+    print(f"Total exams: {len(exams)}")
+    print(f"Total exam_classrooms: {sum(len(e.classroom_assignments) for e in exams)}")
+    print(f"Total exam_teachers: {sum(len(e.teacher_assignments) for e in exams)}")
+    print(f"Total patrol teachers (unique slots): {len(time_slots)}")
 
 
 def _build_overview_sheet(ws, exams, time_slots, classrooms, teachers):
-    """构建排考总览表（按考试-教室-班级粒度展开）"""
-    headers = [
-        "序号", "课程名称", "AB卷", "星期", "时段", "时间",
-        "教室", "监考教师", "班级", "人数",
-    ]
+    headers = ["序号", "课程名称", "AB卷", "星期", "时段", "时间", "教室", "监考教师", "班级", "人数"]
     ws.append(headers)
     for cell in ws[1]:
         _set_header_style(cell)
@@ -189,14 +142,12 @@ def _build_overview_sheet(ws, exams, time_slots, classrooms, teachers):
         label_str = exam.exam_label.value if exam.exam_label else ""
         course_label = (exam.course.name, label_str)
 
-        # 同一课程（含AB卷标签相同）只增加一次序号
         if course_label != prev_course_label:
             seq += 1
             prev_course_label = course_label
 
-        # 构建教室 -> 监考教师的映射
-        room_teachers: dict[int, list[str]] = {}
-        exam_fixed_teachers: list[str] = []
+        room_teachers = {}
+        exam_fixed_teachers = []
         for et in exam.teacher_assignments:
             if et.role.value == "fixed":
                 t = teacher_map.get(et.teacher_id)
@@ -206,7 +157,6 @@ def _build_overview_sheet(ws, exams, time_slots, classrooms, teachers):
                     else:
                         exam_fixed_teachers.append(t.name)
 
-        # 按教室-班级展开为行
         for ec in exam.classroom_assignments:
             room = room_map.get(ec.classroom_id)
             room_name = room.name if room else f"教室{ec.classroom_id}"
@@ -230,7 +180,6 @@ def _build_overview_sheet(ws, exams, time_slots, classrooms, teachers):
                     for cell in ws[row_idx]:
                         _set_cell_style(cell)
             else:
-                # 兼容：没有班级明细时，只输出教室总人数一行
                 row_idx += 1
                 ws.append([
                     seq, exam.course.name, label_str, day_str,
@@ -243,11 +192,7 @@ def _build_overview_sheet(ws, exams, time_slots, classrooms, teachers):
     _auto_width(ws)
 
 
-# ---------- Sheet 2: 教师监考表 ----------
-
-
 def _build_teacher_sheet(ws, exams, time_slots, teachers):
-    """构建教师监考表"""
     headers = ["教师姓名", "教师类型", "星期", "时段", "时间", "课程", "AB卷", "监考角色", "教室"]
     ws.append(headers)
     for cell in ws[1]:
@@ -260,7 +205,7 @@ def _build_teacher_sheet(ws, exams, time_slots, teachers):
             room_name = ec.classroom.name if hasattr(ec, "classroom") and ec.classroom else f"教室{ec.classroom_id}"
             room_map[ec.classroom_id] = room_name
 
-    teacher_exams: dict[int, list[dict]] = {}
+    teacher_exams = {}
     for exam in exams:
         ts = ts_map.get(exam.time_slot_id) if exam.time_slot_id else None
         for et in exam.teacher_assignments:
@@ -296,11 +241,7 @@ def _build_teacher_sheet(ws, exams, time_slots, teachers):
     _auto_width(ws)
 
 
-# ---------- Sheet 3: 班级通知表 ----------
-
-
 def _build_class_notice_sheet(ws, exams, time_slots, classes_data, classrooms_data):
-    """构建班级通知表"""
     headers = ["班级名称", "年级", "星期", "时段", "时间", "课程", "AB卷", "考场", "考生数"]
     ws.append(headers)
     for cell in ws[1]:
@@ -336,11 +277,7 @@ def _build_class_notice_sheet(ws, exams, time_slots, classes_data, classrooms_da
     _auto_width(ws)
 
 
-# ---------- Sheet 4: 考场签到表 ----------
-
-
 def _build_classroom_sign_sheet(ws, exams, time_slots, classrooms_data):
-    """构建考场签到表"""
     headers = ["教室名称", "星期", "时段", "时间", "课程", "AB卷", "应到人数", "监考教师"]
     ws.append(headers)
     for cell in ws[1]:
@@ -382,11 +319,7 @@ def _build_classroom_sign_sheet(ws, exams, time_slots, classrooms_data):
     _auto_width(ws)
 
 
-# ---------- Sheet 5: 流动监考巡查表 ----------
-
-
 def _build_patrol_sheet(ws, time_slots, teachers):
-    """构建流动监考巡查表"""
     headers = ["星期", "时段", "时间", "流动监考1", "流动监考2", "流动监考3"]
     ws.append(headers)
     for cell in ws[1]:
@@ -416,106 +349,5 @@ def _build_patrol_sheet(ws, time_slots, teachers):
     _auto_width(ws)
 
 
-# ============================================================
-# JSON 导出
-# ============================================================
-
-
-async def export_json(db: AsyncSession) -> dict[str, Any]:
-    """导出排考结果为 JSON 格式"""
-    exams = await _load_exams_with_relations(db)
-    time_slots = await _load_time_slots(db)
-    ts_map = {ts.id: ts for ts in time_slots}
-
-    exam_list = []
-    for exam in exams:
-        ts = ts_map.get(exam.time_slot_id) if exam.time_slot_id else None
-        exam_data = {
-            "id": exam.id,
-            "course_id": exam.course_id,
-            "course_name": exam.course.name,
-            "course_type": exam.course.course_type.value,
-            "exam_label": exam.exam_label.value if exam.exam_label else None,
-            "status": exam.status.value,
-            "is_locked": exam.is_locked,
-            "time_slot": {
-                "id": ts.id,
-                "day_of_week": ts.day_of_week,
-                "slot_code": ts.slot_code,
-                "start_time": ts.start_time,
-                "end_time": ts.end_time,
-            } if ts else None,
-            "classrooms": [
-                {
-                    "classroom_id": ec.classroom_id,
-                    "classroom_name": ec.classroom.name if hasattr(ec, "classroom") and ec.classroom else None,
-                    "total_students": ec.total_students,
-                    "classes": [
-                        {"class_id": ca.class_id, "student_count": ca.student_count}
-                        for ca in ec.class_assignments
-                    ],
-                }
-                for ec in exam.classroom_assignments
-            ],
-            "teachers": [
-                {
-                    "teacher_id": et.teacher_id,
-                    "teacher_name": et.teacher.name if hasattr(et, "teacher") and et.teacher else None,
-                    "role": et.role.value,
-                    "classroom_id": et.classroom_id,
-                }
-                for et in exam.teacher_assignments
-            ],
-        }
-        exam_list.append(exam_data)
-
-    return {
-        "export_time": datetime.now().isoformat(),
-        "total_exams": len(exam_list),
-        "exams": exam_list,
-    }
-
-
-# ============================================================
-# SQL 导出
-# ============================================================
-
-
-async def export_sql(db: AsyncSession) -> str:
-    """导出排考结果为 SQL INSERT 语句"""
-    exams = await _load_exams_with_relations(db)
-
-    lines: list[str] = [
-        "-- 考试排考系统 - 排考结果 SQL 导出",
-        f"-- 导出时间: {datetime.now().isoformat()}",
-        "BEGIN;",
-        "",
-    ]
-
-    for exam in exams:
-        label = f"'{exam.exam_label.value}'" if exam.exam_label else "NULL"
-        lines.append(
-            f"INSERT INTO exams (id, course_id, time_slot_id, exam_label, status, is_locked, created_at, updated_at) "
-            f"VALUES ({exam.id}, {exam.course_id}, {exam.time_slot_id or 'NULL'}, {label}, "
-            f"'{exam.status.value}', {str(exam.is_locked).lower()}, NOW(), NOW()) "
-            f"ON CONFLICT (id) DO UPDATE SET time_slot_id = EXCLUDED.time_slot_id, status = EXCLUDED.status;"
-        )
-
-        for ec in exam.classroom_assignments:
-            lines.append(
-                f"INSERT INTO exam_classrooms (exam_id, classroom_id, total_students) "
-                f"VALUES ({ec.exam_id}, {ec.classroom_id}, {ec.total_students}) "
-                f"ON CONFLICT (exam_id, classroom_id) DO UPDATE SET total_students = EXCLUDED.total_students;"
-            )
-
-        for et in exam.teacher_assignments:
-            role = et.role.value
-            cid = et.classroom_id if et.classroom_id else "NULL"
-            lines.append(
-                f"INSERT INTO exam_teachers (exam_id, teacher_id, role, classroom_id) "
-                f"VALUES ({et.exam_id}, {et.teacher_id}, '{role}', {cid}) "
-                f"ON CONFLICT (exam_id, teacher_id, role) DO NOTHING;"
-            )
-
-    lines.extend(["", "COMMIT;"])
-    return "\n".join(lines)
+if __name__ == "__main__":
+    main()

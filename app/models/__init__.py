@@ -16,6 +16,7 @@ from app.models.exam_classroom_class import ExamClassroomClass
 from app.models.exam_teacher import ExamTeacher
 from app.models.major import Major
 from app.models.patrol_teacher import PatrolTeacher
+from app.models.schedule_config import ScheduleConfig
 from app.models.schedule_version import ScheduleVersion
 from app.models.student import Student
 from app.models.teacher import Teacher
@@ -36,6 +37,7 @@ __all__ = [
     "ExamClassroomClass",
     "ExamTeacher",
     "PatrolTeacher",
+    "ScheduleConfig",
     "AuditLog",
     "ScheduleVersion",
 ]

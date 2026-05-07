@@ -13,6 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 if TYPE_CHECKING:
+    from app.models.classroom import Classroom
     from app.models.exam import Exam
     from app.models.teacher import Teacher
 
@@ -67,9 +68,17 @@ class ExamTeacher(Base):
         comment="固定监考的教室ID",
     )
 
+    # 流动监考负责的分组名称（如 "5-2及理东二" / "5-3"）
+    patrol_group_name: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="流动监考分组名称",
+    )
+
     # 关系
     exam: Mapped["Exam"] = relationship("Exam", back_populates="teacher_assignments")
     teacher: Mapped["Teacher"] = relationship("Teacher", back_populates="exam_teachers")
+    classroom: Mapped[Optional["Classroom"]] = relationship("Classroom", lazy="joined")
 
     def __repr__(self) -> str:
         return (

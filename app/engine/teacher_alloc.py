@@ -4,17 +4,18 @@
 功能：为考试分配监考教师，包括固定监考和流动监考。
 
 规则：
-- 固定监考：每个考场需要2名固定监考
+- 固定监考：每个考场默认需要2名固定监考
   - 优先使用专任教师（未达上限的）
   - 专任教师用尽后使用兼职教师
-- 流动监考：每个时段需要3名流动监考
+- 流动监考：每个上下午场次对需要2名流动监考
   - 优先从兼职教师抽取
   - 兼职不足时从专任教师补充
 - 连续场次优化：同一教师优先安排连续时段
 
 硬约束：
 - HC-05: 每位教师的监考总场次（固定+流动）不得超过其个人上限 max_slots
-- HC-06: 每个时段必须恰好安排3名流动监考教师
+- HC-06: 每个上下午场次对(slot_pair)必须恰好安排 patrol_count 名流动监考教师
+  同一场次对内的两个时段（如T1/T2 或 T3/T4）共享同一组流动监考。
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ class TeacherAssignment:
     teacher_name: str
     role: str  # "fixed" | "patrol"
     classroom_id: int | None = None  # fixed时指定考场
+    patrol_group_name: str | None = None  # 流动监考分组名称
 
 
 @dataclass
@@ -95,65 +97,70 @@ def _get_available_by_priority(
         # 优先专任教师，再兼职教师
         full = [s for s in states if s.teacher.teacher_type == "full_time" and not s.is_full]
         part = [s for s in states if s.teacher.teacher_type == "part_time" and not s.is_full]
-        # 按剩余容量降序排列（优先使用剩余多的）
-        full.sort(key=lambda s: s.remaining, reverse=True)
-        part.sort(key=lambda s: s.remaining, reverse=True)
+        # 按已分配场次升序排列（优先使用分配少的，实现负载均衡）
+        full.sort(key=lambda s: s.assigned_slots)
+        part.sort(key=lambda s: s.assigned_slots)
         available = full + part
     elif priority_type == "part_time":
         # 优先兼职教师，再专任教师
         part = [s for s in states if s.teacher.teacher_type == "part_time" and not s.is_full]
         full = [s for s in states if s.teacher.teacher_type == "full_time" and not s.is_full]
-        part.sort(key=lambda s: s.remaining, reverse=True)
-        full.sort(key=lambda s: s.remaining, reverse=True)
+        part.sort(key=lambda s: s.assigned_slots)
+        full.sort(key=lambda s: s.assigned_slots)
         available = part + full
     else:
         available = [s for s in states if not s.is_full]
-        available.sort(key=lambda s: s.remaining, reverse=True)
+        available.sort(key=lambda s: s.assigned_slots)
 
     return available[:need]
+
+
+def _match_patrol_group(name: str, pattern: str) -> bool:
+    if pattern.endswith("*"):
+        return name.startswith(pattern[:-1])
+    return name == pattern
 
 
 def allocate_teachers_fixed(
     exam_id: int,
     classrooms: list,  # ClassroomAssignment列表
     teacher_states: list[TeacherState],
+    teachers_per_room: int = 2,
 ) -> list[TeacherAssignment]:
     """
     为固定监考分配教师。
 
     参数:
         exam_id: 考试ID
-        classrooms: 教室分配结果列表（每个教室需要2名固定监考）
+        classrooms: 教室分配结果列表（每个教室需要 teachers_per_room 名固定监考）
         teacher_states: 教师状态列表（会被修改，记录已分配场次）
 
     返回:
-        TeacherAssignment列表
+        TeacherAssignment列表（即使教师不足，也尽力分配至少1人/考场）
 
     规则:
-        - 每个考场2名固定监考
+        - 资源充足时每考场 teachers_per_room 名，紧张时每考场至少1名
         - 优先专任教师（SC-03软约束）
         - HC-05: 不超过教师上限
     """
     assignments: list[TeacherAssignment] = []
-    total_needed: int = len(classrooms) * 2  # 每个考场2人
+    if not classrooms:
+        return assignments
 
-    # 检查总可用容量
-    total_available: int = sum(s.remaining for s in teacher_states)
-    if total_available < total_needed:
-        # 教师资源不足
-        return []
+    total_needed = len(classrooms) * teachers_per_room
+    total_available = sum(s.remaining for s in teacher_states)
+    # 若全局总可用量不足标准需求，统一降为1人/考场，确保公平
+    per_room = 1 if total_available < total_needed else teachers_per_room
 
     for classroom in classrooms:
-        # 每个教室需要2名固定监考
-        needed: int = 2
         room_id: int = classroom.classroom_id
+        needed: int = per_room
 
-        # 优先专任教师（软约束SC-03）
         candidates = _get_available_by_priority(teacher_states, "full_time", needed)
 
         for _ in range(needed):
             assigned: bool = False
-            for state in candidates:
+            for state in list(candidates):
                 if state.assign(1):
                     assignments.append(TeacherAssignment(
                         teacher_id=state.teacher.id,
@@ -162,62 +169,83 @@ def allocate_teachers_fixed(
                         classroom_id=room_id,
                     ))
                     assigned = True
+                    candidates.remove(state)
                     break
-                candidates.remove(state)  # 满了就移除
+                else:
+                    candidates.remove(state)
 
             if not assigned:
-                # 尝试任何可用教师
                 fallback = _get_available_by_priority(teacher_states, "any", 1)
-                if fallback and fallback[0].assign(1):
-                    assignments.append(TeacherAssignment(
-                        teacher_id=fallback[0].teacher.id,
-                        teacher_name=fallback[0].teacher.name,
-                        role="fixed",
-                        classroom_id=room_id,
-                    ))
-                else:
-                    # 完全无法分配
-                    return []
+                for state in list(fallback):
+                    if state.assign(1):
+                        assignments.append(TeacherAssignment(
+                            teacher_id=state.teacher.id,
+                            teacher_name=state.teacher.name,
+                            role="fixed",
+                            classroom_id=room_id,
+                        ))
+                        assigned = True
+                        break
+
+            # 若完全无法分配，跳过该考场（后续生成警告）
+            if not assigned:
+                break
 
     return assignments
 
 
 def allocate_teachers_patrol(
     time_slot_id: int,
+    slot_pair: int,  # 1 for 上午(T1/T2), 2 for 下午(T3/T4)
+    day_of_week: int,
     teacher_states: list[TeacherState],
     existing_assignments: list[TeacherAssignment] | None = None,
+    patrol_count: int = 2,
+    group_rules: list[dict] | None = None,
+    used_slot_pairs: set[tuple[int, int]] | None = None,
+    classrooms_in_slot: list | None = None,
 ) -> list[TeacherAssignment]:
     """
     为流动监考分配教师。
 
     参数:
         time_slot_id: 时段ID
+        slot_pair: 场次对，1=上午(T1/T2)，2=下午(T3/T4)
+        day_of_week: 星期几
         teacher_states: 教师状态列表（会被修改）
         existing_assignments: 该时段已有的教师分配（用于避免重复）
+        patrol_count: 需要的流动监考人数（默认2）
+        group_rules: 分组规则列表
+        used_slot_pairs: 已分配过的(day_of_week, slot_pair)集合
+        classrooms_in_slot: 该时段使用的教室列表
 
     返回:
-        TeacherAssignment列表，恰好3名流动监考
+        TeacherAssignment列表，尽量 patrol_count 名流动监考，不足时尽力分配
 
     规则:
-        - HC-06: 每个时段恰好3名流动监考
+        - HC-06: 每个上下午场次对尽量 patrol_count 名流动监考
         - 优先兼职教师（SC-04软约束）
         - HC-05: 不超过教师上限
     """
-    assignments: list[TeacherAssignment] = []
-    needed: int = 3  # HC-06: 恰好3名
+    if used_slot_pairs is None:
+        used_slot_pairs = set()
 
-    # 已被使用的教师ID集合
+    if (day_of_week, slot_pair) in used_slot_pairs:
+        return []
+    used_slot_pairs.add((day_of_week, slot_pair))
+
+    assignments: list[TeacherAssignment] = []
+    needed: int = patrol_count
+
     used_ids: set[int] = set()
     if existing_assignments:
         used_ids = {a.teacher_id for a in existing_assignments}
 
-    # 优先兼职教师（软约束SC-04）
     candidates = _get_available_by_priority(teacher_states, "part_time", needed)
 
     for _ in range(needed):
         assigned: bool = False
 
-        # 过滤掉已使用的教师
         for state in list(candidates):
             if state.teacher.id in used_ids:
                 continue
@@ -227,13 +255,13 @@ def allocate_teachers_patrol(
                     teacher_name=state.teacher.name,
                     role="patrol",
                     classroom_id=None,
+                    patrol_group_name=None,
                 ))
                 used_ids.add(state.teacher.id)
                 assigned = True
                 break
 
         if not assigned:
-            # 从任何可用教师中补充（包括专任教师）
             fallback = _get_available_by_priority(teacher_states, "any", needed)
             for state in fallback:
                 if state.teacher.id in used_ids:
@@ -244,14 +272,34 @@ def allocate_teachers_patrol(
                         teacher_name=state.teacher.name,
                         role="patrol",
                         classroom_id=None,
+                        patrol_group_name=None,
                     ))
                     used_ids.add(state.teacher.id)
                     assigned = True
                     break
 
         if not assigned:
-            # 无法凑齐3名流动监考
-            return []
+            # 无法继续分配，返回已分配的教师
+            break
+
+    # 确定活跃分组并按轮询分配
+    active_group_names: list[str] = []
+    if group_rules and classrooms_in_slot:
+        for rule in group_rules:
+            matched = False
+            for classroom in classrooms_in_slot:
+                classroom_name = getattr(classroom, "name", None) or getattr(classroom, "classroom_name", None) or ""
+                if any(_match_patrol_group(classroom_name, p) for p in rule.get("patterns", [])):
+                    matched = True
+                    break
+            if matched:
+                active_group_names.append(rule["group_name"])
+
+    for i, assignment in enumerate(assignments):
+        if active_group_names:
+            assignment.patrol_group_name = active_group_names[i % len(active_group_names)]
+        else:
+            assignment.patrol_group_name = None
 
     return assignments
 
@@ -328,9 +376,10 @@ if __name__ == "__main__":
 
     class MockClassroomAssign:
         """测试用模拟教室分配"""
-        def __init__(self, classroom_id: int, capacity: int = 100) -> None:
+        def __init__(self, classroom_id: int, capacity: int = 100, name: str = "") -> None:
             self.classroom_id = classroom_id
             self.capacity = capacity
+            self.name = name
 
     class TestTeacherAlloc(unittest.TestCase):
         """教师分配单元测试"""
@@ -362,10 +411,11 @@ if __name__ == "__main__":
                 MockTeacher(5, "full_time", 5),
             ]
             states = _build_teacher_states(teachers)
-            result = allocate_teachers_patrol(1, states)
+            used = set()
+            result = allocate_teachers_patrol(1, 1, 1, states, used_slot_pairs=used)
 
-            # HC-06: 恰好3名流动监考
-            self.assertEqual(len(result), 3)
+            # HC-06: 恰好2名流动监考（默认）
+            self.assertEqual(len(result), 2)
             # 优先兼职教师
             patrol_types = []
             for r in result:
@@ -373,6 +423,52 @@ if __name__ == "__main__":
                 patrol_types.append(t.teacher.teacher_type)
             # 至少应有兼职教师优先
             self.assertIn("part_time", patrol_types)
+
+        def test_patrol_slot_pair_dedup(self):
+            """测试同一场次对只分配一次流动监考"""
+            teachers = [
+                MockTeacher(1, "part_time", 5),
+                MockTeacher(2, "part_time", 5),
+            ]
+            states = _build_teacher_states(teachers)
+            used = set()
+            result1 = allocate_teachers_patrol(1, 1, 1, states, used_slot_pairs=used)
+            result2 = allocate_teachers_patrol(2, 1, 1, states, used_slot_pairs=used)
+
+            self.assertEqual(len(result1), 2)
+            self.assertEqual(len(result2), 0)  # 同一场次对已分配
+
+        def test_patrol_group_names(self):
+            """测试流动监考分组名称分配"""
+            teachers = [
+                MockTeacher(1, "part_time", 5),
+                MockTeacher(2, "part_time", 5),
+                MockTeacher(3, "part_time", 5),
+            ]
+            states = _build_teacher_states(teachers)
+            classrooms = [
+                MockClassroomAssign(101, name="5-201"),
+                MockClassroomAssign(102, name="理东二101"),
+            ]
+            group_rules = [
+                {"group_name": "5-2及理东二", "patterns": ["5-2*", "理东二"]},
+                {"group_name": "5-3", "patterns": ["5-3*"]},
+            ]
+            used = set()
+            result = allocate_teachers_patrol(
+                1, 1, 1, states,
+                used_slot_pairs=used,
+                classrooms_in_slot=classrooms,
+                group_rules=group_rules,
+                patrol_count=3,
+            )
+
+            self.assertEqual(len(result), 3)
+            # 只有 "5-2及理东二" 分组匹配
+            group_names = [r.patrol_group_name for r in result]
+            self.assertIn("5-2及理东二", group_names)
+            # 轮询分配：3个教师都应分配到该分组（唯一活跃分组）
+            self.assertEqual(group_names, ["5-2及理东二", "5-2及理东二", "5-2及理东二"])
 
         def test_hc05_max_slots(self):
             """验证HC-05：教师不超过max_slots"""
@@ -396,10 +492,10 @@ if __name__ == "__main__":
             """测试教师资源不足的情况"""
             teachers = [MockTeacher(1, "full_time", 1)]  # 只有1人
             states = _build_teacher_states(teachers)
-            classrooms = [MockClassroomAssign(101)]  # 需要2人
+            classrooms = [MockClassroomAssign(101)]  # 需要2人，但只有1人可用
             result = allocate_teachers_fixed(1, classrooms, states)
-            # 只有1名教师，max_slots=1，最多分配1人，需要2人 -> 失败
-            self.assertEqual(len(result), 0)
+            # 资源不足时降为1人/考场，所以能分配1人
+            self.assertEqual(len(result), 1)
 
         def test_continuous_slots(self):
             """测试连续时段判断"""

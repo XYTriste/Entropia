@@ -48,11 +48,56 @@ async def list_courses(
     data_items = []
     for c in items:
         item = CourseResponse.model_validate(c).model_dump()
-        item["linked_classes"] = [
+        linked_classes = [
             {"class_id": cl.class_id, "class_name": cl.class_.name if cl.class_ else None, "grade": cl.grade}
             for cl in c.class_links
         ]
+        item["linked_classes"] = linked_classes
         item["linked_class_count"] = len(c.class_links)
+
+        # 计算排考状态：基于课程下各班级是否已被安排考试
+        linked_class_ids = {cl.class_id for cl in c.class_links}
+        scheduled_class_ids = set()
+        for exam in c.exams:
+            if exam.status.value == "scheduled":
+                for ec in exam.classroom_assignments:
+                    for ca in ec.class_assignments:
+                        scheduled_class_ids.add(ca.class_id)
+
+        scheduled_classes = [lc for lc in linked_classes if lc["class_id"] in scheduled_class_ids]
+        unscheduled_classes = [lc for lc in linked_classes if lc["class_id"] not in scheduled_class_ids]
+
+        if len(scheduled_classes) == 0:
+            schedule_status = "unscheduled"
+        elif len(unscheduled_classes) == 0:
+            schedule_status = "scheduled"
+        else:
+            schedule_status = "partial"
+
+        item["schedule_status"] = schedule_status
+        item["scheduled_class_count"] = len(scheduled_classes)
+        item["unscheduled_class_count"] = len(unscheduled_classes)
+        item["scheduled_classes"] = scheduled_classes
+        item["unscheduled_classes"] = unscheduled_classes
+
+        # 计算选课人数（总人数 + AB卷分卷人数）
+        total_students = sum(cl.class_.student_count for cl in c.class_links if cl.class_)
+        a_student_count = 0
+        b_student_count = 0
+        for exam in c.exams:
+            exam_total = sum(ec.total_students for ec in exam.classroom_assignments)
+            if exam.exam_label and exam.exam_label.value == "A":
+                a_student_count = exam_total
+            elif exam.exam_label and exam.exam_label.value == "B":
+                b_student_count = exam_total
+            elif not exam.exam_label:
+                # 非AB卷单场考试，计入总人数（但总人数已从班级统计，这里仅用于A/B卷显示）
+                pass
+
+        item["student_count"] = total_students
+        item["a_student_count"] = a_student_count
+        item["b_student_count"] = b_student_count
+
         data_items.append(item)
 
     return {
@@ -158,15 +203,25 @@ async def get_course_classes(
     course_id: int,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """获取课程关联的班级"""
-    course = await course_crud.get_or_404(db, course_id)
+    """获取课程关联的班级（含专业信息）"""
+    result = await db.execute(
+        select(Course)
+        .where(Course.id == course_id)
+        .options(selectinload(Course.class_links).selectinload(CourseClass.class_).selectinload(Class.major))
+    )
+    course = result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail=f"课程(id={course_id})不存在")
 
     classes = []
     for cc in course.class_links:
+        cls = cc.class_
         classes.append({
             "class_id": cc.class_id,
-            "class_name": cc.class_.name if hasattr(cc, "class_") and cc.class_ else None,
+            "class_name": cls.name if cls else None,
             "grade": cc.grade,
+            "major_id": cls.major_id if cls else None,
+            "major_name": cls.major.name if cls and cls.major else None,
         })
 
     return {"code": 0, "message": "success", "data": {"course_id": course_id, "classes": classes}}

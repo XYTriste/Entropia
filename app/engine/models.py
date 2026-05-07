@@ -129,6 +129,7 @@ class ExamTeacher:
     teacher_id: int
     role: Literal["fixed", "patrol"]
     classroom_id: int | None = None
+    patrol_group_name: str | None = None
 
 
 # ============================================================
@@ -207,8 +208,9 @@ class ConflictReport:
 class SchedulingResult:
     """排考总结果"""
     success: bool
-    exams: list[ExamResult]  # 考试安排结果
+    exams: list[ExamResult]  # 考试安排结果（合并展示用）
     patrol_teachers: list[PatrolResult]  # 流动监考分配
     violations: list[str]  # 违规信息
     conflict_report: ConflictReport  # 冲突分析
     solve_time: float  # 求解耗时(秒)
+    raw_exams: list[Exam] = field(default_factory=list)  # 原始考试对象（含A/B独立记录）

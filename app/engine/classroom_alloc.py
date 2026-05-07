@@ -38,10 +38,18 @@ class ClassroomAssignment:
     total_students: int = 0
 
 
+def _match_priority(name: str, pattern: str) -> bool:
+    if pattern.endswith("*"):
+        return name.startswith(pattern[:-1])
+    return name == pattern
+
+
 def allocate_classrooms(
     student_count: int,
     classes: list,
     classrooms: list,
+    excluded_room_ids: set[int] | None = None,
+    priority_rules: list[dict] | None = None,
 ) -> list[ClassroomAssignment]:
     """
     为学生分配教室，支持班级拆分。
@@ -50,6 +58,7 @@ def allocate_classrooms(
         student_count: 学生总数
         classes: 需要分配的班级列表（每个Class含student_count）
         classrooms: 可用教室列表（每个Classroom含capacity）
+        excluded_room_ids: 已排除（被占用）的教室ID集合
 
     返回:
         ClassroomAssignment列表，表示每个教室分配的班级片段
@@ -62,7 +71,8 @@ def allocate_classrooms(
     # --------------------------------------------------------
     # 步骤1: 过滤与基本检查
     # --------------------------------------------------------
-    active_rooms = [r for r in classrooms if getattr(r, "is_active", True)]
+    excluded = excluded_room_ids or set()
+    active_rooms = [r for r in classrooms if getattr(r, "is_active", True) and r.id not in excluded]
     if not active_rooms:
         return []
 
@@ -74,8 +84,21 @@ def allocate_classrooms(
     # --------------------------------------------------------
     # 步骤2: 初始化教室状态
     # --------------------------------------------------------
+    def _room_sort_key(room):
+        if priority_rules:
+            for rule in priority_rules:
+                for pattern in rule["patterns"]:
+                    if _match_priority(room.name, pattern):
+                        return (rule["priority"], -room.capacity)
+        # 默认优先级：未配置时 5-2xx 优先于 5-3xx
+        if room.name.startswith("5-2"):
+            return (1, -room.capacity)
+        if room.name.startswith("5-3"):
+            return (2, -room.capacity)
+        return (float("inf"), -room.capacity)
+
     room_states: list[dict] = []
-    for r in sorted(active_rooms, key=lambda x: x.capacity, reverse=True):
+    for r in sorted(active_rooms, key=_room_sort_key):
         room_states.append(
             {
                 "room": r,

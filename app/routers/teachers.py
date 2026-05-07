@@ -20,7 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud import teacher as teacher_crud
 from app.database import get_db
 from app.models.teacher import Teacher, TeacherType
+from app.models.exam import Exam
+from app.models.exam_teacher import ExamTeacher
+from app.models.time_slot import TimeSlot
+from app.models.classroom import Classroom
+from app.models.course import Course
+from app.models.exam_classroom import ExamClassroom
 from app.schemas.teacher import TeacherCreate, TeacherResponse, TeacherUpdate
+from sqlalchemy.orm import selectinload
 
 router = APIRouter()
 
@@ -69,6 +76,8 @@ async def list_teachers(
             "limit": limit,
         },
     }
+
+
 
 
 # ---------- 详情 ----------
@@ -225,5 +234,86 @@ async def get_teacher_workload(
                 {"id": t.id, "name": t.name, "current": t.current_slots, "max": t.max_slots}
                 for t in overload_teachers
             ],
+        },
+    }
+
+
+# ---------- 教师监考安排 ----------
+
+
+@router.get("/{teacher_id}/exams", response_model=dict)
+async def get_teacher_exams(
+    teacher_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """获取教师的监考安排详情"""
+    teacher = await teacher_crud.get_or_404(db, teacher_id)
+
+    # 查询该教师的所有监考（固定+流动）
+    result = await db.execute(
+        select(ExamTeacher)
+        .where(ExamTeacher.teacher_id == teacher_id)
+        .options(
+            selectinload(ExamTeacher.exam).selectinload(Exam.course),
+            selectinload(ExamTeacher.exam).selectinload(Exam.time_slot),
+            selectinload(ExamTeacher.exam).selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.classroom),
+        )
+    )
+    exam_teachers = result.scalars().all()
+
+    fixed_exams = []
+    patrol_exams = []
+    for et in exam_teachers:
+        exam = et.exam
+        if not exam:
+            continue
+        slot = exam.time_slot
+        exam_info = {
+            "exam_id": exam.id,
+            "course_id": exam.course_id,
+            "course_name": exam.course.name if exam.course else "",
+            "course_type": exam.course.course_type.value if exam.course else "",
+            "exam_label": exam.exam_label.value if exam.exam_label else "",
+            "day_of_week": slot.day_of_week if slot else None,
+            "day_name": f"周{'一二三四五'[(slot.day_of_week or 1) - 1]}" if slot else "",
+            "slot_code": slot.slot_code if slot else "",
+            "time_range": f"{slot.start_time}-{slot.end_time}" if slot else "",
+            "classrooms": [
+                {
+                    "classroom_id": ec.classroom_id,
+                    "classroom_name": ec.classroom.name if ec.classroom else f"教室{ec.classroom_id}",
+                    "total_students": ec.total_students,
+                }
+                for ec in (exam.classroom_assignments or [])
+            ],
+        }
+        if et.role.value == "fixed":
+            # 固定监考需标注具体教室及该教室人数
+            classroom = None
+            assigned_student_count = 0
+            if et.classroom_id:
+                for ec in exam.classroom_assignments:
+                    if ec.classroom_id == et.classroom_id:
+                        classroom = ec.classroom.name if ec.classroom else f"教室{ec.classroom_id}"
+                        assigned_student_count = ec.total_students or 0
+                        break
+            exam_info["assigned_classroom"] = classroom
+            exam_info["assigned_student_count"] = assigned_student_count
+            fixed_exams.append(exam_info)
+        else:
+            patrol_exams.append(exam_info)
+
+    return {
+        "code": 0,
+        "message": "success",
+        "data": {
+            "teacher_id": teacher_id,
+            "teacher_name": teacher.name,
+            "current_slots": teacher.current_slots,
+            "max_slots": teacher.max_slots,
+            "fixed_count": len(fixed_exams),
+            "patrol_count": len(patrol_exams),
+            "fixed_exams": sorted(fixed_exams, key=lambda x: (x["day_of_week"] or 0, x["slot_code"] or "")),
+            "patrol_exams": sorted(patrol_exams, key=lambda x: (x["day_of_week"] or 0, x["slot_code"] or "")),
         },
     }

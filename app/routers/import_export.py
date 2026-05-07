@@ -26,6 +26,13 @@ from app.models.major import Major
 from app.models.student import Student
 from app.models.teacher import Teacher
 from app.models.time_slot import TimeSlot
+from app.models.exam import Exam
+from app.models.exam_classroom import ExamClassroom
+from app.models.exam_classroom_class import ExamClassroomClass
+from app.models.exam_teacher import ExamTeacher
+from app.models.patrol_teacher import PatrolTeacher
+from app.models.schedule_version import ScheduleVersion
+from app.models.audit_log import AuditLog
 from app.services.export_service import export_excel, export_json, export_sql
 from app.services.import_service import (
     import_classrooms_csv,
@@ -37,6 +44,7 @@ from app.services.import_service import (
     generate_excel_template,
     import_excel,
 )
+from app.services.import_service_allinone import import_all_in_one, generate_all_in_one_template
 
 router = APIRouter()
 
@@ -190,6 +198,17 @@ async def export_sql_file(
 # ============================================================
 
 
+@router.get("/templates/all-in-one")
+async def download_all_in_one_template():
+    """下载全量数据导入模板（多Sheet）"""
+    excel_bytes = generate_all_in_one_template()
+    return StreamingResponse(
+        io.BytesIO(excel_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=all_in_one_template.xlsx"},
+    )
+
+
 @router.get("/templates/{entity}")
 async def download_template(entity: str):
     """下载指定实体的 Excel 导入模板"""
@@ -340,5 +359,107 @@ async def init_time_slots(
                  "start_time": s.start_time, "end_time": s.end_time}
                 for i, s in enumerate(slots)
             ],
+        },
+    }
+
+
+# ============================================================
+# 全量数据级联导入
+# ============================================================
+
+
+@router.post("/import-excel-all", response_model=dict)
+async def import_excel_all_endpoint(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """全量数据级联导入（单文件多Sheet）"""
+    if not file.filename.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="请上传 .xlsx 格式的 Excel 文件")
+
+    file_bytes = await file.read()
+    result = await import_all_in_one(db, file_bytes)
+    await db.commit()
+    return {"code": 0, "message": result["overall_summary"], "data": result}
+
+
+@router.get("/templates/all-in-one")
+async def download_all_in_one_template():
+    """下载全量数据导入模板（多Sheet）"""
+    excel_bytes = generate_all_in_one_template()
+    return StreamingResponse(
+        io.BytesIO(excel_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=all_in_one_template.xlsx"},
+    )
+
+
+# ============================================================
+# 一键清除基础数据
+# ============================================================
+
+
+class ClearDataRequest(BaseModel):
+    confirm: bool = False
+    preserve_audit_logs: bool = True
+
+
+@router.post("/clear-data", response_model=dict)
+async def clear_all_data(
+    req: ClearDataRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """一键清除全部基础数据（保留时段）
+
+    请求体: { "confirm": true, "preserve_audit_logs": true }
+
+    清除顺序（从依赖链末端开始，避免外键冲突）：
+    监考分配 → 巡考分配 → 考场班级分配 → 考场 → 考试 → 课程班级关联 → 学生 → 班级 → 课程 → 专业 → 教师 → 教室
+
+    保留：时段表、（可选）审计日志
+    """
+    if not req.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="此操作将清空所有基础数据，请在请求体中设置 confirm: true 以确认执行"
+        )
+
+    cleared_counts = {}
+
+    # 使用 TRUNCATE ... CASCADE 高效清除，按依赖顺序
+    tables_to_truncate = [
+        ("exam_teachers", ExamTeacher.__tablename__),
+        ("patrol_teachers", PatrolTeacher.__tablename__),
+        ("exam_classroom_classes", ExamClassroomClass.__tablename__),
+        ("exam_classrooms", ExamClassroom.__tablename__),
+        ("exams", Exam.__tablename__),
+        ("course_classes", CourseClass.__tablename__),
+        ("students", Student.__tablename__),
+        ("classes", Class.__tablename__),
+        ("courses", Course.__tablename__),
+        ("majors", Major.__tablename__),
+        ("teachers", Teacher.__tablename__),
+        ("classrooms", Classroom.__tablename__),
+    ]
+
+    if not req.preserve_audit_logs:
+        tables_to_truncate.insert(0, ("audit_logs", AuditLog.__tablename__))
+        tables_to_truncate.insert(0, ("schedule_versions", ScheduleVersion.__tablename__))
+
+    for label, table_name in tables_to_truncate:
+        try:
+            result = await db.execute(text(f"TRUNCATE TABLE {table_name} CASCADE"))
+            cleared_counts[label] = "已清空"
+        except Exception as e:
+            cleared_counts[label] = f"失败: {e}"
+
+    await db.commit()
+
+    return {
+        "code": 0,
+        "message": "数据清除完成",
+        "data": {
+            "cleared": cleared_counts,
+            "preserved": ["time_slots"] + (["audit_logs", "schedule_versions"] if req.preserve_audit_logs else []),
         },
     }

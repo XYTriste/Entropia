@@ -10,7 +10,7 @@
 - HC-03: 单个教室同一时段内涉及班级数量不得超过2个
 - HC-04: 教室实际安排人数不得超过其容量
 - HC-05: 每位教师监考总场次不超过其个人上限
-- HC-06: 每个时段必须恰好安排3名流动监考
+- HC-06: 每个上下午场次对(slot_pair)必须恰好安排patrol_count名流动监考
 - HC-07: 分AB卷时，同一班级整体划入A或B，不得拆分
 - HC-08: 专业课只能安排在公共课排完后的空闲时段
 - HC-09: 排满策略——按周一到周五顺序紧凑填充，不允许稀疏排考
@@ -256,41 +256,45 @@ def add_hc05_teacher_max_slots(
 
 
 # ============================================================
-# HC-06: 每个时段必须恰好安排3名流动监考
+# HC-06: 每个上下午场次对必须恰好安排 patrol_count 名流动监考
 # ============================================================
-def add_hc06_exactly_three_patrol(
+def add_hc06_patrol_per_slot_pair(
     model: cp_model.CpModel,
     patrol_vars: dict[tuple[int, int], cp_model.IntVar],
     time_slots: list[TimeSlot],
+    patrol_count: int = 2,
 ) -> list:
     """
-    HC-06: 每个时段必须恰好安排3名流动监考教师。
+    HC-06: 每个上下午场次对(slot_pair)必须恰好安排 patrol_count 名流动监考教师。
+    同一场次对内的两个时段（如T1/T2或T3/T4）共享同一组流动监考。
 
     建模方式:
-        对于每个时段s：
-        sum(patrol_vars[teacher_id, s.id]) == 3
+        对于每个 slot_pair（按 day_of_week + slot_pair 聚合）：
+        sum(patrol_vars[teacher_id, slot_pair_key]) == patrol_count
 
     参数:
         model: CP-SAT模型
-        patrol_vars: 映射 (teacher_id, time_slot_id) -> BoolVar
+        patrol_vars: 映射 (teacher_id, slot_pair_key) -> BoolVar
         time_slots: 时段列表
+        patrol_count: 需要的流动监考人数（默认2）
 
     返回:
         添加的约束列表
     """
     constraints: list = []
 
-    # 按时段ID聚合
-    slot_vars: dict[int, list] = {}
-    for (teacher_id, slot_id), var in patrol_vars.items():
-        if slot_id not in slot_vars:
-            slot_vars[slot_id] = []
-        slot_vars[slot_id].append(var)
+    # 按 (day_of_week, slot_pair) 聚合
+    pair_vars: dict[tuple[int, int], list] = {}
+    for (teacher_id, slot_pair_key), var in patrol_vars.items():
+        if slot_pair_key not in pair_vars:
+            pair_vars[slot_pair_key] = []
+        pair_vars[slot_pair_key].append(var)
 
     for slot in time_slots:
-        if slot.id in slot_vars:
+        key = (slot.day_of_week, slot.slot_pair if hasattr(slot, "slot_pair") else (1 if slot.slot_code in ("T1", "T2") else 2))
+        if key in pair_vars:
             constraints.append(
-                model.Add(sum(slot_vars[slot.id]) == 3)
+                model.Add(sum(pair_vars[key]) == patrol_count)
             )
 
     return constraints
@@ -583,23 +587,30 @@ if __name__ == "__main__":
             self.assertLessEqual(solver.Value(t2_e1), 1)
 
         def test_hc06_patrol_count(self):
-            """测试HC-06流动监考恰好3名"""
+            """测试HC-06流动监考每slot_pair恰好patrol_count名"""
             model = cp_model.CpModel()
 
-            # 模拟5位教师竞争1个时段的3个流动监考位
-            slot_id = 1
+            # 模拟5位教师竞争1个slot_pair的3个流动监考位
+            # key 格式: (teacher_id, slot_pair_key)
+            slot_pair_key = (1, 1)  # 周1上午
             patrol_vars = {}
             for t in range(1, 6):
-                var = model.NewBoolVar(f"patrol_t{t}_s{slot_id}")
-                patrol_vars[(t, slot_id)] = var
+                var = model.NewBoolVar(f"patrol_t{t}_sp{slot_pair_key}")
+                patrol_vars[(t, slot_pair_key)] = var
 
             class MockTimeSlot:
                 def __init__(self, id):
                     self.id = id
+                    self.day_of_week = 1
+                    self.slot_code = "T1"
+
+                @property
+                def slot_pair(self):
+                    return 1 if self.slot_code in ("T1", "T2") else 2
 
             time_slots = [MockTimeSlot(1)]
 
-            add_hc06_exactly_three_patrol(model, patrol_vars, time_slots)
+            add_hc06_patrol_per_slot_pair(model, patrol_vars, time_slots, patrol_count=3)
 
             solver = cp_model.CpSolver()
             status = solver.Solve(model)

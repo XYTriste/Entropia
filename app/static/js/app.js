@@ -223,6 +223,49 @@ const App = {
     hideModal() {
       document.getElementById('modalContainer').innerHTML = '';
     },
+    // 生成课程时段下拉框 HTML（用于 courses 的 dept_assigned_time_slot_id 字段）
+    renderCourseSlotSelect(fieldKey, currentValue) {
+      const dayNames = ['', '周一', '周二', '周三', '周四', '周五'];
+      const slots = App.cache.timeSlots || [];
+      const courses = App.cache.courses || [];
+      // 找出已被公共课占用的时段
+      const occupied = {};
+      courses.forEach(c => {
+        if (c.course_type === 'public' && c.dept_assigned_time_slot_id) {
+          occupied[c.dept_assigned_time_slot_id] = c.name;
+        }
+      });
+      let html = `<select class="form-select" id="form_${fieldKey}"><option value="">--请选择时段--</option>`;
+      slots.forEach(ts => {
+        const dayName = dayNames[ts.day_of_week] || '';
+        const label = `${dayName} ${ts.slot_code} (${ts.start_time}-${ts.end_time})`;
+        const occName = occupied[ts.id];
+        const isOcc = !!occName;
+        const disabled = isOcc ? 'disabled' : '';
+        const style = isOcc ? 'style="color:#dc2626;background:#fee2e2;"' : '';
+        const occText = isOcc ? ` [已被${occName}占用]` : '';
+        const selected = String(ts.id) === String(currentValue) ? 'selected' : '';
+        html += `<option value="${ts.id}" ${disabled} ${style} ${selected}>${label}${occText}</option>`;
+      });
+      html += '</select>';
+      if (Object.keys(occupied).length > 0) {
+        html += `<div class="text-xs text-gray-500 mt-1"><i class="fas fa-info-circle text-info mr-1"></i>红色选项表示已被其他公共课占用，AB卷课程会同时占用两个连续时段</div>`;
+      }
+      return html;
+    },
+    // 检查课程时段冲突
+    checkCourseTimeSlotConflict(slotId, excludeCourseId) {
+      if (!slotId) return [];
+      const courses = App.cache.courses || [];
+      const conflicts = [];
+      courses.forEach(c => {
+        if (c.course_type === 'public' && c.dept_assigned_time_slot_id == slotId) {
+          if (excludeCourseId && c.id === excludeCourseId) return;
+          conflicts.push(c.name);
+        }
+      });
+      return conflicts;
+    },
     // 下载文件
     downloadBlob(blob, filename) {
       const url = URL.createObjectURL(blob);
@@ -313,12 +356,13 @@ const App = {
     async dashboard() {
       try {
         // Fetch summary data in parallel
-        const [teachers, classrooms, courses, students, versions] = await Promise.all([
+        const [teachers, classrooms, courses, students, versions, examsRes] = await Promise.all([
           App.api.getList('/teachers/').catch(() => []),
           App.api.getList('/classrooms/').catch(() => []),
           App.api.getList('/courses/').catch(() => []),
           App.api.getList('/students/').catch(() => []),
           App.api.getList('/scheduler/versions').catch(() => []),
+          App.api.request(`${API_BASE}/exams/`).catch(() => null),
         ]);
         // Cache data
         App.cache.teachers = teachers;
@@ -328,14 +372,15 @@ const App = {
         App.cache.versions = versions;
 
         // Update stats
-        const scheduledCount = courses.filter(c => c.is_scheduled || c.exam_count > 0).length;
+        const scheduledCount = (examsRes && examsRes.data && examsRes.data.total) || 0;
+        const hasPublishedVersion = versions && versions.some(v => v.status === 'published');
         document.getElementById('statTeachers').textContent = teachers.length || 0;
         document.getElementById('statClassrooms').textContent = classrooms.length || 0;
         document.getElementById('statCourses').textContent = courses.length || 0;
         document.getElementById('statStudents').textContent = students.length || 0;
         document.getElementById('statScheduled').textContent = scheduledCount;
-        document.getElementById('statPending').textContent = (courses.length || 0) - scheduledCount;
-        const latestVersion = versions && versions.length > 0 ? versions[0].version_number || versions[0].id : '--';
+        document.getElementById('statPending').textContent = hasPublishedVersion ? 0 : (courses.length || 0);
+        const latestVersion = versions && versions.length > 0 ? versions[0].version_no || versions[0].id : '--';
         document.getElementById('statVersion').textContent = latestVersion;
         document.getElementById('currentVersion').textContent = latestVersion;
 
@@ -351,24 +396,44 @@ const App = {
       try {
         const logs = await App.api.getList('/audit-logs/');
         const container = document.getElementById('recentActivity');
-        if (!logs || logs.length === 0) {
-          container.innerHTML = '<div class="empty-state"><i class="fas fa-inbox"></i><p>暂无操作记录</p></div>';
+        if (logs && logs.length > 0) {
+          const recent = logs.slice(0, 10);
+          const typeIcons = { CREATE: 'plus-circle', UPDATE: 'edit', DELETE: 'trash', SCHEDULE: 'magic', ADJUST: 'sliders-h', TRANSFER: 'exchange-alt', IMPORT: 'file-import', EXPORT: 'file-export' };
+          container.innerHTML = `<div class="space-y-2">${recent.map(log => `
+            <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-all">
+              <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
+                <i class="fas fa-${typeIcons[log.operation_type] || 'circle'} text-xs"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm text-gray-800 truncate">${App.utils.escapeHtml(log.operation_type_display || log.operation_type)} - ${App.utils.escapeHtml(log.entity_name || log.entity_type || '')}</div>
+                <div class="text-xs text-gray-500">${App.utils.escapeHtml(log.operator_name || '系统')} · ${App.utils.formatDateTime(log.created_at)}</div>
+              </div>
+              <span class="badge ${log.operation_type === 'DELETE' ? 'badge-danger' : log.operation_type === 'CREATE' ? 'badge-success' : 'badge-info'} flex-shrink-0">${App.utils.escapeHtml(log.reason || '')}</span>
+            </div>
+          `).join('')}</div>`;
           return;
         }
-        const recent = logs.slice(0, 10);
-        const typeIcons = { CREATE: 'plus-circle', UPDATE: 'edit', DELETE: 'trash', SCHEDULE: 'magic', ADJUST: 'sliders-h', TRANSFER: 'exchange-alt', IMPORT: 'file-import', EXPORT: 'file-export' };
-        container.innerHTML = `<div class="space-y-2">${recent.map(log => `
-          <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-all">
-            <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
-              <i class="fas fa-${typeIcons[log.operation_type] || 'circle'} text-xs"></i>
+        // Fallback: use scheduler versions as activity log
+        const versions = App.cache.versions || await App.api.getList('/scheduler/versions').catch(() => []);
+        if (versions && versions.length > 0) {
+          const recent = versions.slice(0, 10);
+          const statusMap = { published: '已发布', draft: '草稿', archived: '已归档' };
+          const statusBadge = { published: 'badge-success', draft: 'badge-warning', archived: 'badge-gray' };
+          container.innerHTML = `<div class="space-y-2">${recent.map(v => `
+            <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-all">
+              <div class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 flex-shrink-0">
+                <i class="fas fa-code-branch text-xs"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm text-gray-800 truncate">排考版本 ${App.utils.escapeHtml(v.version_no || 'V' + v.id)} - ${App.utils.escapeHtml(v.description || '')}</div>
+                <div class="text-xs text-gray-500">系统 · ${App.utils.formatDateTime(v.created_at)}</div>
+              </div>
+              <span class="badge ${statusBadge[v.status] || 'badge-info'} flex-shrink-0">${statusMap[v.status] || v.status}</span>
             </div>
-            <div class="flex-1 min-w-0">
-              <div class="text-sm text-gray-800 truncate">${App.utils.escapeHtml(log.operation_type_display || log.operation_type)} - ${App.utils.escapeHtml(log.entity_name || log.entity_type || '')}</div>
-              <div class="text-xs text-gray-500">${App.utils.escapeHtml(log.operator_name || '系统')} · ${App.utils.formatDateTime(log.created_at)}</div>
-            </div>
-            <span class="badge ${log.operation_type === 'DELETE' ? 'badge-danger' : log.operation_type === 'CREATE' ? 'badge-success' : 'badge-info'} flex-shrink-0">${App.utils.escapeHtml(log.reason || '')}</span>
-          </div>
-        `).join('')}</div>`;
+          `).join('')}</div>`;
+          return;
+        }
+        container.innerHTML = '<div class="empty-state"><i class="fas fa-inbox"></i><p>暂无操作记录</p></div>';
       } catch {
         document.getElementById('recentActivity').innerHTML = '<div class="empty-state"><i class="fas fa-inbox"></i><p>暂无操作记录</p></div>';
       }
@@ -397,6 +462,7 @@ const App = {
               { header: '类型', key: 'teacher_type', render: (r) => `<span class="badge ${r.teacher_type === 'full_time' ? 'badge-info' : 'badge-warning'}">${r.teacher_type === 'full_time' ? '专任' : '兼职'}</span>` },
               { header: '最大场次', key: 'max_slots', width: '80px' },
               { header: '当前场次', key: 'current_slots', width: '80px' },
+              { header: '关联监考', key: 'current_slots', width: '100px', render: (r) => `<button class="btn btn-info btn-xs" onclick="App.handlers.viewTeacherExams(${r.id}, '${App.utils.escapeHtml(r.name)}')"><i class="fas fa-user-clock"></i> ${r.current_slots || 0}场</button>` },
               { header: '启用', key: 'is_active', render: (r) => `<span class="badge ${r.is_active !== false ? 'badge-success' : 'badge-danger'}">${r.is_active !== false ? '是' : '否'}</span>` },
               { header: '操作', render: (r) => `<div class="flex gap-1"><button class="btn btn-primary btn-xs" onclick="App.handlers.editItem('${type}', ${r.id})"><i class="fas fa-edit"></i></button><button class="btn btn-danger btn-xs" onclick="App.handlers.deleteItem('${type}', ${r.id})"><i class="fas fa-trash"></i></button></div>`, width: '90px' },
             ];
@@ -416,13 +482,31 @@ const App = {
             data = await App.api.getList('/classrooms/');
             break;
           case 'courses':
+            // 预加载时段数据用于友好显示
+            if (!App.cache.timeSlots || App.cache.timeSlots.length === 0) {
+              try { App.cache.timeSlots = await App.api.getList('/time-slots/'); } catch(e) {}
+            }
+            const dayNames = ['', '周一', '周二', '周三', '周四', '周五'];
+            const tsMap = {};
+            (App.cache.timeSlots || []).forEach(ts => { tsMap[ts.id] = ts; });
             columns = [
               { header: 'ID', key: 'id', width: '60px' },
               { header: '课程名称', key: 'name' },
               { header: '类型', key: 'course_type', render: (r) => `<span class="badge ${r.course_type === 'public' ? 'badge-info' : 'badge-warning'}">${r.course_type === 'public' ? '公共课' : '专业课'}</span>` },
               { header: 'AB卷', key: 'needs_ab', render: (r) => `<span class="badge ${r.needs_ab ? 'badge-warning' : 'badge-gray'}">${r.needs_ab ? '是' : '否'}</span>` },
-              { header: '分配日期', key: 'dept_assigned_date', width: '80px', render: (r) => r.dept_assigned_date || '--' },
-              { header: '分配时段', key: 'dept_assigned_time_slot_id', width: '80px', render: (r) => r.dept_assigned_time_slot_id || '--' },
+              { header: '分配日期', key: 'dept_assigned_date', width: '80px', render: (r) => r.dept_assigned_date ? (dayNames[r.dept_assigned_date] || r.dept_assigned_date) : '--' },
+              { header: '分配时段', key: 'dept_assigned_time_slot_id', width: '160px', render: (r) => {
+                const ts = tsMap[r.dept_assigned_time_slot_id];
+                if (ts) {
+                  const dayName = dayNames[ts.day_of_week] || '';
+                  return `${dayName} ${ts.slot_code} ${ts.start_time}-${ts.end_time}`;
+                }
+                return r.dept_assigned_time_slot_id || '--';
+              }},
+              { header: '关联班级', key: 'linked_class_count', width: '100px', render: (r) => {
+                const count = r.linked_class_count || (r.linked_classes ? r.linked_classes.length : 0);
+                return `<button class="btn btn-info btn-xs" onclick="App.handlers.viewCourseClasses(${r.id}, '${App.utils.escapeHtml(r.name)}')"><i class="fas fa-users"></i> ${count || 0}个班</button>`;
+              }},
               { header: '启用', key: 'is_active', render: (r) => `<span class="badge ${r.is_active !== false ? 'badge-success' : 'badge-danger'}">${r.is_active !== false ? '是' : '否'}</span>` },
               { header: '操作', render: (r) => `<div class="flex gap-1"><button class="btn btn-primary btn-xs" onclick="App.handlers.editItem('${type}', ${r.id})"><i class="fas fa-edit"></i></button><button class="btn btn-danger btn-xs" onclick="App.handlers.deleteItem('${type}', ${r.id})"><i class="fas fa-trash"></i></button></div>`, width: '90px' },
             ];
@@ -514,6 +598,14 @@ const App = {
       } catch {
         document.getElementById('schedulerCourseList').innerHTML = '<tr><td colspan="6" class="text-center text-gray-400 py-8">加载课程列表失败</td></tr>';
       }
+      // Load schedule config
+      try {
+        const configRes = await App.api.get('/scheduler/config');
+        const cfg = configRes.data || {};
+        const fixedCount = cfg.fixed_teachers_per_room || 2;
+        const radio = document.querySelector(`input[name="fixedTeachersPerRoom"][value="${fixedCount}"]`);
+        if (radio) radio.checked = true;
+      } catch { /* ignore */ }
     },
 
     // ---- 排考结果 ----
@@ -598,7 +690,7 @@ const App = {
       try {
         const teachers = await App.api.getList('/teachers/');
         App.cache.teachers = teachers;
-        const options = teachers.map(t => `<option value="${t.id}">${App.utils.escapeHtml(t.name)} (${App.utils.escapeHtml(t.teacher_id || '')})</option>`).join('');
+        const options = teachers.map(t => `<option value="${t.id}">${App.utils.escapeHtml(t.name)} (${t.current_slots || 0}场/${t.max_slots || 0}场)</option>`).join('');
         document.getElementById('teacherASelect').innerHTML = '<option value="">--请选择--</option>' + options;
         document.getElementById('teacherBSelect').innerHTML = '<option value="">--请选择--</option>' + options;
       } catch {
@@ -663,16 +755,24 @@ const App = {
       tbody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-400 py-8">暂无课程数据</td></tr>';
       return;
     }
-    tbody.innerHTML = courses.map(c => `
+    const statusMap = {
+      scheduled: { text: '已排', cls: 'badge-success' },
+      partial: { text: '部分未排', cls: 'badge-warning' },
+      unscheduled: { text: '未排', cls: 'badge-gray' },
+    };
+    tbody.innerHTML = courses.map(c => {
+      const st = statusMap[c.schedule_status] || statusMap.unscheduled;
+      return `
       <tr>
         <td><input type="checkbox" class="form-checkbox course-checkbox" value="${c.id}" ${App.scheduler.selectedCourses.has(String(c.id)) ? 'checked' : ''}></td>
         <td>${App.utils.escapeHtml(c.name || c.course_name || '')}</td>
         <td>${App.utils.courseTypeBadge(c.course_type)}</td>
-        <td>${c.student_count || '--'}</td>
+        <td><div class="text-sm">${c.student_count !== undefined ? c.student_count + '人' : '--'}</div>${c.needs_ab ? `<div class="text-xs text-gray-500">A: ${c.a_student_count || 0} / B: ${c.b_student_count || 0}</div>` : ''}</td>
         <td>${App.utils.escapeHtml(c.exam_form || '笔试')}</td>
-        <td>${c.is_scheduled ? '<span class="badge badge-success">已排</span>' : '<span class="badge badge-gray">未排</span>'}</td>
+        <td><button class="badge ${st.cls} cursor-pointer" style="border:none;" onclick="App.handlers.viewCourseScheduleStatus(${c.id}, '${App.utils.escapeHtml(c.name || c.course_name || '').replace(/'/g, '\\\'')}', '${c.schedule_status || 'unscheduled'}')">${st.text}</button></td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
     // Bind checkbox events
     tbody.querySelectorAll('.course-checkbox').forEach(cb => {
       cb.addEventListener('change', (e) => {
@@ -704,17 +804,32 @@ const App = {
       App.pagination[App.currentBaseDataType].page = 1;
       App.pages.renderBaseDataTable();
     },
-    openAddModal() {
+    async openAddModal() {
       const type = App.currentBaseDataType;
       const fields = App.fieldDefs[type] || [];
-      const formHtml = fields.map(f => `
-        <div class="form-group">
-          <label class="form-label">${App.utils.escapeHtml(f.label)}${f.required ? ' <span class="text-danger">*</span>' : ''}</label>
-          ${f.type === 'select'
-            ? `<select class="form-select" id="form_${f.key}">${f.options.map(o => `<option value="${o.v}">${App.utils.escapeHtml(o.t)}</option>`).join('')}</select>`
-            : `<input type="${f.type || 'text'}" class="form-input" id="form_${f.key}" ${f.required ? 'required' : ''}>`}
-        </div>
-      `).join('');
+      // 预加载 timeSlots（课程管理需要）
+      if (type === 'courses' && (!App.cache.timeSlots || App.cache.timeSlots.length === 0)) {
+        try { App.cache.timeSlots = await App.api.getList('/time-slots/'); } catch(e) {}
+      }
+      const formHtml = fields.map(f => {
+        // 课程管理的时段字段使用下拉框
+        if (type === 'courses' && f.key === 'dept_assigned_time_slot_id') {
+          return `
+            <div class="form-group">
+              <label class="form-label">${App.utils.escapeHtml(f.label)}</label>
+              ${App.utils.renderCourseSlotSelect(f.key, '')}
+            </div>
+          `;
+        }
+        return `
+          <div class="form-group">
+            <label class="form-label">${App.utils.escapeHtml(f.label)}${f.required ? ' <span class="text-danger">*</span>' : ''}</label>
+            ${f.type === 'select'
+              ? `<select class="form-select" id="form_${f.key}">${f.options.map(o => `<option value="${o.v}">${App.utils.escapeHtml(o.t)}</option>`).join('')}</select>`
+              : `<input type="${f.type || 'text'}" class="form-input" id="form_${f.key}" ${f.required ? 'required' : ''}>`}
+          </div>
+        `;
+      }).join('');
       App.utils.showModal('新增' + App.currentBaseDataType, formHtml, () => App.handlers.submitAddItem(type, fields), '保存');
     },
     async submitAddItem(type, fields) {
@@ -726,6 +841,14 @@ const App = {
         if (f.required && !val) { App.utils.showToast(`${f.label}不能为空`, 'warning'); return; }
         data[f.key] = val;
       }
+      // 课程时段冲突校验
+      if (type === 'courses' && data.course_type === 'public' && data.dept_assigned_time_slot_id) {
+        const conflicts = App.utils.checkCourseTimeSlotConflict(data.dept_assigned_time_slot_id);
+        if (conflicts.length > 0) {
+          App.utils.showToast(`时段冲突：该时段已被 ${conflicts.join('、')} 占用，请重新选择`, 'error');
+          return;
+        }
+      }
       const urlMap = { teachers: '/teachers/', classrooms: '/classrooms/', courses: '/courses/', classes: '/classes/', students: '/students/', majors: '/majors/', timeSlots: '/time-slots/' };
       try {
         await App.api.post(urlMap[type], data);
@@ -735,14 +858,27 @@ const App = {
         App.utils.showToast(e.message || '添加失败', 'error');
       }
     },
-    editItem(type, id) {
+    async editItem(type, id) {
       const itemData = (App.cache[type] || []).find(item => item.id === id);
       if (!itemData) { App.utils.showToast('数据不存在', 'warning'); return; }
       const fields = App.fieldDefs[type] || [];
+      // 预加载 timeSlots（课程管理需要）
+      if (type === 'courses' && (!App.cache.timeSlots || App.cache.timeSlots.length === 0)) {
+        try { App.cache.timeSlots = await App.api.getList('/time-slots/'); } catch(e) {}
+      }
       const formHtml = fields.map(f => {
         let currentVal = itemData[f.key];
         if (currentVal === undefined || currentVal === null) currentVal = '';
         const valStr = String(currentVal);
+        // 课程管理的时段字段使用下拉框
+        if (type === 'courses' && f.key === 'dept_assigned_time_slot_id') {
+          return `
+            <div class="form-group">
+              <label class="form-label">${App.utils.escapeHtml(f.label)}</label>
+              ${App.utils.renderCourseSlotSelect(f.key, valStr)}
+            </div>
+          `;
+        }
         return `
           <div class="form-group">
             <label class="form-label">${App.utils.escapeHtml(f.label)}${f.required ? ' <span class="text-danger">*</span>' : ''}</label>
@@ -768,6 +904,14 @@ const App = {
         }
         data[f.key] = val;
       }
+      // 课程时段冲突校验
+      if (type === 'courses' && data.course_type === 'public' && data.dept_assigned_time_slot_id) {
+        const conflicts = App.utils.checkCourseTimeSlotConflict(data.dept_assigned_time_slot_id, id);
+        if (conflicts.length > 0) {
+          App.utils.showToast(`时段冲突：该时段已被 ${conflicts.join('、')} 占用，请重新选择`, 'error');
+          return;
+        }
+      }
       const urlMap = { teachers: '/teachers/', classrooms: '/classrooms/', courses: '/courses/', classes: '/classes/', students: '/students/', majors: '/majors/', timeSlots: '/time-slots/' };
       try {
         await App.api.put(`${urlMap[type]}${id}`, data);
@@ -788,6 +932,214 @@ const App = {
           App.utils.showToast(e.message || '删除失败', 'error');
         }
       }, '删除', '取消', 'btn-danger');
+    },
+    async viewCourseClasses(courseId, courseName) {
+      try {
+        const res = await App.api.get(`/courses/${courseId}/classes`);
+        const classes = (res.data && res.data.classes) ? res.data.classes : [];
+        // 按专业排序（major_id 升序），同专业按班级名称升序
+        classes.sort((a, b) => {
+          const ma = a.major_id || 0;
+          const mb = b.major_id || 0;
+          if (ma !== mb) return ma - mb;
+          return (a.class_name || '').localeCompare(b.class_name || '', 'zh-CN');
+        });
+        let html = '';
+        if (classes.length === 0) {
+          html = '<div class="empty-state"><i class="fas fa-users"></i><p>该课程暂无关联班级</p></div>';
+        } else {
+          // 按专业分组显示
+          let currentMajor = null;
+          html = '<div class="space-y-3">';
+          classes.forEach(c => {
+            const majorName = c.major_name || '未分配专业';
+            if (majorName !== currentMajor) {
+              if (currentMajor !== null) html += '</div></div></div>';
+              currentMajor = majorName;
+              html += `<div class="card"><div class="card-header" style="padding:10px 16px;background:#F9FAFB;"><h4 class="text-sm font-semibold text-gray-700"><i class="fas fa-graduation-cap text-primary mr-2"></i>${App.utils.escapeHtml(majorName)}</h4></div><div class="card-body" style="padding:12px 16px;"><div class="grid grid-cols-3 gap-2">`;
+            }
+            html += `<div class="flex items-center gap-2 p-2 bg-gray-50 rounded text-sm text-gray-700"><i class="fas fa-user-graduate text-gray-400"></i><span>${App.utils.escapeHtml(c.class_name || '--')}</span><span class="text-xs text-gray-400">(${c.grade}级)</span></div>`;
+          });
+          if (currentMajor !== null) html += '</div></div></div>';
+          html += '</div>';
+        }
+        App.utils.showModal(`${App.utils.escapeHtml(courseName)} - 关联班级（共${classes.length}个班）`, html, null);
+      } catch (e) {
+        App.utils.showToast('加载班级列表失败', 'error');
+      }
+    },
+    viewCourseScheduleStatus(courseId, courseName, scheduleStatus) {
+      const allCourses = App.scheduler.courses || App.cache.courses || [];
+      const course = allCourses.find(c => String(c.id) === String(courseId));
+      if (!course) {
+        App.utils.showToast('课程数据未加载，请刷新页面', 'warning');
+        return;
+      }
+      const scheduled = course.scheduled_classes || [];
+      const unscheduled = course.unscheduled_classes || [];
+      const statusText = { scheduled: '已排', partial: '部分未排', unscheduled: '未排' }[scheduleStatus] || '未排';
+
+      let html = '<div class="space-y-4">';
+      html += `<div class="text-sm text-gray-500">排考状态：<span class="badge ${scheduleStatus === 'scheduled' ? 'badge-success' : scheduleStatus === 'partial' ? 'badge-warning' : 'badge-gray'}">${statusText}</span></div>`;
+
+      if (scheduled.length > 0) {
+        html += '<div><div class="text-sm font-semibold text-gray-700 mb-2"><i class="fas fa-check-circle text-success mr-1"></i>已排班级（' + scheduled.length + '个）</div><div class="grid grid-cols-3 gap-2">';
+        scheduled.forEach(c => {
+          html += `<div class="flex items-center gap-2 p-2 bg-green-50 rounded text-sm text-gray-700"><i class="fas fa-user-graduate text-green-500"></i><span>${App.utils.escapeHtml(c.class_name || '--')}</span><span class="text-xs text-gray-400">(${c.grade}级)</span></div>`;
+        });
+        html += '</div></div>';
+      }
+
+      if (unscheduled.length > 0) {
+        html += '<div><div class="text-sm font-semibold text-gray-700 mb-2"><i class="fas fa-times-circle text-danger mr-1"></i>未排班级（' + unscheduled.length + '个）</div><div class="grid grid-cols-3 gap-2">';
+        unscheduled.forEach(c => {
+          html += `<div class="flex items-center gap-2 p-2 bg-gray-50 rounded text-sm text-gray-700"><i class="fas fa-user-graduate text-gray-400"></i><span>${App.utils.escapeHtml(c.class_name || '--')}</span><span class="text-xs text-gray-400">(${c.grade}级)</span></div>`;
+        });
+        html += '</div></div>';
+      }
+
+      if (scheduled.length === 0 && unscheduled.length === 0) {
+        html += '<div class="empty-state py-4"><p>该课程暂无关联班级</p></div>';
+      }
+
+      html += '</div>';
+      App.utils.showModal(`${App.utils.escapeHtml(courseName)} - 排考状态详情`, html, null);
+    },
+    showExamDetailModal(e) {
+      try {
+        const labelText = e.exam_label ? ` <span class="badge badge-gray">${e.exam_label}</span>` : '';
+
+        // 按教室名索引固定监考教师（兼容旧数据：classroom_name 可能为空）
+        const fixedTeacherByRoom = {};
+        const allFixedTeachers = [];
+        if (e.teachers) {
+          for (const t of e.teachers) {
+            if (t.role === 'fixed') {
+              allFixedTeachers.push(t.teacher_name);
+              if (t.classroom_name) {
+                fixedTeacherByRoom[t.classroom_name] = t.teacher_name;
+              }
+            }
+          }
+        }
+
+        // 教室详情表格
+        let classroomsHtml = '';
+        if (e.classrooms && e.classrooms.length > 0) {
+          classroomsHtml = '<table class="data-table text-xs" style="margin-bottom: 12px;"><thead><tr><th>教室</th><th>考试人次</th><th>涉考班级</th><th>监考老师</th></tr></thead><tbody>';
+          for (const cr of e.classrooms) {
+            const classesText = (cr.classes || []).map(c => `${App.utils.escapeHtml(c.class_name)}(${c.student_count}人)`).join('、') || '--';
+            let teacherName = fixedTeacherByRoom[cr.classroom_name];
+            if (!teacherName && allFixedTeachers.length === 1) {
+              teacherName = allFixedTeachers[0];
+            }
+            if (!teacherName && allFixedTeachers.length > 0) {
+              teacherName = allFixedTeachers.join('、');
+            }
+            if (!teacherName) teacherName = '--';
+            classroomsHtml += `<tr>
+              <td>${App.utils.escapeHtml(cr.classroom_name)}</td>
+              <td>${cr.total_students}人</td>
+              <td>${classesText}</td>
+              <td>${App.utils.escapeHtml(teacherName)}</td>
+            </tr>`;
+          }
+          classroomsHtml += '</tbody></table>';
+        } else {
+          classroomsHtml = '<p class="text-sm text-gray-400 mb-3">暂无教室安排</p>';
+        }
+
+        // 流动监考
+        let teachersHtml = '';
+        if (e.teachers && e.teachers.length > 0) {
+          const patrol = e.teachers.filter(t => t.role === 'patrol');
+          if (patrol.length > 0) {
+            teachersHtml += '<div class="mb-2"><span class="text-xs font-semibold text-gray-600">流动监考：</span>';
+            teachersHtml += patrol.map(t => {
+              const group = t.patrol_group_name ? ` (${App.utils.escapeHtml(t.patrol_group_name)})` : '';
+              return `<span class="text-xs px-2 py-1 rounded bg-orange-50 text-orange-700 mr-1">${App.utils.escapeHtml(t.teacher_name)}${group}</span>`;
+            }).join('');
+            teachersHtml += '</div>';
+          }
+        } else {
+          teachersHtml = '<p class="text-sm text-gray-400 mb-3">暂无教师安排</p>';
+        }
+
+        const totalText = e.total_students ? `<span class="text-xs text-gray-500 ml-2">共 ${e.total_students} 人次</span>` : '';
+
+        const html = `
+          <div class="mb-3 flex items-center gap-2">
+            <span class="text-sm font-semibold text-gray-700">${App.utils.escapeHtml(e.course_name)}${labelText}</span>
+            ${totalText}
+          </div>
+          <div class="mb-2 text-xs font-semibold text-gray-600">教室安排</div>
+          ${classroomsHtml}
+          <div class="mb-2 text-xs font-semibold text-gray-600">监考教师</div>
+          ${teachersHtml}
+        `;
+
+        App.utils.showModal(`${App.utils.escapeHtml(e.course_name)} - 考试详情`, html, null, '确定');
+      } catch (err) {
+        App.utils.showToast('解析考试数据失败', 'error');
+      }
+    },
+    async viewTeacherExams(teacherId, teacherName) {
+      try {
+        const data = await App.api.get(`/teachers/${teacherId}/exams`);
+        const d = data.data || {};
+        const fixedExams = d.fixed_exams || [];
+        const patrolExams = d.patrol_exams || [];
+
+        let html = `<div class="mb-4 p-3 bg-gray-50 rounded-lg text-sm">
+          <div class="font-semibold text-gray-800 mb-2">${App.utils.escapeHtml(d.teacher_name || teacherName || '')}</div>
+          <div class="grid grid-cols-3 gap-2">
+            <div><span class="text-gray-500">固定监考:</span> <span class="badge badge-info">${d.fixed_count || 0}场</span></div>
+            <div><span class="text-gray-500">流动监考:</span> <span class="badge badge-warning">${d.patrol_count || 0}场</span></div>
+            <div><span class="text-gray-500">场次:</span> ${d.current_slots || 0} / ${d.max_slots || 0}</div>
+          </div>
+        </div>`;
+
+        if (fixedExams.length > 0) {
+          html += '<div class="mb-3 rounded-lg border border-blue-200 overflow-hidden"><div class="px-3 py-2 bg-blue-50 border-b border-blue-200"><h5 class="text-sm font-semibold text-blue-800"><i class="fas fa-user-tie mr-1"></i>固定监考</h5></div><div class="p-2">';
+          html += '<table class="data-table"><thead><tr><th>日期</th><th>时段</th><th>课程</th><th>类型</th><th>AB卷</th><th>分配教室</th><th>总人数</th></tr></thead><tbody>';
+          for (const e of fixedExams) {
+            const total = e.assigned_student_count || 0;
+            html += `<tr>
+              <td>${App.utils.escapeHtml(e.day_name || '--')}</td>
+              <td>${App.utils.escapeHtml(e.slot_code || '--')} ${App.utils.escapeHtml(e.time_range || '')}</td>
+              <td style="max-width: 160px; word-break: break-all; white-space: normal;">${App.utils.escapeHtml(e.course_name || '')}</td>
+              <td>${App.utils.courseTypeBadge(e.course_type)}</td>
+              <td>${e.exam_label ? `<span class="badge badge-gray">${e.exam_label}</span>` : '--'}</td>
+              <td>${App.utils.escapeHtml(e.assigned_classroom || '--')}</td>
+              <td>${total || '--'}</td>
+            </tr>`;
+          }
+          html += '</tbody></table></div></div>';
+        }
+
+        if (patrolExams.length > 0) {
+          html += '<div class="mb-3 rounded-lg border border-amber-200 overflow-hidden"><div class="px-3 py-2 bg-amber-50 border-b border-amber-200"><h5 class="text-sm font-semibold text-amber-800"><i class="fas fa-walking mr-1"></i>流动监考</h5></div><div class="p-2">';
+          html += '<table class="data-table"><thead><tr><th>日期</th><th>时段</th><th>课程</th><th>类型</th><th>AB卷</th></tr></thead><tbody>';
+          for (const e of patrolExams) {
+            html += `<tr>
+              <td>${App.utils.escapeHtml(e.day_name || '--')}</td>
+              <td>${App.utils.escapeHtml(e.slot_code || '--')} ${App.utils.escapeHtml(e.time_range || '')}</td>
+              <td style="max-width: 160px; word-break: break-all; white-space: normal;">${App.utils.escapeHtml(e.course_name || '')}</td>
+              <td>${App.utils.courseTypeBadge(e.course_type)}</td>
+              <td>${e.exam_label ? `<span class="badge badge-gray">${e.exam_label}</span>` : '--'}</td>
+            </tr>`;
+          }
+          html += '</tbody></table></div></div>';
+        }
+
+        if (fixedExams.length === 0 && patrolExams.length === 0) {
+          html += '<div class="empty-state py-6"><i class="fas fa-inbox"></i><p>该教师暂无监考安排</p></div>';
+        }
+
+        App.utils.showModal(`${App.utils.escapeHtml(d.teacher_name || teacherName || '')} - 监考安排`, html, null);
+      } catch (e) {
+        App.utils.showToast('加载监考安排失败', 'error');
+      }
     },
     toggleSelectAllRows(checked) {
       const checkboxes = document.querySelectorAll('#baseDataTable tbody .row-checkbox');
@@ -874,6 +1226,26 @@ const App = {
       const filtered = App.scheduler.courses.filter(c => (c.name || c.course_name || '').toLowerCase().includes(filter));
       App.renderSchedulerCourseList(filtered);
     },
+    async saveScheduleConfig() {
+      const fixedTeachers = document.querySelector('input[name="fixedTeachersPerRoom"]:checked')?.value || '2';
+      try {
+        await App.api.put('/scheduler/config', {
+          fixed_teachers_per_room: parseInt(fixedTeachers),
+          patrol_teacher_count_per_slot_pair: 2,
+          patrol_group_rules: [
+            { group_name: '5-2及理东二', patterns: ['5-2*', '理东二'] },
+            { group_name: '5-3', patterns: ['5-3*'] },
+          ],
+          classroom_priority_rules: [
+            { priority: 1, patterns: ['5-2*'] },
+            { priority: 2, patterns: ['5-3*'] },
+          ],
+        });
+        App.utils.showToast('排考配置已保存', 'success');
+      } catch (e) {
+        App.utils.showToast(e.message || '保存配置失败', 'error');
+      }
+    },
     async startScheduler() {
       const strategy = document.getElementById('schedulerStrategy').value;
       const timeout = parseInt(document.getElementById('schedulerTimeout').value) || 300;
@@ -956,6 +1328,12 @@ const App = {
         </button>
       `;
       App.utils.showToast('自动排考完成', 'success');
+      // 刷新课程列表以更新排考状态
+      App.api.getList('/courses/').then(courses => {
+        App.scheduler.courses = courses;
+        App.cache.courses = courses;
+        App.renderSchedulerCourseList(courses);
+      }).catch(() => {});
     },
     onSchedulerFailed(status) {
       const result = status.result || {};
@@ -973,6 +1351,11 @@ const App = {
       try {
         await App.api.post(`/scheduler/apply/${versionId}`);
         App.utils.showToast('排考结果已应用', 'success');
+        // 刷新课程列表以更新排考状态
+        const courses = await App.api.getList('/courses/');
+        App.scheduler.courses = courses;
+        App.cache.courses = courses;
+        App.renderSchedulerCourseList(courses);
       } catch (e) {
         App.utils.showToast(e.message || '应用失败', 'error');
       }
@@ -988,7 +1371,9 @@ const App = {
       switch (view) {
         case 'overview': await App.handlers.loadOverviewMatrix(); break;
         case 'teacher': await App.handlers.loadTeacherGantt(); break;
+        case 'teacher-load': await App.handlers.loadTeacherLoad(); break;
         case 'classroom': await App.handlers.loadClassroomMatrix(); break;
+        case 'patrol': await App.handlers.loadPatrolMatrix(); break;
         case 'class': await App.handlers.loadClassView(); break;
         case 'course': await App.handlers.loadCourseView(); break;
       }
@@ -996,27 +1381,33 @@ const App = {
     async loadOverviewMatrix() {
       try {
         const data = await App.api.get('/exams/overview/matrix');
-        const exams = data.data?.exams || data.data?.matrix || [];
-        const timeSlots = data.time_slots || [{day:1,slots:[1,2,3,4]},{day:2,slots:[1,2,3,4]},{day:3,slots:[1,2,3,4]},{day:4,slots:[1,2,3,4]},{day:5,slots:[1,2,3,4]}];
+        const matrix = data.data?.matrix || {};
         const days = ['周一', '周二', '周三', '周四', '周五'];
+        const slots = ['T1', 'T2', 'T3', 'T4'];
+        const slotTimeMap = { T1: '08:30-10:10', T2: '10:20-12:00', T3: '14:00-15:40', T4: '15:50-17:30' };
 
-        let html = '<div class="matrix-grid" style="grid-template-columns: 80px repeat(4, 1fr);">';
-        html += '<div class="matrix-header">日期 \\ 时段</div>';
-        for (let s = 1; s <= 4; s++) html += `<div class="matrix-header">第${s}场</div>`;
+        // 临时存储考试数据，避免在 HTML 属性中内联 JSON
+        const examDataStore = [];
+        let examIdx = 0;
 
-        for (const day of timeSlots) {
-          html += `<div class="matrix-header">${days[day.day - 1] || '周' + day.day}</div>`;
-          for (const slot of day.slots || [1,2,3,4]) {
-            const slotExams = exams.filter(e => e.day === day.day && e.time_slot === slot);
+        let html = '<div class="matrix-grid" style="grid-template-columns: 120px repeat(5, 1fr);">';
+        html += '<div class="matrix-header">时段 \\ 日期</div>';
+        for (const d of days) html += `<div class="matrix-header">${d}</div>`;
+
+        for (const slot of slots) {
+          html += `<div class="matrix-header" style="font-size: 11px; line-height: 1.3; display: flex; align-items: center; justify-content: center; flex-direction: column;"><span>${slotTimeMap[slot]}</span><span>(${slot})</span></div>`;
+          for (const day of days) {
+            const dayData = matrix[day] || {};
+            const slotExams = dayData[slot] || [];
             if (slotExams.length === 0) {
-              html += '<div class="matrix-cell text-gray-300 text-center"><i class="fas fa-minus-circle"></i></div>';
+              html += '<div class="matrix-cell text-gray-300 text-center" style="display: flex; align-items: center; justify-content: center;"><i class="fas fa-minus-circle"></i></div>';
             } else {
-              html += '<div class="matrix-cell">' + slotExams.map(e => {
-                const colorClass = e.course_type === 'public' ? 'bg-blue-50 text-blue-700 border-blue-200' : e.course_type === 'major' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-purple-50 text-purple-700 border-purple-200';
-                return `<div class="mb-1 px-2 py-1 rounded border text-xs ${colorClass}" title="${App.utils.escapeHtml(e.classroom_name || '')} - ${App.utils.escapeHtml((e.fixed_teachers || []).join(', '))}">
-                  <div class="font-semibold truncate">${App.utils.escapeHtml(e.course_name || e.name || '')}</div>
-                  <div class="text-xs opacity-75"><i class="fas fa-door-open"></i> ${App.utils.escapeHtml(e.classroom_name || '')}</div>
-                  <div class="text-xs opacity-75"><i class="fas fa-user"></i> ${App.utils.escapeHtml((e.fixed_teachers || []).join(', '))}</div>
+              html += '<div class="matrix-cell" style="display: flex; flex-direction: column; gap: 4px; padding: 6px;">' + slotExams.map(e => {
+                const colorClass = e.exam_label ? 'bg-purple-50 text-purple-700 border-purple-200' : e.course_type === 'public' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-green-50 text-green-700 border-blue-200';
+                const idx = examIdx++;
+                examDataStore[idx] = e;
+                return `<div class="rounded border text-xs ${colorClass} cursor-pointer hover:opacity-80 app-exam-block" data-exam-idx="${idx}" style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; overflow: hidden;">
+                  <div class="font-semibold truncate" style="width: 100%; text-align: center; padding: 0 4px;">${App.utils.escapeHtml(e.course_name || '')}${e.exam_label ? ` <span class="badge badge-gray">${e.exam_label}</span>` : ''}</div>
                 </div>`;
               }).join('') + '</div>';
             }
@@ -1024,70 +1415,270 @@ const App = {
         }
         html += '</div>';
         document.getElementById('overviewMatrixContainer').innerHTML = html;
+
+        // 绑定点击事件
+        document.querySelectorAll('.app-exam-block').forEach(el => {
+          el.addEventListener('click', () => {
+            const idx = parseInt(el.dataset.examIdx, 10);
+            const examData = examDataStore[idx];
+            if (examData) App.handlers.showExamDetailModal(examData);
+          });
+        });
       } catch {
         document.getElementById('overviewMatrixContainer').innerHTML = '<div class="empty-state"><i class="fas fa-table"></i><p>暂无排考数据</p></div>';
       }
     },
     async loadTeacherGantt() {
       try {
-        const data = await App.api.get('/exams/teachers/gantt');
-        const teachers = data.teachers || [];
-        const slots = data.time_slots || ['周一-1', '周一-2', '周一-3', '周一-4', '周二-1', '周二-2', '周二-3', '周二-4', '周三-1', '周三-2', '周三-3', '周三-4', '周四-1', '周四-2', '周四-3', '周四-4', '周五-1', '周五-2', '周五-3', '周五-4'];
+        const select = document.getElementById('teacherGanttSelect');
+        // 首次加载或刷新时填充下拉框
+        if (!select.dataset.loaded) {
+          const teacherList = await App.api.getList('/teachers/');
+          const currentVal = select.value;
+          select.innerHTML = '<option value="">--请选择教师--</option>' +
+            teacherList.map(t => `<option value="${t.id}">${App.utils.escapeHtml(t.name)}</option>`).join('');
+          select.value = currentVal;
+          select.dataset.loaded = 'true';
+        }
 
-        let html = '<div style="min-width: 900px;">';
-        // Header
-        html += '<div class="gantt-row" style="background: #F9FAFB; font-weight: 600; font-size: 12px; color: #6B7280;">';
-        html += '<div class="gantt-label">教师</div>';
-        html += '<div class="gantt-timeline">';
-        for (const s of slots) html += `<div class="gantt-slot" style="text-align: center; padding: 8px;">${App.utils.escapeHtml(s)}</div>`;
-        html += '</div></div>';
-        // Teacher rows
-        for (const t of teachers) {
-          const dayCount = (t.assignments || []).reduce((acc, a) => { acc[a.day] = (acc[a.day] || 0) + 1; return acc; }, {});
-          const hasOverload = Object.values(dayCount).some(c => c > 2);
-          html += `<div class="gantt-row ${hasOverload ? 'bg-red-50' : ''}">`;
-          html += `<div class="gantt-label ${hasOverload ? 'text-danger' : ''}">${App.utils.escapeHtml(t.name || '')} ${hasOverload ? '<i class="fas fa-exclamation-triangle text-danger"></i>' : ''}</div>`;
-          html += '<div class="gantt-timeline">';
-          for (let i = 0; i < slots.length; i++) {
-            const assignment = (t.assignments || []).find(a => a.slot_index === i);
-            let bgColor = '';
-            if (assignment) {
-              bgColor = assignment.is_roaming ? 'background: #FB923C;' : 'background: #3B82F6;';
+        const selectedTeacherId = select.value;
+        if (!selectedTeacherId) {
+          document.getElementById('teacherGanttContainer').innerHTML = '<div class="empty-state"><i class="fas fa-user-clock"></i><p>请选择教师查看监考安排</p></div>';
+          return;
+        }
+
+        const data = await App.api.get('/exams/teachers/gantt');
+        const allTeachers = data.data?.teachers || [];
+        const selectedTeacher = allTeachers.find(t => String(t.teacher_id) === String(selectedTeacherId));
+
+        if (!selectedTeacher) {
+          document.getElementById('teacherGanttContainer').innerHTML = '<div class="empty-state"><i class="fas fa-user-clock"></i><p>该教师暂无监考安排</p></div>';
+          return;
+        }
+
+        const days = ['周一', '周二', '周三', '周四', '周五'];
+        const slotDefs = [
+          { code: 'T1', time: '08:30-10:10' },
+          { code: 'T2', time: '10:20-12:00' },
+          { code: 'T3', time: '14:00-15:40' },
+          { code: 'T4', time: '15:50-17:30' },
+        ];
+
+        // 统计单日场次
+        const dayCount = {};
+        (selectedTeacher.events || []).forEach(e => { dayCount[e.day_name || e.day_of_week] = (dayCount[e.day_name || e.day_of_week] || 0) + 1; });
+        const hasOverload = Object.values(dayCount).some(c => c > 2);
+        const totalEvents = (selectedTeacher.events || []).length;
+        const fixedCount = (selectedTeacher.events || []).filter(e => e.role === 'fixed').length;
+        const patrolCount = (selectedTeacher.events || []).filter(e => e.role === 'patrol' || e.role === 'roaming').length;
+
+        // 单元格样式：允许内容撑开，完整显示4行信息
+        const cellStyle = 'min-height: 90px; padding: 8px 6px; display: flex; align-items: center; justify-content: center; text-align: center;';
+
+        let html = '<div style="min-width: 700px;">';
+        // 教师信息行
+        html += `<div class="p-3 bg-gray-50 border-b border-gray-200 flex items-center gap-4 text-sm mb-2 rounded-t-lg">
+          <div class="font-semibold text-gray-800 text-base">${App.utils.escapeHtml(selectedTeacher.teacher_name || '')}</div>
+          <div><span class="text-gray-500">总场次:</span> <span class="badge badge-info">${totalEvents}</span></div>
+          <div><span class="text-gray-500">固定:</span> <span class="badge badge-primary">${fixedCount}</span></div>
+          <div><span class="text-gray-500">流动:</span> <span class="badge badge-warning">${patrolCount}</span></div>
+          ${hasOverload ? '<div class="badge badge-danger"><i class="fas fa-exclamation-triangle"></i> 单日超2场</div>' : ''}
+        </div>`;
+
+        // 表格头部：横排周一到周五
+        html += '<div style="display: flex; border-bottom: 2px solid #E5E7EB; background: #F9FAFB; font-weight: 600; font-size: 13px; color: #374151;">';
+        html += '<div style="width: 120px; padding: 10px 12px; border-right: 1px solid #E5E7EB; display: flex; align-items: center;">时段</div>';
+        for (const day of days) {
+          html += `<div style="flex: 1; padding: 10px; text-align: center; border-right: 1px solid #E5E7EB;">${day}</div>`;
+        }
+        html += '</div>';
+
+        // 每行：一个时段（纵排）
+        for (const slot of slotDefs) {
+          html += '<div style="display: flex; border-bottom: 1px solid #F3F4F6;">';
+          // 左侧时段标签
+          html += `<div style="width: 120px; padding: 10px 12px; border-right: 1px solid #E5E7EB; display: flex; flex-direction: column; justify-content: center; background: #FAFBFC;">
+            <div style="font-weight: 600; font-size: 13px; color: #374151;">${slot.code}</div>
+            <div style="font-size: 11px; color: #9CA3AF;">${slot.time}</div>
+          </div>`;
+          // 每天对应的单元格
+          for (const day of days) {
+            const event = (selectedTeacher.events || []).find(e => e.day_name === day && e.slot_code === slot.code);
+            let bg = '#FFFFFF';
+            let color = '';
+            if (event) {
+              bg = event.role === 'patrol' || event.role === 'roaming' ? '#FFF7ED' : '#EFF6FF';
+              color = event.role === 'patrol' || event.role === 'roaming' ? '#9A3412' : '#1E40AF';
             }
-            html += `<div class="gantt-slot" style="${bgColor}${bgColor ? ' color: white; display: flex; align-items: center; justify-content: center; font-size: 11px;' : ''}">${assignment ? App.utils.escapeHtml(assignment.course_name || '') : ''}</div>`;
+            html += `<div style="flex: 1; border-right: 1px solid #F3F4F6; ${cellStyle} background: ${bg};">`;
+            if (event) {
+              const roomText = event.role === 'patrol' || event.role === 'roaming'
+                ? (event.classrooms || []).slice(0, 3).join('、') + ((event.classrooms || []).length > 3 ? '…' : '')
+                : (event.assigned_classroom || (event.classrooms || [])[0] || '--');
+              const classText = (event.class_names || []).join('、') || '--';
+              html += `<div style="width: 100%; color: ${color}; font-size: 11px; line-height: 1.4;">
+                <div style="font-weight: 600; font-size: 12px; margin-bottom: 2px;">${App.utils.escapeHtml(event.course_name || '')}</div>
+                ${event.exam_label ? `<div style="margin-bottom: 2px;"><span class="badge badge-gray" style="font-size: 10px; padding: 1px 4px;">${event.exam_label}</span></div>` : ''}
+                <div style="font-size: 10px; opacity: 0.85; margin-bottom: 1px;"><i class="fas fa-door-open" style="margin-right:2px;"></i>${App.utils.escapeHtml(roomText)}</div>
+                <div style="font-size: 10px; opacity: 0.85;"><i class="fas fa-users" style="margin-right:2px;"></i>${App.utils.escapeHtml(classText)}</div>
+              </div>`;
+            }
+            html += '</div>';
           }
-          html += '</div></div>';
+          html += '</div>';
         }
         html += '</div>';
         document.getElementById('teacherGanttContainer').innerHTML = html;
       } catch {
-        document.getElementById('teacherGanttContainer').innerHTML = '<div class="empty-state"><i class="fas fa-user-clock"></i><p>暂无排考数据</p></div>';
+        document.getElementById('teacherGanttContainer').innerHTML = '<div class="empty-state"><i class="fas fa-user-clock"></i><p>加载教师监考数据失败</p></div>';
       }
     },
+    async loadTeacherLoad() {
+      try {
+        const container = document.getElementById('teacherLoadContainer');
+        const summaryEl = document.getElementById('teacherLoadSummary');
+
+        // 并行获取：已安排教师数据 + 全部教师列表（含上限）
+        const [ganttRes, teacherListRes] = await Promise.all([
+          App.api.get('/exams/teachers/gantt'),
+          App.api.getList('/teachers/?limit=1000&is_active=true'),
+        ]);
+
+        const ganttTeachers = ganttRes.data?.teachers || [];
+        const allTeachers = teacherListRes || [];
+
+        // 以全部教师为基准构建统计
+        const statsMap = {};
+        for (const t of allTeachers) {
+          statsMap[t.id] = {
+            id: t.id,
+            name: t.name,
+            max_slots: t.max_slots || 0,
+            total: 0,
+            fixed: 0,
+            patrol: 0,
+          };
+        }
+
+        // 填入实际监考数据
+        for (const gt of ganttTeachers) {
+          const id = gt.teacher_id;
+          if (!statsMap[id]) {
+            statsMap[id] = { id, name: gt.teacher_name, max_slots: 999, total: 0, fixed: 0, patrol: 0 };
+          }
+          const events = gt.events || [];
+          statsMap[id].total = events.length;
+          statsMap[id].fixed = events.filter(e => e.role === 'fixed').length;
+          statsMap[id].patrol = events.filter(e => e.role === 'patrol' || e.role === 'roaming').length;
+        }
+
+        // 按总场次降序
+        const stats = Object.values(statsMap).sort((a, b) => b.total - a.total);
+
+        // 摘要统计
+        const totalTeachers = stats.length;
+        const totalEvents = stats.reduce((s, t) => s + t.total, 0);
+        const avgLoad = totalTeachers > 0 ? (totalEvents / totalTeachers).toFixed(1) : '0.0';
+        const overloadCount = stats.filter(t => t.max_slots > 0 && t.total > t.max_slots).length;
+        const zeroCount = stats.filter(t => t.total === 0).length;
+        const maxLoad = stats.length > 0 ? stats[0].total : 0;
+
+        // 渲染统计卡片
+        summaryEl.innerHTML = `
+          <div class="flex-1 bg-white border border-gray-200 rounded-lg p-3 text-center shadow-sm">
+            <div class="text-2xl font-bold text-gray-800">${totalTeachers}</div>
+            <div class="text-xs text-gray-500 mt-1">教师总数</div>
+          </div>
+          <div class="flex-1 bg-white border border-gray-200 rounded-lg p-3 text-center shadow-sm">
+            <div class="text-2xl font-bold text-blue-600">${avgLoad}</div>
+            <div class="text-xs text-gray-500 mt-1">平均场次</div>
+          </div>
+          <div class="flex-1 bg-white border border-gray-200 rounded-lg p-3 text-center shadow-sm">
+            <div class="text-2xl font-bold text-orange-600">${maxLoad}</div>
+            <div class="text-xs text-gray-500 mt-1">最高场次</div>
+          </div>
+          <div class="flex-1 bg-white border ${overloadCount > 0 ? 'border-red-300 bg-red-50' : 'border-gray-200'} rounded-lg p-3 text-center shadow-sm">
+            <div class="text-2xl font-bold ${overloadCount > 0 ? 'text-red-600' : 'text-gray-800'}">${overloadCount}</div>
+            <div class="text-xs text-gray-500 mt-1">超负荷人数</div>
+          </div>
+          <div class="flex-1 bg-white border border-gray-200 rounded-lg p-3 text-center shadow-sm">
+            <div class="text-2xl font-bold text-gray-400">${zeroCount}</div>
+            <div class="text-xs text-gray-500 mt-1">零安排人数</div>
+          </div>
+        `;
+
+        if (stats.length === 0) {
+          container.innerHTML = '<div class="empty-state"><i class="fas fa-chart-bar"></i><p>暂无排考数据</p></div>';
+          return;
+        }
+
+        // 柱状图
+        const maxBarHeight = 280;
+        const maxVal = Math.max(maxLoad, ...stats.map(t => t.max_slots).filter(m => m > 0), 1);
+
+        let html = '<div style="display: flex; align-items: flex-end; gap: 10px; min-width: max-content; padding: 10px 10px 50px 30px; height: 380px; position: relative;">';
+
+        // 背景网格线
+        for (let i = 0; i <= 5; i++) {
+          const y = (i / 5) * maxBarHeight;
+          const val = Math.round((1 - i / 5) * maxVal);
+          html += `<div style="position: absolute; left: 30px; right: 10px; bottom: ${50 + y}px; border-top: 1px ${i === 0 ? 'solid #E5E7EB' : 'dashed #F3F4F6'}; z-index: 0; pointer-events: none;">
+            <span style="position: absolute; left: -26px; top: -8px; font-size: 10px; color: #9CA3AF; width: 22px; text-align: right;">${val}</span>
+          </div>`;
+        }
+
+        for (const t of stats) {
+          const isOverload = t.max_slots > 0 && t.total > t.max_slots;
+          const fixedH = Math.max((t.fixed / maxVal) * maxBarHeight, t.fixed > 0 ? 2 : 0);
+          const patrolH = Math.max((t.patrol / maxVal) * maxBarHeight, t.patrol > 0 ? 2 : 0);
+          const barH = Math.max((t.total / maxVal) * maxBarHeight, 2);
+          const maxLineH = t.max_slots > 0 ? (t.max_slots / maxVal) * maxBarHeight : 0;
+
+          html += `<div style="display: flex; flex-direction: column; align-items: center; width: 52px; position: relative; z-index: 1; flex-shrink: 0;">
+            <div style="font-size: 11px; font-weight: 600; color: ${isOverload ? '#DC2626' : '#374151'}; margin-bottom: 4px;">${t.total}</div>
+            <div style="width: 40px; background: ${isOverload ? '#FEE2E2' : '#F3F4F6'}; border-radius: 4px 4px 0 0; position: relative; overflow: visible; height: ${barH}px; display: flex; flex-direction: column; justify-content: flex-end; border: 1px solid ${isOverload ? '#FECACA' : 'transparent'};">
+              ${t.fixed > 0 ? `<div style="width: 100%; background: #3B82F6; height: ${fixedH}px; border-radius: 4px 4px 0 0; min-height: 2px;" title="固定监考 ${t.fixed}场"></div>` : ''}
+              ${t.patrol > 0 ? `<div style="width: 100%; background: #F97316; height: ${patrolH}px; min-height: 2px;" title="流动监考 ${t.patrol}场"></div>` : ''}
+              ${maxLineH > 0 ? `<div style="position: absolute; left: -3px; right: -3px; bottom: ${maxLineH}px; border-top: 2px dashed #EF4444; z-index: 2;" title="上限 ${t.max_slots}场"></div>` : ''}
+            </div>
+            <div style="margin-top: 6px; font-size: 10px; color: #6B7280; text-align: center; width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${App.utils.escapeHtml(t.name)}（上限${t.max_slots}）">${App.utils.escapeHtml(t.name)}</div>
+            ${isOverload ? '<div style="font-size: 9px; color: #DC2626; margin-top: 1px;"><i class="fas fa-exclamation-triangle"></i></div>' : '<div style="height: 14px;"></div>'}
+          </div>`;
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
+      } catch (err) {
+        console.error(err);
+        document.getElementById('teacherLoadContainer').innerHTML = '<div class="empty-state"><i class="fas fa-chart-bar"></i><p>加载教师负荷数据失败</p></div>';
+      }
+    },
+
     async loadClassroomMatrix() {
       try {
         const data = await App.api.get('/exams/classrooms/matrix');
-        const rooms = data.classrooms || [];
+        const matrix = data.data?.matrix || {};
         const days = ['周一', '周二', '周三', '周四', '周五'];
+        const slots = ['T1', 'T2', 'T3', 'T4'];
+        const slotKeys = [];
+        for (const d of days) for (const s of slots) slotKeys.push(`${d}-${s}`);
 
         let html = '<div style="min-width: 800px;">';
         html += '<div class="gantt-row" style="background: #F9FAFB; font-weight: 600; font-size: 12px; color: #6B7280;">';
-        html += '<div class="gantt-label" style="width: 120px;">教室 (容量)</div>';
-        for (let d = 1; d <= 5; d++) for (let s = 1; s <= 4; s++) html += `<div class="gantt-slot" style="text-align: center; padding: 8px; font-size: 11px;">${days[d-1]}-${s}</div>`;
+        html += '<div class="gantt-label" style="width: 120px;">教室</div>';
+        for (const sk of slotKeys) html += `<div class="gantt-slot" style="text-align: center; padding: 8px; font-size: 11px;">${App.utils.escapeHtml(sk)}</div>`;
         html += '</div>';
-        for (const room of rooms) {
+        for (const [roomName, roomData] of Object.entries(matrix)) {
           html += '<div class="gantt-row">';
-          html += `<div class="gantt-label" style="width: 120px; font-size: 11px;">${App.utils.escapeHtml(room.name || room.room_number || '')} (${room.capacity || 0}人)</div>`;
-          for (let d = 1; d <= 5; d++) {
-            for (let s = 1; s <= 4; s++) {
-              const exam = (room.exams || []).find(e => e.day === d && e.time_slot === s);
-              if (exam) {
-                const ratio = exam.student_count / (room.capacity || 100);
-                const color = ratio > 0.9 ? 'background: #FCA5A5;' : ratio > 0.7 ? 'background: #FDE68A;' : 'background: #86EFAC;';
-                html += `<div class="gantt-slot" style="${color} font-size: 10px; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.2;">${App.utils.escapeHtml(exam.course_name || '')}<br><small>${exam.student_count || 0}人</small></div>`;
-              } else {
-                html += '<div class="gantt-slot"></div>';
-              }
+          html += `<div class="gantt-label" style="width: 120px; font-size: 11px;">${App.utils.escapeHtml(roomName)}</div>`;
+          for (const sk of slotKeys) {
+            const exams = roomData[sk] || [];
+            if (exams.length > 0) {
+              const e = exams[0];
+              const total = e.total_students || 0;
+              html += `<div class="gantt-slot" style="background: #86EFAC; font-size: 10px; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.2;">${App.utils.escapeHtml(e.course_name || '')}<br><small>${total}人 ${e.exam_label ? e.exam_label : ''}</small></div>`;
+            } else {
+              html += '<div class="gantt-slot"></div>';
             }
           }
           html += '</div>';
@@ -1096,6 +1687,58 @@ const App = {
         document.getElementById('classroomMatrixContainer').innerHTML = html;
       } catch {
         document.getElementById('classroomMatrixContainer').innerHTML = '<div class="empty-state"><i class="fas fa-door-open"></i><p>暂无排考数据</p></div>';
+      }
+    },
+    async loadPatrolMatrix() {
+      try {
+        const data = await App.api.get('/exams/patrol/matrix');
+        const matrix = data.data?.matrix || {};
+        const groupColors = data.data?.group_colors || {};
+        const days = ['周一', '周二', '周三', '周四', '周五'];
+        const slotPairs = [
+          { name: '上午', code: 'T1', time: '08:30-12:00' },
+          { name: '下午', code: 'T3', time: '14:00-17:30' },
+        ];
+
+        // 生成图例
+        let legendHtml = '<span class="text-sm text-gray-600 font-medium">区域分组：</span>';
+        if (Object.keys(groupColors).length === 0) {
+          legendHtml += '<span class="text-sm text-gray-400">未配置分组</span>';
+        } else {
+          for (const [name, color] of Object.entries(groupColors)) {
+            legendHtml += `<span class="text-sm px-2 py-1 rounded mr-2" style="background:${color}; color:#374151;">${App.utils.escapeHtml(name)}</span>`;
+          }
+        }
+        document.getElementById('patrolLegend').innerHTML = legendHtml;
+
+        // 矩阵布局：横轴=日期，纵轴=时段对（上午/下午）
+        let html = '<div class="matrix-grid" style="grid-template-columns: 120px repeat(5, 1fr);">';
+        html += '<div class="matrix-header">时段 \\ 日期</div>';
+        for (const d of days) html += `<div class="matrix-header">${d}</div>`;
+
+        for (const sp of slotPairs) {
+          html += `<div class="matrix-header" style="font-size: 11px; line-height: 1.3; display: flex; align-items: center; justify-content: center; flex-direction: column;"><span>${sp.time}</span><span>(${sp.name})</span></div>`;
+          for (const day of days) {
+            const patrolList = (matrix[day] || {})[sp.code] || [];
+            if (patrolList.length === 0) {
+              html += '<div class="matrix-cell text-gray-300 text-center" style="display: flex; align-items: center; justify-content: center;"><i class="fas fa-minus-circle"></i></div>';
+            } else {
+              html += '<div class="matrix-cell" style="display: flex; flex-direction: column; gap: 4px; padding: 6px;">';
+              for (const p of patrolList) {
+                const bg = p.patrol_group_name ? (groupColors[p.patrol_group_name] || '#F3F4F6') : '#F3F4F6';
+                const groupLabel = p.patrol_group_name ? `<span class="text-xs text-gray-500 ml-1">(${App.utils.escapeHtml(p.patrol_group_name)})</span>` : '';
+                html += `<div class="rounded border text-xs" style="background:${bg}; border-color:#E5E7EB; flex:1; display:flex; align-items:center; justify-content:center; min-height:0; overflow:hidden;">
+                  <div class="font-semibold truncate" style="width:100%; text-align:center; padding:0 4px; color:#374151;">${App.utils.escapeHtml(p.teacher_name)}${groupLabel}</div>
+                </div>`;
+              }
+              html += '</div>';
+            }
+          }
+        }
+        html += '</div>';
+        document.getElementById('patrolMatrixContainer').innerHTML = html;
+      } catch {
+        document.getElementById('patrolMatrixContainer').innerHTML = '<div class="empty-state"><i class="fas fa-walking"></i><p>暂无排考数据</p></div>';
       }
     },
     async loadClassView() {
@@ -1112,22 +1755,48 @@ const App = {
       if (!classId) return;
       try {
         const data = await App.api.get(`/exams/classes/${classId}/schedule`);
-        const schedule = data.data?.schedule || data.data?.exams || [];
-        const columns = [
-          { header: '日期', key: 'exam_date', render: (r) => App.utils.formatDate(r.exam_date || r.date) },
-          { header: '时段', key: 'time_slot' },
-          { header: '课程', key: 'course_name' },
-          { header: '教室', key: 'classroom_name' },
-          { header: '类型', key: 'course_type', render: (r) => App.utils.courseTypeBadge(r.course_type) },
-          { header: '监考教师', key: 'teacher_name' },
-        ];
-        App.utils.renderTable('classScheduleContainer', columns, schedule);
-        // Re-wrap in card-body for consistent styling
-        const container = document.getElementById('classScheduleContainer');
-        if (container.querySelector('table')) {
-          container.className = 'card-body p-0';
+        const exams = data.data?.exams || [];
+        const days = ['周一', '周二', '周三', '周四', '周五'];
+        const slots = ['T1', 'T2', 'T3', 'T4'];
+        const slotTimeMap = { T1: '08:30-10:10', T2: '10:20-12:00', T3: '14:00-15:40', T4: '15:50-17:30' };
+
+        // 构建矩阵数据映射: day_name -> slot_code -> exam
+        const matrix = {};
+        for (const day of days) matrix[day] = { T1: null, T2: null, T3: null, T4: null };
+        for (const e of exams) {
+          if (e.day_name && e.slot_code && matrix[e.day_name]) {
+            matrix[e.day_name][e.slot_code] = e;
+          }
         }
-      } catch {
+
+        let html = '<div class="matrix-grid" style="grid-template-columns: 120px repeat(5, 1fr);">';
+        html += '<div class="matrix-header">时段 \\ 日期</div>';
+        for (const d of days) html += `<div class="matrix-header">${d}</div>`;
+
+        for (const slot of slots) {
+          html += `<div class="matrix-header" style="font-size: 11px; line-height: 1.3; display: flex; align-items: center; justify-content: center; flex-direction: column;"><span>${slotTimeMap[slot]}</span><span>(${slot})</span></div>`;
+          for (const day of days) {
+            const exam = matrix[day][slot];
+            if (!exam) {
+              html += '<div class="matrix-cell text-gray-300 text-center" style="display: flex; align-items: center; justify-content: center;"><i class="fas fa-minus-circle"></i></div>';
+            } else {
+              const colorClass = exam.exam_label ? 'bg-purple-50 text-purple-700 border-purple-200' : exam.course_type === 'public' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-green-50 text-green-700 border-green-200';
+              const classroomLabel = exam.classroom_name ? `教室: ${App.utils.escapeHtml(exam.classroom_name)}` : '';
+              const teacherLabel = exam.teacher_names && exam.teacher_names.length ? `教师: ${exam.teacher_names.map(App.utils.escapeHtml).join('、')}` : '';
+              html += `<div class="matrix-cell" style="display: flex; flex-direction: column; gap: 4px; padding: 6px;">
+                <div class="rounded border text-xs ${colorClass}" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; overflow: hidden; gap: 2px; padding: 4px 0;">
+                  <div class="font-semibold truncate" style="width: 100%; text-align: center; padding: 0 4px;">${App.utils.escapeHtml(exam.course_name || '')}${exam.exam_label ? ` <span class="badge badge-gray">${exam.exam_label}</span>` : ''}</div>
+                  ${classroomLabel ? `<div class="truncate" style="width: 100%; text-align: center; padding: 0 4px; font-size: 10px; color: #6b7280;">${classroomLabel}</div>` : ''}
+                  ${teacherLabel ? `<div class="truncate" style="width: 100%; text-align: center; padding: 0 4px; font-size: 10px; color: #6b7280;">${teacherLabel}</div>` : ''}
+                </div>
+              </div>`;
+            }
+          }
+        }
+        html += '</div>';
+        document.getElementById('classScheduleContainer').innerHTML = html;
+      } catch (e) {
+        console.error(e);
         document.getElementById('classScheduleContainer').innerHTML = '<div class="empty-state"><i class="fas fa-users"></i><p>加载班级排考数据失败</p></div>';
       }
     },
@@ -1145,33 +1814,72 @@ const App = {
       if (!courseId) return;
       try {
         const data = await App.api.get(`/exams/courses/${courseId}/detail`);
-        const detail = data.data?.detail || data.data || data;
-        const abPapers = detail.ab_papers || [];
-        const isUnbalanced = abPapers.some(a => Math.abs((a.a_count || 0) - (a.b_count || 0)) > 5);
+        const detail = data.data || {};
+        const exams = detail.exams || [];
+        const abAnalysis = detail.ab_analysis;
 
         let html = '<div class="card mb-4">';
         html += '<div class="card-header"><h4 class="font-semibold">课程信息</h4></div>';
         html += `<div class="card-body"><div class="grid grid-cols-4 gap-4 text-sm">
-          <div><span class="text-gray-500">课程名称:</span> <strong>${App.utils.escapeHtml(detail.name || detail.course_name || '')}</strong></div>
-          <div><span class="text-gray-500">课程代码:</span> ${App.utils.escapeHtml(detail.course_code || '')}</div>
+          <div><span class="text-gray-500">课程名称:</span> <strong>${App.utils.escapeHtml(detail.course_name || '')}</strong></div>
           <div><span class="text-gray-500">课程类型:</span> ${App.utils.courseTypeBadge(detail.course_type)}</div>
-          <div><span class="text-gray-500">总人数:</span> ${detail.student_count || 0}</div>
+          <div><span class="text-gray-500">AB卷:</span> <span class="badge ${detail.needs_ab ? 'badge-warning' : 'badge-gray'}">${detail.needs_ab ? '是' : '否'}</span></div>
+          <div><span class="text-gray-500">考试场次:</span> ${exams.length}</div>
         </div></div></div>`;
 
-        if (abPapers.length > 0) {
-          html += `<div class="card ${isUnbalanced ? 'border-warning' : ''}">`;
-          html += `<div class="card-header"><h4 class="font-semibold">AB卷分卷情况 ${isUnbalanced ? '<span class="badge badge-warning"><i class="fas fa-exclamation-triangle"></i> 不均衡</span>' : '<span class="badge badge-success"><i class="fas fa-check"></i> 均衡</span>'}</h4></div>`;
+        if (abAnalysis) {
+          const isBalanced = abAnalysis.balance === '均衡';
+          html += `<div class="card ${isBalanced ? '' : 'border-warning'} mb-4">`;
+          html += `<div class="card-header"><h4 class="font-semibold">AB卷分卷情况 ${isBalanced ? '<span class="badge badge-success"><i class="fas fa-check"></i> 均衡</span>' : '<span class="badge badge-warning"><i class="fas fa-exclamation-triangle"></i> 不均衡</span>'}</h4></div>`;
           html += '<div class="card-body">';
-          for (const ab of abPapers) {
-            html += `<div class="grid grid-cols-4 gap-4 text-sm mb-2 p-3 bg-gray-50 rounded">
-              <div><span class="text-gray-500">教室:</span> ${App.utils.escapeHtml(ab.classroom_name || '')}</div>
-              <div><span class="text-gray-500">A卷人数:</span> ${ab.a_count || 0}</div>
-              <div><span class="text-gray-500">B卷人数:</span> ${ab.b_count || 0}</div>
-              <div><span class="text-gray-500">均衡度:</span> ${ab.balance_ratio || '100%'}</div>
-            </div>`;
-          }
+          html += `<div class="grid grid-cols-3 gap-4 text-sm mb-2 p-3 bg-gray-50 rounded">
+            <div><span class="text-gray-500">A卷:</span> ${abAnalysis.a_student_count || 0}人 (${App.utils.escapeHtml(abAnalysis.a_time_slot || '')})</div>
+            <div><span class="text-gray-500">B卷:</span> ${abAnalysis.b_student_count || 0}人 (${App.utils.escapeHtml(abAnalysis.b_time_slot || '')})</div>
+            <div><span class="text-gray-500">均衡度:</span> ${App.utils.escapeHtml(abAnalysis.balance || '')}</div>
+          </div>`;
           html += '</div></div>';
         }
+
+        if (exams.length > 0) {
+          html += '<div class="card mb-4">';
+          html += '<div class="card-header"><h4 class="font-semibold">考试安排</h4></div>';
+          html += '<div class="card-body p-0"><table class="data-table"><thead><tr><th>场次</th><th>时段</th><th>教室</th><th>班级分配</th><th>监考教师</th></tr></thead><tbody>';
+          for (let ei = 0; ei < exams.length; ei++) {
+            const exam = exams[ei];
+            const ts = exam.time_slot || {};
+            const timeLabel = `${App.utils.escapeHtml(ts.day_name || '')} ${App.utils.escapeHtml(ts.time_range || '')}(${App.utils.escapeHtml(ts.slot_code || '')})`;
+            const classrooms = exam.classrooms || [];
+            const fixedTeachers = exam.fixed_teachers || [];
+
+            let roomHtml = '', classHtml = '', teacherHtml = '';
+            classrooms.forEach((c, idx) => {
+              const isLast = idx === classrooms.length - 1;
+              const mb = isLast ? '' : 'margin-bottom:5px;';
+              const bg = idx % 2 === 0 ? '#f9fafb' : '#ffffff';
+              const boxStyle = `border:1px solid #e5e7eb;border-radius:4px;padding:6px 8px;font-size:13px;${mb}background:${bg};`;
+              const hoverAttrs = `data-room-idx="${idx}" data-bg="${bg}" onmouseenter="App.handlers.highlightRoom(${ei}, ${idx}, true)" onmouseleave="App.handlers.highlightRoom(${ei}, ${idx}, false)"`;
+
+              roomHtml += `<div style="${boxStyle}" ${hoverAttrs}>${App.utils.escapeHtml(c.classroom_name || '')} <span style="color:#6b7280;">(${c.total_students || 0}人)</span></div>`;
+
+              const clsList = (c.classes || []).map(a => `${App.utils.escapeHtml(a.class_name || '')} <span style="color:#6b7280;">(${a.student_count || 0}人)</span>`).join('<br>');
+              classHtml += `<div style="${boxStyle}" ${hoverAttrs}>${clsList || '--'}</div>`;
+
+              const roomTeachers = fixedTeachers.filter(t => t.classroom_id === c.classroom_id);
+              const tList = roomTeachers.map(t => App.utils.escapeHtml(t.teacher_name || '')).join('<br>');
+              teacherHtml += `<div style="${boxStyle}" ${hoverAttrs}>${tList || '--'}</div>`;
+            });
+
+            html += `<tr data-exam-idx="${ei}">
+              <td>${App.utils.escapeHtml(exam.exam_label || '--')}</td>
+              <td>${timeLabel}</td>
+              <td>${roomHtml || '--'}</td>
+              <td>${classHtml || '--'}</td>
+              <td>${teacherHtml || '--'}</td>
+            </tr>`;
+          }
+          html += '</tbody></table></div></div>';
+        }
+
         document.getElementById('courseDetailContainer').innerHTML = html;
       } catch {
         document.getElementById('courseDetailContainer').innerHTML = '<div class="card mb-4"><div class="card-body empty-state"><i class="fas fa-book"></i><p>加载课程详情失败</p></div></div>';
@@ -1261,7 +1969,7 @@ const App = {
       try {
         const teachers = await App.api.getList('/teachers/');
         const select = document.getElementById('changeTeacherSelect');
-        select.innerHTML = '<option value="">--请选择教师--</option>' + teachers.map(t => `<option value="${t.id}">${App.utils.escapeHtml(t.name)} (${App.utils.escapeHtml(t.teacher_id || '')})</option>`).join('');
+        select.innerHTML = '<option value="">--请选择教师--</option>' + teachers.map(t => `<option value="${t.id}">${App.utils.escapeHtml(t.name)} (${t.current_slots || 0}场/${t.max_slots || 0}场)</option>`).join('');
       } catch { /* ignore */ }
     },
     async submitChangeTeacher(examId) {
@@ -1288,27 +1996,40 @@ const App = {
     },
     async loadTeacherAssignments(teacherId, listId, countId, selectId) {
       try {
-        const data = await App.api.get('/exams/teachers/gantt');
-        const teacher = (data.teachers || []).find(t => t.id == teacherId);
-        const assignments = teacher ? (teacher.assignments || []) : [];
-        document.getElementById(countId).textContent = assignments.length + '场';
+        const data = await App.api.get(`/teachers/${teacherId}/exams`);
+        const payload = data.data || {};
+        const fixedExams = payload.fixed_exams || [];
+        const patrolExams = payload.patrol_exams || [];
+        // 标记类型以便列表展示
+        fixedExams.forEach(e => e.role = 'fixed');
+        patrolExams.forEach(e => e.role = 'patrol');
+        const allExams = [...fixedExams, ...patrolExams];
+        allExams.sort((a, b) => ((a.day_of_week || 0) - (b.day_of_week || 0)) || ((a.slot_code || '').localeCompare(b.slot_code || '')));
+
+        document.getElementById(countId).textContent = allExams.length + '场';
 
         const listEl = document.getElementById(listId);
-        if (assignments.length === 0) { listEl.innerHTML = '<div class="empty-state py-4"><p>暂无监考场次</p></div>'; }
+        if (allExams.length === 0) { listEl.innerHTML = '<div class="empty-state py-4"><p>暂无监考场次</p></div>'; }
         else {
-          listEl.innerHTML = assignments.map(a => `
+          listEl.innerHTML = allExams.map(a => {
+            const roomText = a.assigned_classroom || (a.classrooms || []).map(c => c.classroom_name).join(', ') || '--';
+            const roleBadge = a.role === 'fixed'
+              ? '<span class="badge badge-info text-xs">固定</span>'
+              : '<span class="badge badge-warning text-xs">流动</span>';
+            return `
             <div class="p-3 border-b border-gray-100 hover:bg-gray-50 text-sm">
-              <div class="font-medium text-gray-800">${App.utils.escapeHtml(a.course_name || '')}</div>
-              <div class="text-xs text-gray-500 mt-1"><i class="fas fa-calendar"></i> 周${['一','二','三','四','五','六','日'][a.day-1]} 第${a.time_slot}场</div>
-              <div class="text-xs text-gray-500"><i class="fas fa-door-open"></i> ${App.utils.escapeHtml(a.classroom_name || '')}</div>
+              <div class="font-medium text-gray-800">${App.utils.escapeHtml(a.course_name || '')} ${roleBadge}</div>
+              <div class="text-xs text-gray-500 mt-1"><i class="fas fa-calendar"></i> ${App.utils.escapeHtml(a.day_name || '')} ${App.utils.escapeHtml(a.slot_code || '')} (${App.utils.escapeHtml(a.time_range || '')})</div>
+              <div class="text-xs text-gray-500"><i class="fas fa-door-open"></i> ${App.utils.escapeHtml(roomText)}</div>
             </div>
-          `).join('');
+          `;
+          }).join('');
         }
         // Populate select
         const select = document.getElementById(selectId);
         if (select) {
-          select.innerHTML = assignments.length === 0 ? '<option value="">无场次</option>' :
-            assignments.map(a => `<option value="${a.id}">${App.utils.escapeHtml(a.course_name || '')} - 周${['一','二','三','四','五','六','日'][a.day-1]}第${a.time_slot}场</option>`).join('');
+          select.innerHTML = allExams.length === 0 ? '<option value="">无场次</option>' :
+            allExams.map(a => `<option value="${a.exam_id}">${App.utils.escapeHtml(a.course_name || '')} - ${App.utils.escapeHtml(a.day_name || '')}${App.utils.escapeHtml(a.slot_code || '')}</option>`).join('');
         }
       } catch { /* ignore */ }
     },
@@ -1319,11 +2040,12 @@ const App = {
     },
     async executeTransfer() {
       const type = document.getElementById('transferType').value;
-      const teacherAId = document.getElementById('teacherASelect').value;
-      const teacherBId = document.getElementById('teacherBSelect').value;
-      const slotA = document.getElementById('transferSlotA').value;
-      const slotB = document.getElementById('transferSlotB').value;
-      const reason = document.getElementById('transferReason').value;
+      const teacherAId = Number(document.getElementById('teacherASelect').value);
+      const teacherBId = Number(document.getElementById('teacherBSelect').value);
+      const slotA = Number(document.getElementById('transferSlotA').value);
+      const slotB = Number(document.getElementById('transferSlotB').value);
+      const reasonRaw = document.getElementById('transferReason').value;
+      const reason = reasonRaw && reasonRaw.trim() ? reasonRaw.trim() : '教师调剂';
 
       if (!type) { App.utils.showToast('请选择调剂类型', 'warning'); return; }
       if (!teacherAId) { App.utils.showToast('请选择教师A', 'warning'); return; }
@@ -1334,7 +2056,7 @@ const App = {
           await App.api.post('/adjustments/teacher-swap', { teacher_a_id: teacherAId, teacher_b_id: teacherBId, exam_a_id: slotA, exam_b_id: slotB, reason });
         } else if (type === 'transfer') {
           if (!teacherBId || !slotA) { App.utils.showToast('请完善转移信息', 'warning'); return; }
-          await App.api.post('/adjustments/teacher-transfer', { exam_id: slotA, from_teacher_id: teacherAId, to_teacher_id: teacherBId, reason });
+          await App.api.post('/adjustments/teacher-transfer', { exam_id: slotA, from_teacher_id: teacherAId, to_teacher_id: teacherBId, role: 'fixed', reason });
         } else if (type === 'batch-transfer') {
           if (!teacherBId) { App.utils.showToast('请选择教师B', 'warning'); return; }
           await App.api.post('/adjustments/teacher-batch-transfer', { from_teacher_id: teacherAId, to_teacher_id: teacherBId, reason });
@@ -1343,6 +2065,22 @@ const App = {
         App.handlers.loadTeacherAAssignments();
         App.handlers.loadTeacherBAssignments();
       } catch (e) { App.utils.showToast(e.message || '调剂失败', 'error'); }
+    },
+    highlightRoom(examIdx, roomIdx, enter) {
+      const row = document.querySelector(`tr[data-exam-idx="${examIdx}"]`);
+      if (!row) return;
+      const blocks = row.querySelectorAll(`[data-room-idx="${roomIdx}"]`);
+      blocks.forEach(b => {
+        if (enter) {
+          b.style.backgroundColor = '#dbeafe';
+          b.style.borderColor = '#3b82f6';
+          b.style.boxShadow = '0 0 0 2px rgba(59,130,246,0.15)';
+        } else {
+          b.style.backgroundColor = b.dataset.bg;
+          b.style.borderColor = '#e5e7eb';
+          b.style.boxShadow = 'none';
+        }
+      });
     },
     async undoLastTransfer() {
       try {
@@ -1353,6 +2091,16 @@ const App = {
 
     // --- Import / Export ---
     downloadTemplate(entity) {
+      if (entity === 'all-in-one') {
+        const url = `${API_BASE}/import-export/templates/all-in-one`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'all_in_one_template.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
       const url = `${API_BASE}/import-export/templates/${entity}`;
       const a = document.createElement('a');
       a.href = url;
@@ -1360,6 +2108,34 @@ const App = {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+    },
+    async clearAllData() {
+      App.utils.showModal('⚠️ 确认清除全部数据', `
+        <div class="space-y-2 text-sm">
+          <p class="text-red-600 font-semibold">此操作将删除所有基础数据（专业、教师、教室、班级、课程、学生、排考记录等），且无法撤销！</p>
+          <p>保留数据：<span class="font-medium">考试时段、审计日志</span></p>
+          <p class="text-gray-500">如需重新导入完整数据，建议先清除旧数据再导入。</p>
+        </div>
+      `, async () => {
+        try {
+          const res = await App.api.post('/import-export/clear-data', { confirm: true, preserve_audit_logs: true });
+          App.utils.showToast('数据清除完成', 'success');
+          const cleared = res.data?.cleared || {};
+          const preserved = res.data?.preserved || [];
+          let html = '<div class="space-y-2 text-sm">';
+          html += '<div><span class="font-semibold">已清除：</span></div>';
+          html += '<div class="grid grid-cols-2 gap-1 text-xs">';
+          for (const [k, v] of Object.entries(cleared)) {
+            html += `<div class="px-2 py-1 rounded ${v.includes('失败') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}">${k}: ${v}</div>`;
+          }
+          html += '</div>';
+          html += `<div class="mt-2"><span class="font-semibold">已保留：</span> ${preserved.join('、')}</div>`;
+          html += '</div>';
+          App.utils.showModal('清除结果', html, null, '确定');
+        } catch (e) {
+          App.utils.showToast(e.message || '清除失败', 'error');
+        }
+      }, '确认清除', '取消');
     },
     async initTimeSlots() {
       App.utils.showModal('确认重置时段', '确定要清空并重新初始化20个标准考试时段吗？这会删除所有自定义时段，且如果有课程引用了现有时段将无法重置。', async () => {
@@ -1398,12 +2174,22 @@ const App = {
       const formData = new FormData();
       formData.append('file', fileInput.files[0]);
       try {
-        const result = await App.api.post(`/import-export/import-excel/${importType}`, formData);
-        App.handlers.showImportResult(result);
-        if (result.success) {
-          App.utils.showToast(`成功导入 ${result.success_count} 条数据`, 'success');
+        if (importType === 'all-in-one') {
+          const result = await App.api.post('/import-export/import-excel-all', formData);
+          App.handlers.showAllInOneImportResult(result);
+          if (result.data && result.data.success) {
+            App.utils.showToast('全量导入成功', 'success');
+          } else {
+            App.utils.showToast('全量导入完成，部分数据有错误', 'warning');
+          }
         } else {
-          App.utils.showToast(`导入完成，${result.error_count} 条错误`, 'warning');
+          const result = await App.api.post(`/import-export/import-excel/${importType}`, formData);
+          App.handlers.showImportResult(result);
+          if (result.success) {
+            App.utils.showToast(`成功导入 ${result.success_count} 条数据`, 'success');
+          } else {
+            App.utils.showToast(`导入完成，${result.error_count} 条错误`, 'warning');
+          }
         }
       } catch (e) {
         App.utils.showToast(e.message || '导入失败', 'error');
@@ -1440,6 +2226,57 @@ const App = {
         warningTable.style.display = 'block';
         const tbody = warningTable.querySelector('tbody');
         tbody.innerHTML = result.warnings.map(w => `<tr><td style="color:orange;">${App.utils.escapeHtml(String(w))}</td></tr>`).join('');
+      } else {
+        warningTable.style.display = 'none';
+      }
+    },
+    showAllInOneImportResult(result) {
+      const panel = document.getElementById('importResultPanel');
+      const successAlert = document.getElementById('importSuccessAlert');
+      const errorAlert = document.getElementById('importErrorAlert');
+      const errorTable = document.getElementById('importErrorTable');
+      const warningTable = document.getElementById('importWarningTable');
+
+      panel.style.display = 'block';
+
+      const data = result.data || {};
+      const sheets = data.sheets || [];
+      const overallSuccess = data.success;
+
+      if (overallSuccess) {
+        successAlert.style.display = 'block';
+        successAlert.querySelector('span').textContent = data.overall_summary || '全量导入成功';
+        errorAlert.style.display = 'none';
+      } else {
+        successAlert.style.display = 'none';
+        errorAlert.style.display = 'block';
+        errorAlert.querySelector('span').textContent = data.overall_summary || '全量导入部分失败';
+      }
+
+      // 汇总所有Sheet的错误
+      let allErrors = [];
+      let allWarnings = [];
+      for (const sheet of sheets) {
+        if (sheet.errors && sheet.errors.length) {
+          sheet.errors.forEach(e => allErrors.push(`[${sheet.label}] ${e}`));
+        }
+        if (sheet.warnings && sheet.warnings.length) {
+          sheet.warnings.forEach(w => allWarnings.push(`[${sheet.label}] ${w}`));
+        }
+      }
+
+      if (allErrors.length) {
+        errorTable.style.display = 'block';
+        const tbody = errorTable.querySelector('tbody');
+        tbody.innerHTML = allErrors.map(err => `<tr><td style="color:red;">${App.utils.escapeHtml(String(err))}</td></tr>`).join('');
+      } else {
+        errorTable.style.display = 'none';
+      }
+
+      if (allWarnings.length) {
+        warningTable.style.display = 'block';
+        const tbody = warningTable.querySelector('tbody');
+        tbody.innerHTML = allWarnings.map(w => `<tr><td style="color:orange;">${App.utils.escapeHtml(String(w))}</td></tr>`).join('');
       } else {
         warningTable.style.display = 'none';
       }
