@@ -126,3 +126,28 @@
     width: 100% !important;
   }
 }
+
+/* AI 等待骨架屏动画 */
+.skeleton-shimmer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 260px;
+  padding: 4px 0;
+}
+.skeleton-shimmer span {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.skeleton-shimmer span:nth-child(1) { width: 100%; }
+.skeleton-shimmer span:nth-child(2) { width: 85%; }
+.skeleton-shimmer span:nth-child(3) { width: 60%; }
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

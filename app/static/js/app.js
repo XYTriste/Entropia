@@ -2659,7 +2659,7 @@ const App = {
         if (hint) hint.textContent = '点击展开';
       } else {
         // 展开
-        body.style.display = 'block';
+        body.style.display = 'flex';
         if (icon) icon.classList.add('rotate-180');
         if (hint) hint.textContent = '点击收起';
         // 聚焦输入框
@@ -2941,7 +2941,7 @@ const App = {
       return html;
     },
 
-    /** 显示加载动画 */
+    /** 显示加载动画（骨架屏） */
     showLoading() {
       const container = document.getElementById('chatMessages');
       if (!container) return null;
@@ -2950,13 +2950,13 @@ const App = {
       div.className = 'flex justify-start';
       div.id = 'chatLoading';
       div.innerHTML = `
-        <div class="px-3 py-2 rounded-2xl rounded-bl-md bg-white border" style="border-color: #E5E7EB;">
-          <div class="flex items-center gap-2">
-            <i class="fas fa-robot text-blue-500"></i>
-            <div class="flex gap-1">
-              <span class="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 0ms;"></span>
-              <span class="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 150ms;"></span>
-              <span class="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 300ms;"></span>
+        <div class="px-4 py-3 rounded-2xl rounded-bl-md bg-white border border-blue-100 shadow-sm">
+          <div class="flex items-start gap-2">
+            <i class="fas fa-robot text-blue-500 mt-0.5"></i>
+            <div class="skeleton-shimmer">
+              <span></span>
+              <span></span>
+              <span></span>
             </div>
           </div>
         </div>
