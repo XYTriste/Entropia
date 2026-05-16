@@ -6,7 +6,7 @@ Provides functions to query classroom availability.
 
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 
 from app.database import AsyncSessionLocal
@@ -105,7 +105,11 @@ async def query_classrooms(
         if day_of_week:
             query = query.where(Exam.time_slot.has(day_of_week=day_of_week))
         if slot_code:
-            query = query.where(Exam.time_slot.has(slot_code=slot_code))
+            codes = [c.strip() for c in slot_code.split(",") if c.strip()]
+            if len(codes) == 1:
+                query = query.where(Exam.time_slot.has(slot_code=codes[0]))
+            else:
+                query = query.where(Exam.time_slot.has(or_(*[TimeSlot.slot_code == c for c in codes])))
 
         exams_result = await db.execute(query)
         exams = exams_result.scalars().all()
