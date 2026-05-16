@@ -31,8 +31,8 @@ async def query_teacher_assignments(
     查询教师监考安排。
 
     Args:
-        teacher_name: 教师姓名（支持模糊匹配）
-        day_of_week: 可选，过滤星期几（1-5），不传则返回所有安排
+        teacher_name: 教师姓名(支持模糊匹配)
+        day_of_week: 可选,过滤星期几(1-5),不传则返回所有安排
 
     Returns:
         dict with teacher info and assignments
@@ -56,7 +56,7 @@ async def query_teacher_assignments(
             return {
                 "found": False,
                 "teacher_name": teacher_name,
-                "message": f"未找到名为 '{teacher_name}' 的教师，请确认姓名是否正确。",
+                "message": f"未找到名为 '{teacher_name}' 的教师,请确认姓名是否正确。",
                 "assignments": [],
                 "patrol_slots": [],
             }
@@ -73,7 +73,7 @@ async def query_teacher_assignments(
             "teacher_name": teacher_name,
             "matched_count": len(matched_teachers),
             "teachers": teacher_results,
-            # 保留向后兼容的字段（指向第一个教师）
+            # 保留向后兼容的字段(指向第一个教师)
             "teacher": teacher_results[0]["teacher"],
             "assignments": teacher_results[0]["assignments"],
             "patrol_slots": teacher_results[0]["patrol_slots"],
@@ -91,7 +91,7 @@ async def query_teacher_assignments(
 
 async def _query_single_teacher(db, teacher, day_of_week=None) -> dict:
     """查询单个教师的监考安排"""
-    # 1. 查询该教师的考试监考安排（ExamTeacher）
+    # 1. 查询该教师的考试监考安排(ExamTeacher)
     exam_assignments_result = await db.execute(
         select(ExamTeacher)
         .options(
@@ -119,7 +119,7 @@ async def _query_single_teacher(db, teacher, day_of_week=None) -> dict:
             if ea.exam.time_slot and ea.exam.time_slot.day_of_week == day_of_week
         ]
 
-    # 2. 查询该教师的流动监考安排（PatrolTeacher）
+    # 2. 查询该教师的流动监考安排(PatrolTeacher)
     patrol_query = (
         select(PatrolTeacher)
         .options(
@@ -180,7 +180,7 @@ async def _query_single_teacher(db, teacher, day_of_week=None) -> dict:
     # 按天和时段排序
     assignments_list.sort(key=lambda x: (x["day_of_week"], x["slot_code"]))
 
-    # 4. 整理流动监考安排（PatrolTeacher 表）
+    # 4. 整理流动监考安排(PatrolTeacher 表)
     patrol_list = []
     for pa in patrol_assignments:
         ts = pa.time_slot

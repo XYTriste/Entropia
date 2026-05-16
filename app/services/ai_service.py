@@ -2,10 +2,10 @@
 DeepSeek AI 服务 - 支持 Function Calling
 
 提供意图识别和工具调用能力。
-工作流程：
-  1. 非流式调用 DeepSeek，检测是否需要调用工具
-  2. 如需调用工具，执行 Python 函数，将结果追加到消息历史
-  3. 非流式获取最终回复，模拟流式输出返回前端
+工作流程:
+  1. 非流式调用 DeepSeek,检测是否需要调用工具
+  2. 如需调用工具,执行 Python 函数,将结果追加到消息历史
+  3. 非流式获取最终回复,模拟流式输出返回前端
 """
 
 import os
@@ -33,15 +33,15 @@ DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 def make_sse(data: dict) -> str:
     """
     将 dict 编码成 SSE "data: ...\n\n" 格式。
-    正确处理中文（ensure_ascii=False）。
-    注意：不能用 f-string 拼接 json_str，JSON 中的 '}' 会被误认为 f-string 结束符。
+    正确处理中文(ensure_ascii=False)。
+    注意:不能用 f-string 拼接 json_str,JSON 中的 '}' 会被误认为 f-string 结束符。
     """
     json_str = json.dumps(data, ensure_ascii=False)
     return "data: " + json_str + "\n\n"
 
 
 # ============================================================
-# 工具定义（与 DeepSeek Function Calling 格式一致）
+# 工具定义(与 DeepSeek Function Calling 格式一致)
 # ============================================================
 
 TOOLS = [
@@ -50,32 +50,32 @@ TOOLS = [
         "function": {
             "name": "query_classrooms",
             "description": (
-                "查询教室状态，包括已占用和空闲教室，以及每个考试的固定监考和流动监考老师信息。"
+                "查询教室状态,包括已占用和空闲教室,以及每个考试的固定监考和流动监考老师信息。"
                 "当用户询问教室、空闲教室、教室状态、排考安排、教室监考安排时调用此工具。"
-                "参数规则：（1）day_of_week：周一→1，未指定则不传。"
-                "（2）slot_code：'上午第一节'→'T1'，'上午'→'T1,T2'，未指定则不传。"
-                "（3）classroom：'201'→'5-201'，未指定则不传。"
-                "用户同时提到星期和时段（如'周一上午'），两个参数都要传。"
+                "参数规则:(1)day_of_week:周一→1,未指定则不传。"
+                "(2)slot_code:'上午第一节'→'T1','上午'→'T1,T2',未指定则不传。"
+                "(3)classroom:'201'→'5-201',未指定则不传。"
+                "用户同时提到星期和时段(如'周一上午'),两个参数都要传。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "day_of_week": {
                         "type": "integer",
-                        "description": "星期几（1=星期一, 2=星期二, ..., 5=星期五）。用户提到周一/星期一等时传入对应数字，未指定时不传。",
+                        "description": "星期几(1=星期一, 2=星期二, ..., 5=星期五)。用户提到周一/星期一等时传入对应数字,未指定时不传。",
                         "enum": [1, 2, 3, 4, 5]
                     },
                     "slot_code": {
                         "type": "string",
-                        "description": "时段代码，支持单个值或多值逗号分隔。T1=上午第一节，T2=上午第二节，T3=下午第一节，T4=下午第二节。用户说'上午'→'T1,T2'，'下午'→'T3,T4'，'上午第一节'→'T1'，以此类推。"
+                        "description": "时段代码,支持单个值或多值逗号分隔。T1=上午第一节,T2=上午第二节,T3=下午第一节,T4=下午第二节。用户说'上午'→'T1,T2','下午'→'T3,T4','上午第一节'→'T1',以此类推。"
                     },
                     "classroom": {
                         "type": "string",
-                        "description": "指定教室名称，如 '5-201' 或 '5-201,5-202'。用户明确提到某间或多间教室时传入，如'查5-201教室'→'5-201'。未指定时不传。"
+                        "description": "指定教室名称,如 '5-201' 或 '5-201,5-202'。用户明确提到某间或多间教室时传入,如'查5-201教室'→'5-201'。未指定时不传。"
                     },
                     "show_all": {
                         "type": "boolean",
-                        "description": "是否显示所有教室（包含已占用）。用户问'所有教室''全部教室'时设为 true，默认 false 只显示空闲。",
+                        "description": "是否显示所有教室(包含已占用)。用户问'所有教室''全部教室'时设为 true,默认 false 只显示空闲。",
                         "default": False
                     }
                 },
@@ -88,22 +88,22 @@ TOOLS = [
         "function": {
             "name": "query_teacher_assignments",
             "description": (
-                "查询教师的监考安排，包括固定监考和流动监考。支持模糊匹配，匹配到多位教师时返回所有匹配教师的完整数据（teachers 数组）。"
+                "查询教师的监考安排,包括固定监考和流动监考。支持模糊匹配,匹配到多位教师时返回所有匹配教师的完整数据(teachers 数组)。"
                 "当用户询问某位老师、某姓老师或所有匹配老师的监考安排时调用此工具。"
-                "参数规则：（1）teacher_name：'张老师'→'张'，'李明'→'李明'，'所有李姓老师'→'李'。"
-                "（2）day_of_week：指定某天时传入（如'周一'→1），未指定则不传。"
-                "返回格式：匹配多位教师时返回 'teachers' 数组，请基于每位教师的实际数据分别说明，不得推断或编造。"
+                "参数规则:(1)teacher_name:'张老师'→'张','李明'→'李明','所有李姓老师'→'李'。"
+                "(2)day_of_week:指定某天时传入(如'周一'→1),未指定则不传。"
+                "返回格式:匹配多位教师时返回 'teachers' 数组,请基于每位教师的实际数据分别说明,不得推断或编造。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "teacher_name": {
                         "type": "string",
-                        "description": "教师姓名，支持模糊匹配。如'张老师'→'张'，'李明'→'李明'，'所有李姓老师'→'李'。用户提到某位老师时传入。"
+                        "description": "教师姓名,支持模糊匹配。如'张老师'→'张','李明'→'李明','所有李姓老师'→'李'。用户提到某位老师时传入。"
                     },
                     "day_of_week": {
                         "type": "integer",
-                        "description": "可选，过滤星期几（1=星期一, ..., 5=星期五）。用户指定某天时传入，未指定时不传。",
+                        "description": "可选,过滤星期几(1=星期一, ..., 5=星期五)。用户指定某天时传入,未指定时不传。",
                         "enum": [1, 2, 3, 4, 5]
                     }
                 },
@@ -119,7 +119,7 @@ TOOLS = [
 # ============================================================
 
 class DeepSeekClient:
-    """DeepSeek API 客户端，支持非流式调用"""
+    """DeepSeek API 客户端,支持非流式调用"""
 
     def __init__(self, api_key: Optional[str] = None, model: str = DEEPSEEK_MODEL):
         self.api_key = api_key or DEEPSEEK_API_KEY
@@ -127,7 +127,7 @@ class DeepSeekClient:
         self.base_url = DEEPSEEK_BASE_URL
 
         if not self.api_key:
-            raise ValueError("DEEPSEEK_API_KEY 未配置，请在 .env 文件中设置")
+            raise ValueError("DEEPSEEK_API_KEY 未配置,请在 .env 文件中设置")
 
     def _get_headers(self) -> dict:
         return {
@@ -141,7 +141,7 @@ class DeepSeekClient:
         tools: list[dict] = None,
         temperature: float = 0.7,
     ) -> dict:
-        """非流式调用 DeepSeek，返回完整响应 dict。用于检测是否需要调用工具。"""
+        """非流式调用 DeepSeek,返回完整响应 dict。用于检测是否需要调用工具。"""
         payload = {
             "model": self.model,
             "messages": messages,
@@ -185,7 +185,7 @@ def init_tools():
 
 
 # ============================================================
-# 核心：流式对话处理（SSE 输出）
+# 核心:流式对话处理(SSE 输出)
 # ============================================================
 
 async def stream_chat(
@@ -193,10 +193,10 @@ async def stream_chat(
     session_id: str = "default"
 ) -> AsyncGenerator[str, None]:
     """
-    流式对话处理，yield SSE 格式字符串。
+    流式对话处理,yield SSE 格式字符串。
 
     Yields:
-        SSE 格式字符串，如 'data: {"type":"text","content":"你好"}\n\n'
+        SSE 格式字符串,如 'data: {"type":"text","content":"你好"}\n\n'
     """
     client = DeepSeekClient()
 
@@ -204,45 +204,45 @@ async def stream_chat(
         init_tools()
 
     def sse(data: dict) -> str:
-        """局部 SSE 编码函数，避免变量名冲突"""
+        """局部 SSE 编码函数,避免变量名冲突"""
         return make_sse(data)
 
     try:
         system_message = {
             "role": "system",
-            "content": """你是考试安排管理系统的智能助手，只能回答与考试安排、教室查询、教师监考安排相关的问题。
+            "content": """你是考试安排管理系统的智能助手,只能回答与考试安排、教室查询、教师监考安排相关的问题。
 
-工具使用：
+工具使用:
 - 用户询问教室状态、空闲教室、教室监考安排 → 调用 query_classrooms 工具
 - 用户询问某位老师的监考安排 → 调用 query_teacher_assignments 工具
-- 无相关工具时，诚实告知不支持该功能
+- 无相关工具时,诚实告知不支持该功能
 
-重要：
-- 必须基于工具返回的数据回答，不得编造任何教师姓名、教室名称、课程名称或监考信息
-- 工具返回 "teachers" 数组时，对每位教师分别说明情况，不得推断
-- 如果用户只是闲聊，简短回应即可
+重要:
+- 必须基于工具返回的数据回答,不得编造任何教师姓名、教室名称、课程名称或监考信息
+- 工具返回 "teachers" 数组时,对每位教师分别说明情况,不得推断
+- 如果用户只是闲聊,简短回应即可
 
 【多教师查询示例】
-用户问："查询所有李姓老师的监考情况"
-→ 调用 query_teacher_assignments，参数 teacher_name="李"
-→ 工具返回 "teachers" 数组，包含每位李姓教师的完整数据
-→ 基于数组中每位教师的实际数据分别回答，有安排则列出，无安排则说明"""
+用户问:"查询所有李姓老师的监考情况"
+→ 调用 query_teacher_assignments,参数 teacher_name="李"
+→ 工具返回 "teachers" 数组,包含每位李姓教师的完整数据
+→ 基于数组中每位教师的实际数据分别回答,有安排则列出,无安排则说明"""
         }
 
         full_messages = [system_message] + messages
 
-        # ── 第 1 步：非流式调用，检测 tool_call ─────────────
+        # ── 第 1 步:非流式调用,检测 tool_call ─────────────
         first_resp = await client.chat_non_stream(full_messages, tools=TOOLS)
         choice = first_resp["choices"][0]
         assistant_msg = choice["message"]
 
-        # ── 第 2 步：如有 tool_call，执行工具 ────────────────
+        # ── 第 2 步:如有 tool_call,执行工具 ────────────────
         if assistant_msg.get("tool_calls"):
             tool_call = assistant_msg["tool_calls"][0]
             func_name = tool_call["function"]["name"]
             func_args = json.loads(tool_call["function"]["arguments"])
 
-            # 容错：统一参数名（AI 可能返回 class_room 而非 classroom）
+            # 容错:统一参数名(AI 可能返回 class_room 而非 classroom)
             if "class_room" in func_args and "classroom" not in func_args:
                 func_args["classroom"] = func_args.pop("class_room")
 
@@ -263,12 +263,12 @@ async def stream_chat(
                 yield sse({"type": "done"})
                 return
 
-            # 向前端发送 tool_result 事件（前端渲染成表格卡片）
+            # 向前端发送 tool_result 事件(前端渲染成表格卡片)
             print(f"[DEBUG] Sending tool_result: tool={func_name}, data keys={list(result.keys()) if isinstance(result, dict) else type(result)}")
             yield sse({"type": "tool_result", "tool": func_name, "data": result})
 
-            # ── 反幻觉：空结果直接返回，不经过 LLM 生成 ────────────
-            # 当工具返回未找到或空数据时，直接返回标准回复，不给 LLM 编造数据的机会
+            # ── 反幻觉:空结果直接返回,不经过 LLM 生成 ────────────
+            # 当工具返回未找到或空数据时,直接返回标准回复,不给 LLM 编造数据的机会
             is_empty_teacher = func_name == "query_teacher_assignments" and (
                 not result.get("found", True) or
                 (not result.get("assignments") and not result.get("patrol_slots"))
@@ -277,15 +277,15 @@ async def stream_chat(
             if is_empty_teacher:
                 teacher_name = func_args.get("teacher_name", "该教师")
                 if not result.get("found", True):
-                    reply = f"未找到名为「{teacher_name}」的教师，请确认姓名是否正确。"
+                    reply = f"未找到名为「{teacher_name}」的教师,请确认姓名是否正确。"
                 else:
                     reply = f"{result['teacher']['name']}老师暂无监考安排。"
                 yield sse({"type": "text", "content": reply})
                 yield sse({"type": "done"})
                 return
 
-            # 将 tool_call 和 tool_result 追加到消息历史（严格按照 OpenAI 格式）
-            # 注意：role 必须是 "assistant"（不能拼错！），content 为 None 时要省略该字段
+            # 将 tool_call 和 tool_result 追加到消息历史(严格按照 OpenAI 格式)
+            # 注意:role 必须是 "assistant"(不能拼错！),content 为 None 时要省略该字段
             assistant_content = assistant_msg.get("content")
             tool_call_msg = {
                 "role": "assistant",
@@ -301,20 +301,20 @@ async def stream_chat(
                 "content": json.dumps(result, ensure_ascii=False)
             })
 
-            # ── 第 3 步：非流式获取最终回复，然后手动 SSE 输出 ─────────
+            # ── 第 3 步:非流式获取最终回复,然后手动 SSE 输出 ─────────
             # 使用低 temperature 避免模型在基于工具结果回答时自由发挥/编造数据
             final_resp = await client.chat_non_stream(full_messages, tools=None, temperature=0.1)
             final_content = final_resp["choices"][0]["message"].get("content", "")
 
-            # 模拟流式输出（逐块发送）
+            # 模拟流式输出(逐块发送)
             if final_content:
-                chunks = re.split(r'([，。！？\s]+)', final_content)
+                chunks = re.split(r'([,。！？\s]+)', final_content)
                 current_text = ""
                 for chunk in chunks:
                     if not chunk:
                         continue
                     current_text += chunk
-                    if len(current_text) >= 5 or re.search(r'[，。！？]$', chunk):
+                    if len(current_text) >= 5 or re.search(r'[,。！？]$', chunk):
                         yield sse({"type": "text", "content": current_text})
                         current_text = ""
                         await asyncio.sleep(0.02)
@@ -322,12 +322,12 @@ async def stream_chat(
                     yield sse({"type": "text", "content": current_text})
 
         else:
-            # ── 无工具调用：直接返回内容 ────────────────────
+            # ── 无工具调用:直接返回内容 ────────────────────
             content = assistant_msg.get("content", "")
             if content:
                 yield sse({"type": "text", "content": content})
 
-        # ── 第 4 步：发送完成信号 ──────────────────────────
+        # ── 第 4 步:发送完成信号 ──────────────────────────
         yield sse({"type": "done"})
 
     except Exception as e:
@@ -343,7 +343,7 @@ async def stream_chat(
 
 
 # ============================================================
-# 工具函数（供外部调用）
+# 工具函数(供外部调用)
 # ============================================================
 
 async def call_tool(tool_name: str, arguments: dict) -> dict:
