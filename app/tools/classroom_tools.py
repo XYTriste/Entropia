@@ -101,7 +101,7 @@ async def query_classrooms(
                 .selectinload(ExamClassroom.class_assignments)
                 .selectinload(ExamClassroomClass.class_),
                 selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.classroom),
-                selectinload(Exam.exam_teachers).selectinload(ExamTeacher.teacher)
+                selectinload(Exam.teacher_assignments).selectinload(ExamTeacher.teacher)
             )
             .where(Exam.status == ExamStatus.SCHEDULED)
         )
@@ -141,8 +141,8 @@ async def query_classrooms(
                     ])
                 # 获取固定监考老师
                 fixed_teachers = []
-                if exam.exam_teachers:
-                    for et in exam.exam_teachers:
+                if exam.teacher_assignments:
+                    for et in exam.teacher_assignments:
                         if et.teacher:
                             fixed_teachers.append(et.teacher.name)
                 
