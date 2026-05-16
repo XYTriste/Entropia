@@ -151,3 +151,99 @@
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* Markdown 渲染内容样式 */
+.assitant-content h1,
+.assitant-content h2,
+.assitant-content h3,
+.assitant-content h4 {
+  margin-top: 12px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.assitant-content h1 { font-size: 1.25em; }
+.assitant-content h2 { font-size: 1.1em; }
+.assitant-content h3 { font-size: 1em; }
+
+.assitant-content p {
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+.assitant-content code {
+  background: #F3F4F6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: 'Fira Code', 'Consolas', monospace;
+}
+
+.assitant-content pre {
+  background: #1F2937;
+  color: #F9FAFB;
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 8px 0;
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+
+.assitant-content pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.assitant-content ul,
+.assitant-content ol {
+  padding-left: 1.5em;
+  margin-bottom: 8px;
+}
+
+.assitant-content li {
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.assitant-content blockquote {
+  border-left: 3px solid #3B82F6;
+  padding-left: 12px;
+  color: #6B7280;
+  margin: 8px 0;
+}
+
+.assitant-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 0.9em;
+}
+
+.assitant-content table th,
+.assitant-content table td {
+  border: 1px solid #E5E7EB;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.assitant-content table th {
+  background: #F9FAFB;
+  font-weight: 600;
+}
+
+.assitant-content strong {
+  font-weight: 600;
+  color: #1F2937;
+}
+
+.assitant-content em {
+  font-style: italic;
+}
+
+.assitant-content a {
+  color: #3B82F6;
+  text-decoration: underline;
+}

@@ -2754,6 +2754,13 @@ const App = {
               } else if (data.type === 'done') {
                 this.isLoading = false;
                 this.hideLoading(loadingDiv);
+                // SSE 流结束，将累积的 Markdown 渲染为 HTML
+                if (msgDiv && assistantMsg) {
+                  const contentDiv = msgDiv.querySelector('.assistant-content');
+                  if (contentDiv) {
+                    this.renderMarkdown(contentDiv, assistantMsg.content);
+                  }
+                }
               }
             } catch (e) {
               // 忽略解析错误
@@ -2813,6 +2820,33 @@ const App = {
         // 滚动到底部
         const container = document.getElementById('chatMessages');
         if (container) container.scrollTop = container.scrollHeight;
+      }
+    },
+
+    /**
+     * 将 Markdown 文本渲染为安全的 HTML 并高亮代码块
+     * 用于 SSE 流结束后替换纯文本为渲染后的内容
+     */
+    renderMarkdown(element, mdText) {
+      if (!element) return;
+      // CDN 加载失败时的降级处理
+      if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+        element.textContent = mdText || '';
+        return;
+      }
+      try {
+        const rawHtml = marked.parse(mdText || '');
+        const cleanHtml = DOMPurify.sanitize(rawHtml);
+        element.innerHTML = cleanHtml;
+        // 对代码块应用 highlight.js
+        if (window.hljs) {
+          element.querySelectorAll('pre code').forEach(block => {
+            window.hljs.highlightElement(block);
+          });
+        }
+      } catch (e) {
+        console.error('[Chat] Markdown render error:', e);
+        element.textContent = mdText || '';
       }
     },
 
