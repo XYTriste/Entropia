@@ -172,6 +172,7 @@ async def query_classrooms(
             for info in exams_info:
                 exam_summary.append({
                     "course": info["course_name"],
+                    "exam_label": info["exam_label"],
                     "classes": info["classes"],
                     "time_str": info["time_str"],
                     "students": info["student_count"],
