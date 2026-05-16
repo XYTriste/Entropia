@@ -11,6 +11,8 @@ from sqlalchemy.orm import selectinload
 
 from app.database import AsyncSessionLocal
 from app.models.exam import Exam, ExamStatus
+from app.models.exam_classroom import ExamClassroom
+from app.models.exam_classroom_class import ExamClassroomClass
 from app.models.exam_teacher import ExamTeacher, ExamTeacherRole
 from app.models.patrol_teacher import PatrolTeacher
 from app.models.teacher import Teacher
@@ -67,8 +69,14 @@ async def query_teacher_assignments(
         exam_assignments_result = await db.execute(
             select(ExamTeacher)
             .options(
-                selectinload(ExamTeacher.exam).selectinload(Exam.course),
-                selectinload(ExamTeacher.exam).selectinload(Exam.time_slot),
+                selectinload(ExamTeacher.exam)
+                .selectinload(Exam.course),
+                selectinload(ExamTeacher.exam)
+                .selectinload(Exam.time_slot),
+                selectinload(ExamTeacher.exam)
+                .selectinload(Exam.classroom_assignments)
+                .selectinload(ExamClassroom.class_assignments)
+                .selectinload(ExamClassroomClass.class_),
                 selectinload(ExamTeacher.classroom),
             )
             .where(ExamTeacher.teacher_id == teacher.id)
@@ -110,6 +118,24 @@ async def query_teacher_assignments(
             if not ts:
                 continue
 
+            # 获取该教师在当前考试、当前教室中监考的班级和人数
+            class_names = []
+            total_students = 0
+            if exam.classroom_assignments:
+                # 找到与该教师监考教室匹配的 ExamClassroom 记录
+                target_exam_classroom = None
+                for ec in exam.classroom_assignments:
+                    if ec.classroom_id == ea.classroom_id:
+                        target_exam_classroom = ec
+                        break
+
+                if target_exam_classroom:
+                    total_students = target_exam_classroom.total_students
+                    if target_exam_classroom.class_assignments:
+                        for ecc in target_exam_classroom.class_assignments:
+                            if ecc.class_:
+                                class_names.append(ecc.class_.name)
+
             assignment_info = {
                 "exam_id": exam.id,
                 "course_name": exam.course.name if exam.course else f"Exam {exam.id}",
@@ -119,6 +145,8 @@ async def query_teacher_assignments(
                 "time_str": f"{ts.start_time}-{ts.end_time}",
                 "role": "固定监考" if ea.role.value == "fixed" else "流动监考",
                 "classroom": ea.classroom.name if ea.classroom else None,
+                "class_names": class_names if class_names else None,
+                "total_students": total_students if total_students > 0 else None,
                 "patrol_group": ea.patrol_group_name if ea.patrol_group_name else None,
             }
             assignments_list.append(assignment_info)

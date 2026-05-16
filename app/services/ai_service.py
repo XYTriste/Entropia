@@ -234,12 +234,24 @@ async def stream_chat(
 - 不要编造不存在的功能或数据。
 
 【反幻觉强制规则——你必须严格遵守】：
-1. 你只能基于工具返回的 JSON 数据回答，绝对不得自行推断、补充或编造任何教室名称。
-2. 工具返回的 JSON 中包含 "free" 列表（空闲教室）和 "occupied" 列表（已占用教室），你回答时提到的每一个教室名称，都必须能在这两个列表的 "name" 字段中找到。
-3. 如果 "free" 列表为空，请直接告诉用户"该时段没有空闲教室"，严禁自行列举任何教室。
-4. 如果 "occupied" 列表为空，请直接告诉用户"该时段没有考试安排"，严禁自行列举任何教室。
-5. 回答前，请先在脑海中核对：你提到的教室是否都出现在工具返回的数据中。只要有一次核对失败，就不要输出那个教室名称。
-6. 当用户的问题不需要调用工具时，直接回答，同样不得编造数据。"""
+1. 你只能基于工具返回的 JSON 数据回答，绝对不得自行推断、补充或编造任何教师姓名、教室名称、课程名称或监考场次。
+2. 工具返回的数据中包含 "teacher" 对象，你回答时提到的教师姓名，必须能在工具返回的数据中找到。
+3. 如果工具返回 "found": false，请直接告诉用户"未找到该教师，请确认姓名是否正确"，严禁自行列举任何教师姓名。
+4. 如果工具返回 "found": true 但 "assignments" 为空数组且 "patrol_slots" 为空数组，请直接告诉用户"该教师暂无监考安排"，严禁编造任何监考信息。
+5. 当用户追问（如"李老师呢？""那王老师呢？"）时，你必须再次调用 query_teacher_assignments 工具，绝对不能基于"记忆"或想象回答。
+6. 回答前，请先在脑海中核对：你提到的任何教师姓名、教室名称、课程名称、监考场次，是否都出现在工具返回的数据中。只要有一次核对失败，就不要输出那个名称。
+7. 当用户的问题不需要调用工具时，直接回答，同样不得编造数据。
+
+【空结果处理示例——必须严格遵守】：
+- 工具返回 {"found": false, "message": "未找到..."} → 你只能回答"未找到该教师，请确认姓名是否正确"
+- 工具返回 {"found": true, "teacher": {"name": "周建军"}, "assignments": [], "patrol_slots": []} → 你只能回答"周建军老师暂无监考安排"
+- 绝对禁止在工具返回空结果时编造任何监考场次、教室或课程信息
+
+【追问处理示例】：
+- 用户先问："查询梅老师的监考安排" → 你必须调用 query_teacher_assignments 工具，参数 teacher_name="梅"
+- 用户追问："李老师呢？" → 你必须再次调用 query_teacher_assignments 工具，参数 teacher_name="李"
+- 绝对不要基于"记忆"或"想象"回答，每次都必须调用工具获取真实数据
+- 如果用户只说"他呢？""她呢？"，且上下文中有提到某位老师，你可以推测并调用工具，但如果不确定，请先问清楚是哪一位老师"""
         }
 
         full_messages = [system_message] + messages
@@ -277,7 +289,25 @@ async def stream_chat(
                 return
 
             # 向前端发送 tool_result 事件（前端渲染成表格卡片）
+            print(f"[DEBUG] Sending tool_result: tool={func_name}, data keys={list(result.keys()) if isinstance(result, dict) else type(result)}")
             yield sse({"type": "tool_result", "tool": func_name, "data": result})
+
+            # ── 反幻觉：空结果直接返回，不经过 LLM 生成 ────────────
+            # 当工具返回未找到或空数据时，直接返回标准回复，不给 LLM 编造数据的机会
+            is_empty_teacher = func_name == "query_teacher_assignments" and (
+                not result.get("found", True) or
+                (not result.get("assignments") and not result.get("patrol_slots"))
+            )
+
+            if is_empty_teacher:
+                teacher_name = func_args.get("teacher_name", "该教师")
+                if not result.get("found", True):
+                    reply = f"未找到名为「{teacher_name}」的教师，请确认姓名是否正确。"
+                else:
+                    reply = f"{result['teacher']['name']}老师暂无监考安排。"
+                yield sse({"type": "text", "content": reply})
+                yield sse({"type": "done"})
+                return
 
             # 将 tool_call 和 tool_result 追加到消息历史（严格按照 OpenAI 格式）
             # 注意：role 必须是 "assistant"（不能拼错！），content 为 None 时要省略该字段

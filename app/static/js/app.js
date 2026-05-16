@@ -2852,6 +2852,7 @@ const App = {
 
     /** 渲染工具结果为全宽居中卡片（无气泡） */
     appendToolResult(toolName, data) {
+      console.log('appendToolResult called:', toolName, data); // 调试日志
       const container = document.getElementById('chatMessages');
       if (!container) return;
 
@@ -2872,11 +2873,16 @@ const App = {
       const body = document.createElement('div');
       body.className = 'p-4';
 
-      if (toolName === 'query_classrooms') {
-        body.innerHTML = this._renderClassroomTable(data);
-      } else if (toolName === 'query_teacher_assignments') {
-        body.innerHTML = this._renderTeacherAssignments(data);
-      } else {
+      try {
+        if (toolName === 'query_classrooms') {
+          body.innerHTML = this._renderClassroomTable(data);
+        } else if (toolName === 'query_teacher_assignments') {
+          body.innerHTML = this._renderTeacherAssignments(data);
+        } else {
+          body.textContent = JSON.stringify(data, null, 2);
+        }
+      } catch (e) {
+        console.error('渲染工具结果出错:', toolName, e);
         body.textContent = JSON.stringify(data, null, 2);
       }
 
@@ -3021,6 +3027,8 @@ const App = {
         html += `<th class="px-4 py-2 text-left font-semibold">时间</th>`;
         html += `<th class="px-4 py-2 text-center font-semibold">角色</th>`;
         html += `<th class="px-4 py-2 text-left font-semibold">教室</th>`;
+        html += `<th class="px-4 py-2 text-left font-semibold">涉考班级</th>`;
+        html += `<th class="px-4 py-2 text-center font-semibold">人数</th>`;
         html += `<th class="px-4 py-2 text-left font-semibold">流动分组</th>`;
         html += `</tr></thead><tbody>`;
 
@@ -3030,6 +3038,8 @@ const App = {
           html += `<td class="px-4 py-2.5 text-gray-600">${this.escapeHtml(a.day_name || '')} ${this.escapeHtml(a.time_str || '')}</td>`;
           html += `<td class="px-4 py-2.5 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${a.role === '固定监考' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}">${a.role}</span></td>`;
           html += `<td class="px-4 py-2.5 text-gray-600">${a.classroom ? this.escapeHtml(a.classroom) : '<span class="text-gray-400">-</span>'}</td>`;
+          html += `<td class="px-4 py-2.5 text-gray-600">${a.class_names && a.class_names.length > 0 ? a.class_names.map(n => this.escapeHtml(n)).join('、') : '<span class="text-gray-400">-</span>'}</td>`;
+          html += `<td class="px-4 py-2.5 text-center text-gray-600">${a.total_students ? a.total_students : '<span class="text-gray-400">-</span>'}</td>`;
           html += `<td class="px-4 py-2.5 text-gray-600">${a.patrol_group ? this.escapeHtml(a.patrol_group) : '<span class="text-gray-400">-</span>'}</td>`;
           html += `</tr>`;
         }
