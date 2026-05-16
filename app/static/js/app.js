@@ -191,6 +191,14 @@ const App = {
       if (!timeStr) return '--';
       return timeStr.substring(0, 5);
     },
+    // 流动监考分组名称映射
+    mapPatrolGroupName(name) {
+      const map = {
+        "5-2及理东二": "流动监考5-2和理东二",
+        "5-3": "流动监考5-3"
+      };
+      return map[name] || name;
+    },
     escapeHtml(str) {
       if (typeof str !== 'string') return str;
       const div = document.createElement('div');
@@ -1124,7 +1132,8 @@ const App = {
           if (patrol.length > 0) {
             teachersHtml += '<div class="mb-2"><span class="text-xs font-semibold text-gray-600">流动监考：</span>';
             teachersHtml += patrol.map(t => {
-              const group = t.patrol_group_name ? ` (${App.utils.escapeHtml(t.patrol_group_name)})` : '';
+              const displayGroup = t.patrol_group_name ? App.utils.mapPatrolGroupName(t.patrol_group_name) : '';
+              const group = displayGroup ? ` (${App.utils.escapeHtml(displayGroup)})` : '';
               return `<span class="text-xs px-2 py-1 rounded bg-orange-50 text-orange-700 mr-1">${App.utils.escapeHtml(t.teacher_name)}${group}</span>`;
             }).join('');
             teachersHtml += '</div>';
@@ -1773,16 +1782,12 @@ const App = {
         ];
 
         // 生成图例
-        const groupNameMap = {
-          "5-2及理东二": "流动监考5-2和理东二",
-          "5-3": "流动监考5-3"
-        };
         let legendHtml = '<span class="text-sm text-gray-600 font-medium">区域分组：</span>';
         if (Object.keys(groupColors).length === 0) {
           legendHtml += '<span class="text-sm text-gray-400">未配置分组</span>';
         } else {
           for (const [name, color] of Object.entries(groupColors)) {
-            const displayName = groupNameMap[name] || name;
+            const displayName = App.utils.mapPatrolGroupName(name);
             legendHtml += `<span class="text-sm px-2 py-1 rounded mr-2" style="background:${color}; color:#374151;">${App.utils.escapeHtml(displayName)}</span>`;
           }
         }
@@ -1802,7 +1807,7 @@ const App = {
             } else {
               html += '<div class="matrix-cell" style="display: flex; flex-direction: column; gap: 4px; padding: 6px;">';
               for (const p of patrolList) {
-                const displayGroupName = groupNameMap[p.patrol_group_name] || p.patrol_group_name;
+                const displayGroupName = App.utils.mapPatrolGroupName(p.patrol_group_name);
                 const bg = p.patrol_group_name ? (groupColors[p.patrol_group_name] || '#F3F4F6') : '#F3F4F6';
                 const groupLabel = p.patrol_group_name ? `<span class="text-xs text-gray-500 ml-1">(${App.utils.escapeHtml(displayGroupName)})</span>` : '';
                 html += `<div class="rounded border text-xs" style="background:${bg}; border-color:#E5E7EB; flex:1; display:flex; align-items:center; justify-content:center; min-height:0; overflow:hidden;">
