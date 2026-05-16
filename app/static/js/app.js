@@ -2642,23 +2642,32 @@ const App = {
   chat: {
     sessionId: `session_${Date.now()}`,
     isLoading: false,
-    messages: [],  // 存储对话历史
+    isExpanded: false,
+    messages: [],
 
-    /** 打开聊天面板 */
-    openPanel() {
-      const panel = document.getElementById('aiChatPanel');
-      if (panel) {
-        panel.classList.remove('translate-x-full');
-        document.getElementById('aiChatInput')?.focus();
-      }
-    },
+    /** 切换内嵌聊天面板展开/收起 */
+    toggleEmbedded() {
+      const body = document.getElementById('chatPanelBody');
+      const icon = document.getElementById('chatPanelToggleIcon');
+      const hint = document.getElementById('chatPanelToggleHint');
+      if (!body) return;
 
-    /** 关闭聊天面板 */
-    closePanel() {
-      const panel = document.getElementById('aiChatPanel');
-      if (panel) {
-        panel.classList.add('translate-x-full');
+      if (this.isExpanded) {
+        // 收起
+        body.style.display = 'none';
+        if (icon) icon.classList.remove('rotate-180');
+        if (hint) hint.textContent = '点击展开';
+      } else {
+        // 展开
+        body.style.display = 'block';
+        if (icon) icon.classList.add('rotate-180');
+        if (hint) hint.textContent = '点击收起';
+        // 聚焦输入框
+        setTimeout(() => {
+          document.getElementById('chatInput')?.focus();
+        }, 50);
       }
+      this.isExpanded = !this.isExpanded;
     },
 
     /** 发送消息 */
@@ -2672,6 +2681,10 @@ const App = {
       // 清空输入框
       input.value = '';
 
+      // 隐藏欢迎语
+      const welcome = document.getElementById('chatWelcome');
+      if (welcome) welcome.style.display = 'none';
+
       // 添加用户消息到历史和 UI
       this.messages.push({ role: 'user', content });
       this.appendMessage('user', content);
@@ -2680,9 +2693,10 @@ const App = {
       this.isLoading = true;
       const loadingDiv = this.showLoading();
 
+      let response;
       try {
         // 发起 SSE 请求
-        const response = await fetch('/api/chat/stream', {
+        response = await fetch('/api/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2695,10 +2709,9 @@ const App = {
           throw new Error(`HTTP ${response.status}`);
         }
 
-        // 创建助手消息占位
-        const assistantMsg = { role: 'assistant', content: '' };
-        this.messages.push(assistantMsg);
-        const msgDiv = this.appendMessage('assistant', '');
+        // 惰性创建助手文本气泡（仅当有 text 事件时才创建）
+        let assistantMsg = null;
+        let msgDiv = null;
 
         // 读取 SSE 流
         const reader = response.body.getReader();
@@ -2722,9 +2735,22 @@ const App = {
               const data = JSON.parse(dataStr);
 
               if (data.type === 'text') {
-                // 流式追加文字
+                // 惰性创建助手消息气泡（左对齐，仅文本对话用）
+                if (!msgDiv) {
+                  assistantMsg = { role: 'assistant', content: '' };
+                  this.messages.push(assistantMsg);
+                  msgDiv = this.appendMessage('assistant', '');
+                }
                 assistantMsg.content += data.content;
                 this.appendText(msgDiv, data.content);
+              } else if (data.type === 'tool_result') {
+                // 工具结果：全宽居中卡片，不套气泡
+                this.appendToolResult(data.tool, data.data);
+              } else if (data.type === 'error') {
+                // 显示错误信息
+                this.isLoading = false;
+                this.hideLoading(loadingDiv);
+                this.appendMessage('error', data.content || '服务出错，请稍后重试。');
               } else if (data.type === 'done') {
                 this.isLoading = false;
                 this.hideLoading(loadingDiv);
@@ -2752,13 +2778,13 @@ const App = {
 
       if (role === 'user') {
         div.innerHTML = `
-          <div class="max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md" style="background: #3B82F6; color: white;">
+          <div class="max-w-[95%] px-3 py-2 rounded-2xl rounded-br-md" style="background: #3B82F6; color: white;">
             ${this.escapeHtml(content)}
           </div>
         `;
       } else if (role === 'assistant') {
         div.innerHTML = `
-          <div class="max-w-[85%] px-3 py-2 rounded-2xl rounded-bl-md bg-white border" style="border-color: #E5E7EB;">
+          <div class="max-w-[95%] px-3 py-2 rounded-2xl rounded-bl-md bg-white border" style="border-color: #E5E7EB;">
             <div class="flex items-start gap-2">
               <i class="fas fa-robot text-blue-500 mt-0.5"></i>
               <div class="assistant-content">${content || '<span class="text-gray-400">...</span>'}</div>
@@ -2767,7 +2793,7 @@ const App = {
         `;
       } else if (role === 'error') {
         div.innerHTML = `
-          <div class="max-w-[85%] px-3 py-2 rounded-2xl bg-red-50 text-red-600 border border-red-200">
+          <div class="max-w-[95%] px-3 py-2 rounded-2xl bg-red-50 text-red-600 border border-red-200">
             <i class="fas fa-exclamation-circle mr-1"></i>${this.escapeHtml(content)}
           </div>
         `;
@@ -2788,6 +2814,131 @@ const App = {
         const container = document.getElementById('chatMessages');
         if (container) container.scrollTop = container.scrollHeight;
       }
+    },
+
+    /** 渲染工具结果为全宽居中卡片（无气泡） */
+    appendToolResult(toolName, data) {
+      const container = document.getElementById('chatMessages');
+      if (!container) return;
+
+      // 全宽居中卡片容器
+      const wrapper = document.createElement('div');
+      wrapper.className = 'flex justify-center my-3';
+
+      const card = document.createElement('div');
+      card.className = 'w-full max-w-[65%] bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden';
+
+      // 卡片头部
+      const header = document.createElement('div');
+      header.className = 'px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 flex items-center gap-2';
+      header.innerHTML = '<i class="fas fa-robot text-blue-500"></i><span class="text-sm font-medium text-gray-700">查询结果</span>';
+      card.appendChild(header);
+
+      // 卡片内容
+      const body = document.createElement('div');
+      body.className = 'p-4';
+
+      if (toolName === 'query_classrooms') {
+        body.innerHTML = this._renderClassroomTable(data);
+      } else {
+        body.textContent = JSON.stringify(data, null, 2);
+      }
+
+      card.appendChild(body);
+      wrapper.appendChild(card);
+      container.appendChild(wrapper);
+      container.scrollTop = container.scrollHeight;
+
+      // 保存到对话历史
+      this.messages.push({ role: 'assistant', content: `[${toolName} 查询结果]` });
+    },
+
+    /** 渲染教室查询结果表格（返回 HTML 字符串） */
+    _renderClassroomTable(data) {
+      const query = data.query || {};
+      const dayLabel = query.day_name || '全部';
+      const slotLabel = query.slot_code || '全部';
+
+      let html = `<div class="mb-4">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-sm font-medium text-gray-600">${dayLabel} ${slotLabel}</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700">
+            <i class="fas fa-building mr-1"></i> 总 ${data.total_classrooms} 间
+          </span>
+          <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-50 text-red-700">
+            <i class="fas fa-lock mr-1"></i> 已占用 ${data.occupied_count} 间
+          </span>
+          <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-50 text-green-700">
+            <i class="fas fa-check-circle mr-1"></i> 空闲 ${data.free_count} 间
+          </span>
+        </div>
+      </div>`;
+
+      // 已占用教室表格
+      if (data.occupied && data.occupied.length > 0) {
+        html += `<div class="mb-5">`;
+        html += `<div class="text-sm font-semibold text-red-700 mb-2 flex items-center gap-1"><i class="fas fa-lock"></i> 已占用教室</div>`;
+        html += `<div class="overflow-x-auto rounded-lg border border-red-200">`;
+        html += `<table class="w-full text-sm" style="min-width: 900px;">`;
+        html += `<thead><tr class="bg-red-50 text-red-700">`;
+        html += `<th class="px-4 py-2 text-left font-semibold">教室</th>`;
+        html += `<th class="px-4 py-2 text-left font-semibold">建筑</th>`;
+        html += `<th class="px-4 py-2 text-center font-semibold" style="width: 80px;">容量</th>`;
+        html += `<th class="px-4 py-2 text-center font-semibold" style="width: 90px;">类型</th>`;
+        html += `<th class="px-4 py-2 text-left font-semibold">考试科目</th>`;
+        html += `<th class="px-4 py-2 text-left font-semibold" style="width: 170px;">考试时间</th>`;
+        html += `<th class="px-4 py-2 text-left font-semibold">涉考班级</th>`;
+        html += `<th class="px-4 py-2 text-center font-semibold" style="width: 80px;">人数</th>`;
+        html += `</tr></thead><tbody>`;
+        for (const c of data.occupied) {
+          const courseText = c.exams.map(e => this.escapeHtml(e.course)).join('<br>');
+          const timeText = c.exams.map(e => this.escapeHtml(e.time_str || '')).join('<br>');
+          const classesText = c.exams.map(e => Array.isArray(e.classes) ? e.classes.map(cls => this.escapeHtml(cls)).join(', ') : '').join('<br>');
+          const studentsText = c.exams.map(e => e.students + '人').join('<br>');
+          html += `<tr class="border-t border-red-100 hover:bg-red-50/50">`;
+          html += `<td class="px-4 py-2.5 font-medium text-gray-800">${this.escapeHtml(c.name)}</td>`;
+          html += `<td class="px-4 py-2.5 text-gray-500">${this.escapeHtml(c.building)}</td>`;
+          html += `<td class="px-4 py-2.5 text-center text-gray-500">${c.capacity}</td>`;
+          html += `<td class="px-4 py-2.5 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${c.type === 'Lecture' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">${c.type}</span></td>`;
+          html += `<td class="px-4 py-2.5 text-gray-700 text-sm">${courseText}</td>`;
+          html += `<td class="px-4 py-2.5 text-sm text-gray-600">${timeText}</td>`;
+          html += `<td class="px-4 py-2.5 text-sm text-gray-600">${classesText}</td>`;
+          html += `<td class="px-4 py-2.5 text-center text-gray-500 text-sm">${studentsText}</td>`;
+          html += `</tr>`;
+        }
+        html += `</tbody></table></div></div>`;
+      }
+
+      // 空闲教室表格
+      if (data.free && data.free.length > 0) {
+        html += `<div class="mb-3">`;
+        html += `<div class="text-sm font-semibold text-green-700 mb-2 flex items-center gap-1"><i class="fas fa-check-circle"></i> 空闲教室</div>`;
+        html += `<div class="overflow-x-auto rounded-lg border border-green-200">`;
+        html += `<table class="w-full text-sm" style="min-width: 500px;">`;
+        html += `<thead><tr class="bg-green-50 text-green-700">`;
+        html += `<th class="px-4 py-2 text-left font-semibold">教室</th>`;
+        html += `<th class="px-4 py-2 text-left font-semibold">建筑</th>`;
+        html += `<th class="px-4 py-2 text-center font-semibold" style="width: 80px;">容量</th>`;
+        html += `<th class="px-4 py-2 text-center font-semibold" style="width: 90px;">类型</th>`;
+        html += `</tr></thead><tbody>`;
+        for (const c of data.free) {
+          html += `<tr class="border-t border-green-100 hover:bg-green-50/50">`;
+          html += `<td class="px-4 py-2.5 font-medium text-gray-800">${this.escapeHtml(c.name)}</td>`;
+          html += `<td class="px-4 py-2.5 text-gray-500">${this.escapeHtml(c.building)}</td>`;
+          html += `<td class="px-4 py-2.5 text-center text-gray-500">${c.capacity}</td>`;
+          html += `<td class="px-4 py-2.5 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${c.type === 'Lecture' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">${c.type}</span></td>`;
+          html += `</tr>`;
+        }
+        html += `</tbody></table></div></div>`;
+      }
+
+      if ((!data.occupied || data.occupied.length === 0) && (!data.free || data.free.length === 0)) {
+        html += '<div class="text-sm text-gray-400 py-6 text-center"><i class="fas fa-inbox text-2xl mb-2"></i><p>暂无教室数据</p></div>';
+      }
+
+      return html;
     },
 
     /** 显示加载动画 */
@@ -2841,6 +2992,12 @@ const App = {
     },
   },
 };
+
+// Debug: 确保 chat 模块已加载
+console.log('[Debug] App.chat loaded:', typeof App.chat !== 'undefined' ? 'YES' : 'NO');
+if (typeof App.chat === 'undefined') {
+  console.error('[Error] App.chat is undefined! Available App properties:', Object.keys(App));
+}
 
 // Launch
 document.addEventListener('DOMContentLoaded', () => App.init());

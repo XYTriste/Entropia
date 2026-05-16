@@ -51,6 +51,8 @@ services:
     depends_on:
       db:
         condition: service_healthy  # 确保数据库就绪后才启动
+    env_file:
+      - .env
     environment:
       # 数据库连接（通过环境变量读取，参考 .env.example 配置）
       SCHEDULER_DATABASE_URL: ${SCHEDULER_DATABASE_URL}
@@ -61,6 +63,8 @@ services:
       SCHEDULER_SECRET_KEY: ${SCHEDULER_SECRET_KEY:-change-me-in-production}
       # 排考引擎配置
       SCHEDULER_MAX_SOLVE_TIME: "300"
+      # 禁用 .pyc 字节码缓存，避免加载旧代码
+      PYTHONDONTWRITEBYTECODE: "1"
     ports:
       - "8000:8000"
     volumes:
