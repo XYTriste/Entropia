@@ -1773,12 +1773,17 @@ const App = {
         ];
 
         // 生成图例
+        const groupNameMap = {
+          "5-2及理东二": "流动监考5-2和理东二",
+          "5-3": "流动监考5-3"
+        };
         let legendHtml = '<span class="text-sm text-gray-600 font-medium">区域分组：</span>';
         if (Object.keys(groupColors).length === 0) {
           legendHtml += '<span class="text-sm text-gray-400">未配置分组</span>';
         } else {
           for (const [name, color] of Object.entries(groupColors)) {
-            legendHtml += `<span class="text-sm px-2 py-1 rounded mr-2" style="background:${color}; color:#374151;">${App.utils.escapeHtml(name)}</span>`;
+            const displayName = groupNameMap[name] || name;
+            legendHtml += `<span class="text-sm px-2 py-1 rounded mr-2" style="background:${color}; color:#374151;">${App.utils.escapeHtml(displayName)}</span>`;
           }
         }
         document.getElementById('patrolLegend').innerHTML = legendHtml;
@@ -1797,8 +1802,9 @@ const App = {
             } else {
               html += '<div class="matrix-cell" style="display: flex; flex-direction: column; gap: 4px; padding: 6px;">';
               for (const p of patrolList) {
+                const displayGroupName = groupNameMap[p.patrol_group_name] || p.patrol_group_name;
                 const bg = p.patrol_group_name ? (groupColors[p.patrol_group_name] || '#F3F4F6') : '#F3F4F6';
-                const groupLabel = p.patrol_group_name ? `<span class="text-xs text-gray-500 ml-1">(${App.utils.escapeHtml(p.patrol_group_name)})</span>` : '';
+                const groupLabel = p.patrol_group_name ? `<span class="text-xs text-gray-500 ml-1">(${App.utils.escapeHtml(displayGroupName)})</span>` : '';
                 html += `<div class="rounded border text-xs" style="background:${bg}; border-color:#E5E7EB; flex:1; display:flex; align-items:center; justify-content:center; min-height:0; overflow:hidden;">
                   <div class="font-semibold truncate" style="width:100%; text-align:center; padding:0 4px; color:#374151;">${App.utils.escapeHtml(p.teacher_name)}${groupLabel}</div>
                 </div>`;

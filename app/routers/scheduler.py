@@ -617,8 +617,8 @@ async def get_schedule_config(
                 "fixed_teachers_per_room": 2,
                 "patrol_teacher_count_per_slot_pair": 2,
                 "patrol_group_rules": [
-                    {"group_name": "5-2及理东二", "patterns": ["5-2*", "理东二"]},
-                    {"group_name": "5-3", "patterns": ["5-3*"]},
+                    {"group_name": "流动监考5-2和理东二", "patterns": ["5-2*", "理东二"]},
+                    {"group_name": "流动监考5-3", "patterns": ["5-3*"]},
                 ],
                 "classroom_priority_rules": [
                     {"priority": 1, "patterns": ["5-2*"]},
