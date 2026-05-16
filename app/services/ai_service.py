@@ -196,7 +196,15 @@ async def stream_chat(
       用户说"201和202" → classroom="5-201,5-202"
   - 用户没指定教室 → 不传 classroom 参数，让工具返回所有教室
 - 如果你没有相关的工具来完成用户的请求（例如：修改排考、删除考试等），请诚实告知用户"抱歉，我目前还不支持这个功能，请联系管理员添加相关功能。"
-- 不要编造不存在的功能或数据。"""
+- 不要编造不存在的功能或数据。
+
+【反幻觉强制规则——你必须严格遵守】：
+1. 你只能基于工具返回的 JSON 数据回答，绝对不得自行推断、补充或编造任何教室名称。
+2. 工具返回的 JSON 中包含 "free" 列表（空闲教室）和 "occupied" 列表（已占用教室），你回答时提到的每一个教室名称，都必须能在这两个列表的 "name" 字段中找到。
+3. 如果 "free" 列表为空，请直接告诉用户"该时段没有空闲教室"，严禁自行列举任何教室。
+4. 如果 "occupied" 列表为空，请直接告诉用户"该时段没有考试安排"，严禁自行列举任何教室。
+5. 回答前，请先在脑海中核对：你提到的教室是否都出现在工具返回的数据中。只要有一次核对失败，就不要输出那个教室名称。
+6. 当用户的问题不需要调用工具时，直接回答，同样不得编造数据。"""
         }
 
         full_messages = [system_message] + messages
@@ -254,7 +262,8 @@ async def stream_chat(
             })
 
             # ── 第 3 步：非流式获取最终回复，然后手动 SSE 输出 ─────────
-            final_resp = await client.chat_non_stream(full_messages, tools=None)
+            # 使用低 temperature 避免模型在基于工具结果回答时自由发挥/编造数据
+            final_resp = await client.chat_non_stream(full_messages, tools=None, temperature=0.1)
             final_content = final_resp["choices"][0]["message"].get("content", "")
 
             # 模拟流式输出（逐块发送）
