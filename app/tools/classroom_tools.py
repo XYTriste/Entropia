@@ -53,12 +53,39 @@ async def query_classrooms(
             classroom_filter = [str(classroom)]
 
     async with AsyncSessionLocal() as db:
-        # 1. Get all active classrooms (filtered by classroom if specified)
-        classroom_query = select(Classroom).where(Classroom.is_active == True)  # noqa: E712
-        if classroom_filter:
-            classroom_query = classroom_query.where(Classroom.name.in_(classroom_filter))
-        all_classrooms_result = await db.execute(classroom_query)
+        # 1. Get all active classrooms
+        all_classrooms_result = await db.execute(
+            select(Classroom).where(Classroom.is_active == True)  # noqa: E712
+        )
         all_classrooms = all_classrooms_result.scalars().all()
+
+        # Fuzzy match classrooms if filter specified (Python-side, simple and reliable)
+        if classroom_filter:
+            matched = []
+            for pattern in classroom_filter:
+                pat = pattern.strip().lower()
+                pat_clean = pat.replace("-", "").replace(" ", "")
+                for c in all_classrooms:
+                    c_name = c.name.lower()
+                    c_clean = c_name.replace("-", "").replace(" ", "")
+                    if pat == c_name or pat in c_name or pat == c_clean or pat_clean in c_clean:
+                        matched.append(c)
+            if not matched:
+                return {
+                    "total_classrooms": 0,
+                    "occupied_count": 0,
+                    "free_count": 0,
+                    "query": {
+                        "day_of_week": day_of_week,
+                        "day_name": DAY_NAMES.get(day_of_week, "All") if day_of_week else "All",
+                        "slot_code": slot_code or "All",
+                        "classroom": classroom or "All",
+                    },
+                    "occupied": [],
+                    "free": [],
+                }
+            all_classrooms = matched
+
         classroom_map = {c.id: c for c in all_classrooms}
 
         # 2. Query scheduled exams and their classrooms
