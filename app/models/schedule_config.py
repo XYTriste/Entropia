@@ -5,12 +5,13 @@
 - 每教室固定监考人数
 - 流动监考人数及分组规则
 - 教室优先级规则
+- 教师分配软约束
 """
 
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Integer, Text
+from sqlalchemy import Boolean, DateTime, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -56,6 +57,22 @@ class ScheduleConfig(Base):
         Text,
         nullable=True,
         comment='教室优先级规则JSON，例如: [{"priority":1,"patterns":["5-2*"]},{"priority":2,"patterns":["5-3*"]}]',
+    )
+
+    # 教师分配软约束：是否启用最大监考天数约束（默认开启）
+    enable_max_days_constraint: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="是否启用最大监考天数约束",
+    )
+
+    # 教师分配软约束：是否启用日期连续性约束（默认开启）
+    enable_day_continuity_constraint: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="是否启用日期连续性约束",
     )
 
     created_at: Mapped[datetime] = mapped_column(

@@ -96,6 +96,9 @@
         .form-input:disabled { background: #F3F4F6; cursor: not-allowed; }
         .form-label { display: block; font-size: 12px; font-weight: 500; color: #374151; margin-bottom: 4px; }
         .form-group { margin-bottom: 16px; }
+        /* Toggle Switch */
+        .toggle-switch:checked { left: 20px; }
+        .toggle-switch:checked + .toggle-label { background-color: #3B82F6; }
         /* Select */
         .form-select { width: 100%; padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px; color: #374151; background: white; outline: none; }
         .form-select:focus { border-color: #3B82F6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
@@ -442,6 +445,27 @@
                                     <div class="text-gray-400 mt-1">每上午/下午各2名流动监考</div>
                                 </div>
                             </div>
+                            <div class="border-t border-gray-100 pt-3 mb-3">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">教师分配约束</p>
+                                <div class="space-y-2">
+                                    <label class="flex items-center justify-between cursor-pointer">
+                                        <span class="text-sm text-gray-700">最大监考天数</span>
+                                        <div class="relative inline-block w-10 mr-2 align-middle select-none">
+                                            <input type="checkbox" id="enableMaxDaysConstraint" checked class="toggle-switch absolute block w-5 h-5 bg-white rounded-full border-2 border-gray-300 appearance-none cursor-pointer transition-all duration-200 ease-in-out left-0 top-0" style="z-index:1;">
+                                            <label for="enableMaxDaysConstraint" class="toggle-label block overflow-hidden h-5 rounded-full bg-gray-300 cursor-pointer transition-colors duration-200" style="margin: 2px 2px 2px 22px;"></label>
+                                        </div>
+                                    </label>
+                                    <div class="text-xs text-gray-400 pl-2">教师监考天数不超过总排考天数-1</div>
+                                    <label class="flex items-center justify-between cursor-pointer mt-2">
+                                        <span class="text-sm text-gray-700">日期连续性</span>
+                                        <div class="relative inline-block w-10 mr-2 align-middle select-none">
+                                            <input type="checkbox" id="enableDayContinuityConstraint" checked class="toggle-switch absolute block w-5 h-5 bg-white rounded-full border-2 border-gray-300 appearance-none cursor-pointer transition-all duration-200 ease-in-out left-0 top-0" style="z-index:1;">
+                                            <label for="enableDayContinuityConstraint" class="toggle-label block overflow-hidden h-5 rounded-full bg-gray-300 cursor-pointer transition-colors duration-200" style="margin: 2px 2px 2px 22px;"></label>
+                                        </div>
+                                    </label>
+                                    <div class="text-xs text-gray-400 pl-2">监考日期尽量连续，避免跳天</div>
+                                </div>
+                            </div>
                             <button class="btn btn-secondary w-full justify-center mb-2" onclick="App.handlers.saveScheduleConfig()">
                                 <i class="fas fa-save"></i> 保存配置
                             </button>
@@ -691,10 +715,11 @@
                                 <th>课程</th>
                                 <th>类型</th>
                                 <th>教室</th>
+                                <th>容量</th>
+                                <th>班级</th>
                                 <th>固定监考</th>
                                 <th>流动监考</th>
-                                <th>状态</th>
-                                <th style="min-width: 260px;">操作</th>
+                                <th style="min-width: 280px;">操作</th>
                             </tr>
                         </thead>
                         <tbody id="adjustmentTableBody"></tbody>
@@ -1015,6 +1040,6 @@
     </main>
 
     <!-- JavaScript -->
-    <script src="/static/js/app.js?v=37"></script>
+    <script src="/static/js/app.js?v=44"></script>
 </body>
 </html>

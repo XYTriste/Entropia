@@ -148,6 +148,8 @@ async def run_scheduler(
         import json
         patrol_group_rules = json.loads(config.patrol_group_rules) if config and config.patrol_group_rules else None
         classroom_priority_rules = json.loads(config.classroom_priority_rules) if config and config.classroom_priority_rules else None
+        enable_max_days_constraint = config.enable_max_days_constraint if config else True
+        enable_day_continuity_constraint = config.enable_day_continuity_constraint if config else True
 
         engine = SchedulingEngine(
             max_solve_time=300,
@@ -155,6 +157,8 @@ async def run_scheduler(
             patrol_teacher_count=patrol_teacher_count,
             patrol_group_rules=patrol_group_rules,
             classroom_priority_rules=classroom_priority_rules,
+            enable_max_days_constraint=enable_max_days_constraint,
+            enable_day_continuity_constraint=enable_day_continuity_constraint,
         )
 
         engine_courses = []
@@ -594,6 +598,8 @@ class ScheduleConfigUpdate(BaseModel):
     patrol_teacher_count_per_slot_pair: int = Field(2, ge=1, le=5, description="每时段对流动监考人数")
     patrol_group_rules: list[dict] = Field(default_factory=list, description="流动监考分组规则")
     classroom_priority_rules: list[dict] = Field(default_factory=list, description="教室优先级规则")
+    enable_max_days_constraint: bool = Field(True, description="是否启用最大监考天数约束")
+    enable_day_continuity_constraint: bool = Field(True, description="是否启用日期连续性约束")
 
 
 @router.get("/config", response_model=dict)
@@ -618,6 +624,8 @@ async def get_schedule_config(
                     {"priority": 1, "patterns": ["5-2*"]},
                     {"priority": 2, "patterns": ["5-3*"]},
                 ],
+                "enable_max_days_constraint": True,
+                "enable_day_continuity_constraint": True,
             },
         }
     import json
@@ -629,6 +637,8 @@ async def get_schedule_config(
             "patrol_teacher_count_per_slot_pair": config.patrol_teacher_count_per_slot_pair,
             "patrol_group_rules": json.loads(config.patrol_group_rules) if config.patrol_group_rules else [],
             "classroom_priority_rules": json.loads(config.classroom_priority_rules) if config.classroom_priority_rules else [],
+            "enable_max_days_constraint": config.enable_max_days_constraint,
+            "enable_day_continuity_constraint": config.enable_day_continuity_constraint,
         },
     }
 
@@ -650,6 +660,8 @@ async def update_schedule_config(
     config.patrol_teacher_count_per_slot_pair = req.patrol_teacher_count_per_slot_pair
     config.patrol_group_rules = json.dumps(req.patrol_group_rules, ensure_ascii=False)
     config.classroom_priority_rules = json.dumps(req.classroom_priority_rules, ensure_ascii=False)
+    config.enable_max_days_constraint = req.enable_max_days_constraint
+    config.enable_day_continuity_constraint = req.enable_day_continuity_constraint
 
     await db.commit()
     await db.refresh(config)
@@ -662,5 +674,7 @@ async def update_schedule_config(
             "patrol_teacher_count_per_slot_pair": config.patrol_teacher_count_per_slot_pair,
             "patrol_group_rules": req.patrol_group_rules,
             "classroom_priority_rules": req.classroom_priority_rules,
+            "enable_max_days_constraint": config.enable_max_days_constraint,
+            "enable_day_continuity_constraint": config.enable_day_continuity_constraint,
         },
     }

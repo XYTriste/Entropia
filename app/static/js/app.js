@@ -120,11 +120,31 @@ const App = {
       }
       try {
         const response = await fetch(url, { ...defaultOptions, ...options, body: defaultOptions.body });
-        if (!response.ok) {
-          let errorData;
-          try { errorData = await response.json(); } catch { errorData = { detail: response.statusText }; }
-          throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`);
+      if (!response.ok) {
+        let errorData;
+        try { errorData = await response.json(); } catch { errorData = null; }
+        let message = `HTTP ${response.status}: ${response.statusText}`;
+        if (errorData) {
+          if (errorData.detail) {
+            if (Array.isArray(errorData.detail)) {
+              // FastAPI Pydantic 验证错误：[{loc, msg, type}, ...]
+              message = errorData.detail.map(d => {
+                const loc = (d.loc || []).join('.');
+                return `${loc}: ${d.msg || d.message || JSON.stringify(d)}`;
+              }).join('; ');
+            } else if (typeof errorData.detail === 'string') {
+              message = errorData.detail;
+            } else if (typeof errorData.detail === 'object') {
+              message = JSON.stringify(errorData.detail);
+            } else {
+              message = String(errorData.detail);
+            }
+          } else if (errorData.message) {
+            message = errorData.message;
+          }
         }
+        throw new Error(message);
+      }
         if (response.status === 204) return null;
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
@@ -215,8 +235,10 @@ const App = {
         </div>`;
       if (onConfirm) {
         document.getElementById('modalConfirmBtn').addEventListener('click', async () => {
-          await onConfirm();
-          App.utils.hideModal();
+          const btn = document.getElementById('modalConfirmBtn');
+          if (btn && btn.disabled) return;
+          const result = await onConfirm();
+          if (result !== false) App.utils.hideModal();
         });
       }
     },
@@ -605,6 +627,10 @@ const App = {
         const fixedCount = cfg.fixed_teachers_per_room || 2;
         const radio = document.querySelector(`input[name="fixedTeachersPerRoom"][value="${fixedCount}"]`);
         if (radio) radio.checked = true;
+        const maxDaysEl = document.getElementById('enableMaxDaysConstraint');
+        const continuityEl = document.getElementById('enableDayContinuityConstraint');
+        if (maxDaysEl) maxDaysEl.checked = cfg.enable_max_days_constraint !== false;
+        if (continuityEl) continuityEl.checked = cfg.enable_day_continuity_constraint !== false;
       } catch { /* ignore */ }
     },
 
@@ -629,9 +655,50 @@ const App = {
 
     async loadAdjustmentsTable() {
       try {
-        const overview = await App.api.get('/exams/overview/matrix');
-        App.cache.examOverview = overview;
-        const exams = overview.data?.exams || overview.data?.matrix || [];
+        const response = await App.api.get('/exams/?limit=1000');
+        App.cache.examOverview = response;
+        let items = response.data?.items || [];
+
+        // 每个 exam_classroom 展开为一行，支持精确微调
+        let rows = [];
+        for (const e of items) {
+          const dayName = e.time_slot?.day_name || '';
+          const dayOrderMap = { '周一': 1, '周二': 2, '周三': 3, '周四': 4, '周五': 5, '周六': 6, '周日': 7 };
+          const dayOfWeek = e.time_slot?.day_of_week ?? dayOrderMap[dayName] ?? 99;
+          const slotCode = e.time_slot?.slot_code || '';
+          const slotOrder = { T1: 1, T2: 2, T3: 3, T4: 4, T5: 5 };
+          const slotIdx = slotOrder[slotCode] ?? 99;
+          for (const ec of (e.classrooms || [])) {
+            const fixedTeachers = (e.teachers || []).filter(t => t.role === 'fixed' && t.classroom_id === ec.classroom_id);
+            const patrolTeachers = (e.teachers || []).filter(t => t.role === 'patrol');
+            rows.push({
+              exam_id: e.id,
+              course_id: e.course_id,
+              course_name: e.course_name || '',
+              course_type: e.course_type || '',
+              day_name: dayName,
+              day_of_week: dayOfWeek,
+              slot_code: slotCode,
+              slot_order: slotIdx,
+              time_slot_id: e.time_slot?.id ?? null,
+              classroom_id: ec.classroom_id,
+              classroom_name: ec.classroom_name || '',
+              capacity: ec.capacity || 0,
+              total_students: ec.total_students || 0,
+              classes: ec.classes || [],
+              fixed_teachers: fixedTeachers,
+              patrol_teachers: patrolTeachers,
+              exam_label: e.exam_label || '',
+            });
+          }
+        }
+
+        // 按时间排序（先按星期，再按时段）
+        rows.sort((a, b) => {
+          if (a.day_of_week !== b.day_of_week) return a.day_of_week - b.day_of_week;
+          return (a.slot_order || 99) - (b.slot_order || 99);
+        });
+
         const pg = App.pagination.adjustments;
 
         // Filter
@@ -640,16 +707,16 @@ const App = {
         const search = searchInput ? searchInput.value.toLowerCase() : '';
         const fType = typeFilter ? typeFilter.value : '';
 
-        let filtered = exams;
+        let filtered = rows;
         if (search) {
-          filtered = filtered.filter(e =>
-            (e.course_name || '').toLowerCase().includes(search) ||
-            (e.teacher_name || '').toLowerCase().includes(search) ||
-            (e.classroom_name || '').toLowerCase().includes(search)
+          filtered = filtered.filter(r =>
+            r.course_name.toLowerCase().includes(search) ||
+            r.classroom_name.toLowerCase().includes(search) ||
+            (r.fixed_teachers || []).some(t => (t.teacher_name || '').toLowerCase().includes(search))
           );
         }
         if (fType) {
-          filtered = filtered.filter(e => e.course_type === fType);
+          filtered = filtered.filter(r => r.course_type === fType);
         }
 
         pg.total = filtered.length;
@@ -657,27 +724,28 @@ const App = {
         const pageData = filtered.slice(start, start + pg.pageSize);
 
         const columns = [
-          { header: '', render: (r) => `<input type="checkbox" class="form-checkbox" value="${r.id}">`, width: '40px' },
-          { header: '日期', key: 'exam_date', render: (r) => App.utils.formatDate(r.exam_date) },
-          { header: '时段', key: 'time_slot' },
+          { header: '', render: (r) => `<input type="checkbox" class="form-checkbox" value="${r.exam_id}-${r.classroom_id}">`, width: '40px' },
+          { header: '日期', key: 'day_name' },
+          { header: '时段', key: 'slot_code' },
           { header: '课程', key: 'course_name' },
           { header: '类型', key: 'course_type', render: (r) => App.utils.courseTypeBadge(r.course_type) },
-          { header: '教室', key: 'classroom_name' },
-          { header: '固定监考', key: 'fixed_teachers' },
-          { header: '流动监考', key: 'roaming_teachers' },
-          { header: '状态', render: (r) => `<span class="badge badge-success">已排</span>` },
+          { header: '教室', key: 'classroom_name', render: (r) => App.utils.escapeHtml(r.classroom_name) },
+          { header: '人数', key: 'total_students', render: (r) => `${r.total_students}/${r.capacity}` },
+          { header: '班级', render: (r) => (r.classes || []).map(c => App.utils.escapeHtml(c.class_name)).join(', ') || '--' },
+          { header: '固定监考', render: (r) => (r.fixed_teachers || []).map(t => App.utils.escapeHtml(t.teacher_name)).join(', ') || '--' },
+          { header: '流动监考', render: (r) => (r.patrol_teachers || []).map(t => App.utils.escapeHtml(t.teacher_name)).join(', ') || '--' },
           { header: '操作', render: (r) => `
-            <div class="flex gap-1">
-              <button class="btn btn-warning btn-xs" onclick="App.handlers.openMoveTimeModal(${r.id})"><i class="fas fa-clock"></i> 调时段</button>
-              <button class="btn btn-info btn-xs" onclick="App.handlers.openChangeClassroomModal(${r.id})"><i class="fas fa-door-open"></i> 换教室</button>
-              <button class="btn btn-primary btn-xs" onclick="App.handlers.openChangeTeacherModal(${r.id})"><i class="fas fa-user"></i> 换教师</button>
+            <div class="flex gap-1 flex-wrap">
+              <button class="btn btn-warning btn-xs" onclick="App.handlers.openExamAdjustModal(${r.exam_id}, ${r.classroom_id}, '${App.utils.escapeHtml(r.classroom_name)}')"><i class="fas fa-exchange-alt"></i> 调整安排</button>
+              <button class="btn btn-primary btn-xs" onclick="App.handlers.openChangeTeacherModal(${r.exam_id}, ${r.classroom_id}, '${App.utils.escapeHtml(r.classroom_name)}')"><i class="fas fa-user"></i> 换教师</button>
             </div>
-          `, minWidth: '260px' },
+          `, minWidth: '200px' },
         ];
         App.utils.renderTable('adjustmentTable', columns, pageData);
         App.utils.renderPagination('adjustmentPagination', 'adjustmentPaginationInfo', pg.page, pg.pageSize, pg.total, 'App.handlers.goToAdjustmentPage');
-      } catch {
-        document.getElementById('adjustmentTableBody').innerHTML = '<tr><td colspan="10" class="text-center text-gray-400 py-8">加载排考数据失败，请先执行自动排考</td></tr>';
+      } catch (err) {
+        console.error('加载排考数据失败:', err);
+        document.getElementById('adjustmentTableBody').innerHTML = '<tr><td colspan="11" class="text-center text-gray-400 py-8">加载排考数据失败，请先执行自动排考</td></tr>';
       }
     },
 
@@ -1228,6 +1296,8 @@ const App = {
     },
     async saveScheduleConfig() {
       const fixedTeachers = document.querySelector('input[name="fixedTeachersPerRoom"]:checked')?.value || '2';
+      const enableMaxDays = document.getElementById('enableMaxDaysConstraint')?.checked ?? true;
+      const enableContinuity = document.getElementById('enableDayContinuityConstraint')?.checked ?? true;
       try {
         await App.api.put('/scheduler/config', {
           fixed_teachers_per_room: parseInt(fixedTeachers),
@@ -1240,6 +1310,8 @@ const App = {
             { priority: 1, patterns: ['5-2*'] },
             { priority: 2, patterns: ['5-3*'] },
           ],
+          enable_max_days_constraint: enableMaxDays,
+          enable_day_continuity_constraint: enableContinuity,
         });
         App.utils.showToast('排考配置已保存', 'success');
       } catch (e) {
@@ -1893,91 +1965,276 @@ const App = {
     // --- Adjustments ---
     filterAdjustments() { App.pagination.adjustments.page = 1; App.pages.loadAdjustmentsTable(); },
 
-    openMoveTimeModal(examId) {
-      App.utils.showModal('调整考试时段', `
-        <div class="form-group">
-          <label class="form-label">选择新时段</label>
-          <select class="form-select" id="moveTimeSlotSelect"><option value="">加载中...</option></select>
+    // ---- 合并的考试安排调整 Modal ----
+    openExamAdjustModal(examId, classroomId, classroomName) {
+      const cache = App.cache.examOverview;
+      const items = cache?.data?.items || [];
+      const exam = items.find(e => String(e.id) === String(examId));
+      const currentTimeSlotId = exam?.time_slot?.id ?? null;
+      const currentTimeSlotLabel = exam?.time_slot ? `${exam.time_slot.day_name || ''} ${exam.time_slot.slot_code || ''}` : '';
+
+      // 构建占用映射：slotId -> Set<classroomId>，classroomId -> Set<slotId>
+      // 注意：排除当前考试自身
+      const slotOccupiedRooms = {}; // 该时段已被占用的教室集合
+      const roomOccupiedSlots = {}; // 该教室已被占用的时段集合
+      for (const e of items) {
+        const tsId = e.time_slot?.id;
+        if (!tsId) continue;
+        for (const ec of (e.classrooms || [])) {
+          const crId = ec.classroom_id;
+          // 排除当前考试
+          if (String(e.id) === String(examId)) continue;
+          if (!slotOccupiedRooms[tsId]) slotOccupiedRooms[tsId] = new Set();
+          slotOccupiedRooms[tsId].add(crId);
+          if (!roomOccupiedSlots[crId]) roomOccupiedSlots[crId] = new Set();
+          roomOccupiedSlots[crId].add(tsId);
+        }
+      }
+
+      // 判断当前时段是否占用当前教室（调时段时该时段不可选）
+      const currentSlotHasClassroom = currentTimeSlotId != null && classroomId != null
+        && slotOccupiedRooms[currentTimeSlotId]?.has(String(classroomId));
+
+      // 预加载全部时段和教室
+      let allSlots = [];
+      let allRooms = [];
+
+      const renderSlotOptions = (selectedSlotId) => {
+        const dayLabels = ['一','二','三','四','五','六','日'];
+        return allSlots.map(s => {
+          const isCurrent = currentTimeSlotId != null && s.id === currentTimeSlotId;
+          const occByClassroom = classroomId != null && roomOccupiedSlots[classroomId]?.has(s.id);
+          const isUnavailable = isCurrent || !!occByClassroom;
+          const label = `周${dayLabels[s.day_of_week-1]||'?'} ${s.slot_code} (${App.utils.formatTime(s.start_time)}-${App.utils.formatTime(s.end_time)})`;
+          const disabled = isUnavailable ? ' disabled' : '';
+          const style = isUnavailable ? ' style="color:#dc2626;background:#fee2e2;"' : '';
+          const hint = isCurrent ? ' [当前时段]' : (occByClassroom ? ` [${App.utils.escapeHtml(classroomName||'')}已被占用]` : '');
+          const selected = !isUnavailable && selectedSlotId != null && s.id === selectedSlotId ? ' selected' : '';
+          return `<option value="${s.id}"${disabled}${style}${selected}>${label}${hint}</option>`;
+        }).join('');
+      };
+
+      // 基于动态选中的教室渲染时段选项（用于用户中途切换教室后刷新时段可用性）
+      const renderSlotOptionsWithRoom = (selectedRoomId) => {
+        const dayLabels = ['一','二','三','四','五','六','日'];
+        return allSlots.map(s => {
+          const isCurrent = currentTimeSlotId != null && s.id === currentTimeSlotId;
+          const occByRoom = selectedRoomId != null && roomOccupiedSlots[selectedRoomId]?.has(s.id);
+          const isUnavailable = isCurrent || !!occByRoom;
+          const label = `周${dayLabels[s.day_of_week-1]||'?'} ${s.slot_code} (${App.utils.formatTime(s.start_time)}-${App.utils.formatTime(s.end_time)})`;
+          const disabled = isUnavailable ? ' disabled' : '';
+          const style = isUnavailable ? ' style="color:#dc2626;background:#fee2e2;"' : '';
+          const hint = isCurrent ? ' [当前时段]' : (occByRoom ? ` [该教室已被占用]` : '');
+          return `<option value="${s.id}"${disabled}${style}>${label}${hint}</option>`;
+        }).join('');
+      };
+
+      const renderRoomOptions = (selectedSlotId) => {
+        return allRooms.map(r => {
+          const isUnavailable = selectedSlotId != null && slotOccupiedRooms[selectedSlotId]?.has(r.id);
+          const label = `${App.utils.escapeHtml(r.name || r.room_number || '')} (${r.building || ''} 容量:${r.capacity || 0})`;
+          const disabled = isUnavailable ? ' disabled' : '';
+          const style = isUnavailable ? ' style="color:#dc2626;background:#fee2e2;"' : '';
+          const hint = isUnavailable ? ' [已被占用-不可选]' : '';
+          return `<option value="${r.id}"${disabled}${style} data-capacity="${r.capacity || 0}">${label}${hint}</option>`;
+        }).join('');
+      };
+
+      const validateAndUpdateConfirmBtn = () => {
+        const selSlot = document.getElementById('adjustSlotSelect');
+        const selRoom = document.getElementById('adjustRoomSelect');
+        if (!selSlot || !selRoom) return;
+        const slotId = parseInt(selSlot.value);
+        const roomId = parseInt(selRoom.value);
+        const btn = document.getElementById('modalConfirmBtn');
+        if (!btn) return;
+        const slotUnavailable = selSlot.selectedOptions[0]?.disabled;
+        const roomUnavailable = selRoom.selectedOptions[0]?.disabled;
+        const valid = !isNaN(slotId) && !isNaN(roomId) && !slotUnavailable && !roomUnavailable;
+        btn.disabled = !valid;
+        btn.style.opacity = valid ? '' : '0.5';
+      };
+
+      App.utils.showModal('调整考试安排', `
+        <div class="mb-3 p-2 bg-blue-50 rounded text-sm">
+          <div class="text-gray-600 mb-1"><i class="fas fa-info-circle text-blue-400 mr-1"></i>当前安排</div>
+          <div class="font-semibold">${App.utils.escapeHtml(exam?.course_name || '')}</div>
+          <div class="text-gray-500">时段: ${App.utils.escapeHtml(currentTimeSlotLabel)} &nbsp;|&nbsp; 教室: ${App.utils.escapeHtml(classroomName || '')}</div>
         </div>
-        <div id="moveTimeValidation"></div>
-      `, () => App.handlers.submitMoveTime(examId), '确认调整');
-      App.handlers.loadTimeSlotOptions('moveTimeSlotSelect');
+        <div class="form-group">
+          <label class="form-label">
+            <i class="fas fa-clock text-warning mr-1"></i>选择时段
+            <span class="text-xs text-gray-400 font-normal ml-1">(红色为不可用时段)</span>
+          </label>
+          <select class="form-select" id="adjustSlotSelect"><option value="">--请选择时段--</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">
+            <i class="fas fa-door-open text-info mr-1"></i>选择教室
+            <span class="text-xs text-gray-400 font-normal ml-1">(红色为已被占用)</span>
+          </label>
+          <select class="form-select" id="adjustRoomSelect"><option value="">--请选择教室--</option></select>
+        </div>
+        <div id="adjustCapacityInfo" class="text-sm text-gray-500 mb-2"></div>
+        <div class="form-group">
+          <label class="form-label">调整原因（必填）</label>
+          <input class="form-input" id="adjustReason" placeholder="请输入调整原因" />
+        </div>
+      `, () => App.handlers.submitExamAdjust(examId, classroomId, 'confirm'), '确认调整');
+
+      // 异步加载时段和教室数据，然后渲染
+      Promise.all([
+        App.api.getList('/time-slots/'),
+        App.api.getList('/classrooms/'),
+      ]).then(([slots, rooms]) => {
+        allSlots = slots || [];
+        allRooms = rooms || [];
+        const selSlot = document.getElementById('adjustSlotSelect');
+        const selRoom = document.getElementById('adjustRoomSelect');
+        if (selSlot) {
+          selSlot.innerHTML = '<option value="">--请选择时段--</option>' + renderSlotOptions(currentTimeSlotId);
+        }
+        if (selRoom) {
+          selRoom.innerHTML = '<option value="">--请选择教室--</option>' + renderRoomOptions(currentTimeSlotId);
+        }
+      }).catch(() => {});
+
+      // 时段变化 → 刷新教室可用性
+      setTimeout(() => {
+        const selSlot = document.getElementById('adjustSlotSelect');
+        const selRoom = document.getElementById('adjustRoomSelect');
+        const capInfo = document.getElementById('adjustCapacityInfo');
+        if (selSlot) {
+          selSlot.addEventListener('change', () => {
+            const slotId = parseInt(selSlot.value);
+            // 时段变化 → 刷新教室可用性
+            if (selRoom) selRoom.innerHTML = '<option value="">--请选择教室--</option>' + renderRoomOptions(slotId || currentTimeSlotId);
+            validateAndUpdateConfirmBtn();
+          });
+        }
+        if (selRoom) {
+          selRoom.addEventListener('change', () => {
+            const opt = selRoom.selectedOptions[0];
+            if (capInfo) capInfo.textContent = opt && !opt.disabled ? `教室容量: ${opt.dataset.capacity || '--'} 人` : '';
+            // 教室变化 → 刷新时段可用性（基于当前选中的教室）
+            const selRoomId = selRoom.value ? parseInt(selRoom.value) : null;
+            if (selSlot) selSlot.innerHTML = '<option value="">--请选择时段--</option>' + renderSlotOptionsWithRoom(selRoomId);
+            // 教室变化后，教室下拉需要基于当前时段或默认时段重新计算
+            if (selRoom) {
+              const currentSlotId = selSlot && selSlot.value ? parseInt(selSlot.value) : currentTimeSlotId;
+              selRoom.innerHTML = '<option value="">--请选择教室--</option>' + renderRoomOptions(currentSlotId);
+            }
+            validateAndUpdateConfirmBtn();
+          });
+        }
+        // 初始验证
+        validateAndUpdateConfirmBtn();
+      }, 100);
     },
-    async loadTimeSlotOptions(selectId) {
+    async submitExamAdjust(examId, oldClassroomId, action) {
+      const slotId = document.getElementById('adjustSlotSelect').value;
+      const newClassroomId = document.getElementById('adjustRoomSelect').value;
+      const reason = document.getElementById('adjustReason').value.trim();
+      if (!slotId) { App.utils.showToast('请选择时段', 'warning'); return; }
+      if (!newClassroomId) { App.utils.showToast('请选择教室', 'warning'); return; }
+      if (!reason) { App.utils.showToast('请输入调整原因', 'warning'); return; }
+
+      const slotOpt = document.getElementById('adjustSlotSelect').selectedOptions[0];
+      const roomOpt = document.getElementById('adjustRoomSelect').selectedOptions[0];
+      if (slotOpt?.disabled || roomOpt?.disabled) {
+        App.utils.showToast('请勿选择已被占用的时段或教室', 'error');
+        return;
+      }
+
       try {
-        const slots = await App.api.getList('/time-slots/');
-        const select = document.getElementById(selectId);
-        select.innerHTML = '<option value="">--请选择时段--</option>' + slots.map(s => `<option value="${s.id}">周${['一','二','三','四','五','六','日'][s.day_of_week-1]} 第${s.slot_number}场 (${App.utils.formatTime(s.start_time)}-${App.utils.formatTime(s.end_time)})</option>`).join('');
-      } catch { /* ignore */ }
-    },
-    async submitMoveTime(examId) {
-      const slotId = document.getElementById('moveTimeSlotSelect').value;
-      if (!slotId) { App.utils.showToast('请选择新时段', 'warning'); return; }
-      try {
-        await App.api.post('/adjustments/move-exam-time', { exam_id: examId, time_slot_id: slotId });
-        App.utils.showToast('时段调整成功', 'success');
+        // 1. 调时段（如果时段变了）
+        const cache = App.cache.examOverview;
+        const items = cache?.data?.items || [];
+        const exam = items.find(e => String(e.id) === String(examId));
+        const currentTsId = exam?.time_slot?.id ?? null;
+        const newTsId = parseInt(slotId);
+        if (currentTsId !== newTsId) {
+          await App.api.post('/adjustments/move-exam-time', {
+            exam_id: parseInt(examId),
+            new_time_slot_id: newTsId,
+            reason: `[调安排] ${reason}`,
+          });
+        }
+        // 2. 换教室（如果教室变了）
+        if (String(newClassroomId) !== String(oldClassroomId)) {
+          await App.api.post('/adjustments/change-classroom', {
+            exam_id: parseInt(examId),
+            old_classroom_id: parseInt(oldClassroomId),
+            new_classroom_id: parseInt(newClassroomId),
+            reason: `[调安排] ${reason}`,
+          });
+        }
+        App.utils.showToast('考试安排调整成功', 'success');
         App.pages.loadAdjustmentsTable();
       } catch (e) { App.utils.showToast(e.message || '调整失败', 'error'); }
     },
-    openChangeClassroomModal(examId) {
-      App.utils.showModal('更换教室', `
-        <div class="form-group">
-          <label class="form-label">选择新教室</label>
-          <select class="form-select" id="changeClassroomSelect"><option value="">加载中...</option></select>
-        </div>
-        <div id="classroomCapacityInfo" class="text-sm text-gray-500 mt-2"></div>
-      `, () => App.handlers.submitChangeClassroom(examId), '确认更换');
-      App.handlers.loadClassroomOptions();
+    openChangeTeacherModal(examId, classroomId, classroomName) {
+      // 动态获取当前分配，渲染到 Modal
+      const renderModal = (fixedTeachers, patrolTeachers) => {
+        const allTeachers = [
+          ...fixedTeachers.map(t => ({ ...t, display_role: 'fixed', display_room: classroomName })),
+          ...patrolTeachers.map(t => ({ ...t, display_role: '流动监考', display_room: '全场' })),
+        ];
+        const teacherOptions = allTeachers.length > 0
+          ? allTeachers.map(t => `<option value="${t.teacher_id}:${t.role}">${App.utils.escapeHtml(t.teacher_name)} (${t.display_role}${t.display_room !== '全场' ? '·'+t.display_room : ''})</option>`).join('')
+          : '<option value="">暂无分配教师</option>';
+        App.utils.showModal('更换监考教师', `
+          <div class="form-group">
+            <label class="form-label">当前教师（选择要替换的）</label>
+            <select class="form-select" id="oldTeacherSelect">${teacherOptions}</select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">选择新教师</label>
+            <select class="form-select" id="changeTeacherSelect"><option value="">--请选择教师--</option></select>
+          </div>
+          <div class="form-group mt-2">
+            <label class="form-label">调整原因（必填）</label>
+            <input class="form-input" id="changeTeacherReason" placeholder="请输入调整原因" />
+          </div>
+        `, () => App.handlers.submitChangeTeacher(examId, fixedTeachers, patrolTeachers), '确认更换');
+        App.handlers.loadTeacherOptions('changeTeacherSelect');
+      };
+
+      // 从缓存中找这场考试的教师分配
+      const cache = App.cache.examOverview;
+      const items = cache?.data?.items || [];
+      const exam = items.find(e => String(e.id) === String(examId));
+      const fixedTeachers = exam ? (exam.teachers || []).filter(t => t.role === 'fixed' && String(t.classroom_id) === String(classroomId)) : [];
+      const patrolTeachers = exam ? (exam.teachers || []).filter(t => t.role === 'patrol') : [];
+      renderModal(fixedTeachers, patrolTeachers);
     },
-    async loadClassroomOptions() {
-      try {
-        const rooms = await App.api.getList('/classrooms/');
-        const select = document.getElementById('changeClassroomSelect');
-        select.innerHTML = '<option value="">--请选择教室--</option>' + rooms.map(r => `<option value="${r.id}" data-capacity="${r.capacity}">${App.utils.escapeHtml(r.room_number)} - ${App.utils.escapeHtml(r.building)} (容量:${r.capacity})</option>`).join('');
-        select.addEventListener('change', (e) => {
-          const opt = e.target.selectedOptions[0];
-          document.getElementById('classroomCapacityInfo').textContent = opt ? `教室容量: ${opt.dataset.capacity || '--'} 人` : '';
-        });
-      } catch { /* ignore */ }
-    },
-    async submitChangeClassroom(examId) {
-      const roomId = document.getElementById('changeClassroomSelect').value;
-      if (!roomId) { App.utils.showToast('请选择新教室', 'warning'); return; }
-      try {
-        await App.api.post('/adjustments/change-classroom', { exam_id: examId, classroom_id: roomId });
-        App.utils.showToast('教室更换成功', 'success');
-        App.pages.loadAdjustmentsTable();
-      } catch (e) { App.utils.showToast(e.message || '更换失败', 'error'); }
-    },
-    openChangeTeacherModal(examId) {
-      App.utils.showModal('更换监考教师', `
-        <div class="form-group">
-          <label class="form-label">选择新教师</label>
-          <select class="form-select" id="changeTeacherSelect"><option value="">加载中...</option></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">调剂类型</label>
-          <select class="form-select" id="changeTeacherType">
-            <option value="fixed">固定监考</option>
-            <option value="roaming">流动监考</option>
-          </select>
-        </div>
-      `, () => App.handlers.submitChangeTeacher(examId), '确认更换');
-      App.handlers.loadTeacherOptions();
-    },
-    async loadTeacherOptions() {
+    async loadTeacherOptions(selectId) {
       try {
         const teachers = await App.api.getList('/teachers/');
-        const select = document.getElementById('changeTeacherSelect');
-        select.innerHTML = '<option value="">--请选择教师--</option>' + teachers.map(t => `<option value="${t.id}">${App.utils.escapeHtml(t.name)} (${t.current_slots || 0}场/${t.max_slots || 0}场)</option>`).join('');
+        const select = document.getElementById(selectId);
+        if (!select) return;
+        select.innerHTML = '<option value="">--请选择教师--</option>' + teachers.map(t => `<option value="${t.id}">${App.utils.escapeHtml(t.name)} (当前${t.current_slots || 0}场/最多${t.max_slots || 0}场)</option>`).join('');
       } catch { /* ignore */ }
     },
-    async submitChangeTeacher(examId) {
-      const teacherId = document.getElementById('changeTeacherSelect').value;
-      const teacherType = document.getElementById('changeTeacherType').value;
-      if (!teacherId) { App.utils.showToast('请选择新教师', 'warning'); return; }
+    async submitChangeTeacher(examId, fixedTeachers, patrolTeachers) {
+      const oldSelect = document.getElementById('oldTeacherSelect').value;
+      const newTeacherId = document.getElementById('changeTeacherSelect').value;
+      const reason = document.getElementById('changeTeacherReason').value.trim();
+      if (!oldSelect) { App.utils.showToast('请选择要替换的教师', 'warning'); return; }
+      if (!newTeacherId) { App.utils.showToast('请选择新教师', 'warning'); return; }
+      if (!reason) { App.utils.showToast('请输入调整原因', 'warning'); return; }
+      const parts = oldSelect.split(':');
+      const oldTeacherId = parseInt(parts[0]);
+      const role = parts[1] || 'fixed';
+      if (isNaN(oldTeacherId)) { App.utils.showToast('原教师ID无效，请重新选择', 'error'); return; }
       try {
-        await App.api.post('/adjustments/change-teacher', { exam_id: examId, teacher_id: teacherId, teacher_type: teacherType });
+        await App.api.post('/adjustments/change-teacher', {
+          exam_id: examId,
+          old_teacher_id: oldTeacherId,
+          new_teacher_id: parseInt(newTeacherId),
+          role: role,
+          reason: reason,
+        });
         App.utils.showToast('教师更换成功', 'success');
         App.pages.loadAdjustmentsTable();
       } catch (e) { App.utils.showToast(e.message || '更换失败', 'error'); }

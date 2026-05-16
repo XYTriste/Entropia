@@ -95,6 +95,8 @@ class SchedulingEngine:
         patrol_teacher_count: int = 2,
         patrol_group_rules: list[dict] | None = None,
         classroom_priority_rules: list[dict] | None = None,
+        enable_max_days_constraint: bool = True,
+        enable_day_continuity_constraint: bool = True,
     ) -> None:
         """
         参数:
@@ -103,12 +105,16 @@ class SchedulingEngine:
             patrol_teacher_count: 每时段对流动监考人数
             patrol_group_rules: 流动监考分组规则
             classroom_priority_rules: 教室优先级规则
+            enable_max_days_constraint: 是否启用最大监考天数约束（默认开启）
+            enable_day_continuity_constraint: 是否启用日期连续性约束（默认开启）
         """
         self.max_solve_time: int = max_solve_time
         self.fixed_teachers_per_room: int = fixed_teachers_per_room
         self.patrol_teacher_count: int = patrol_teacher_count
         self.patrol_group_rules: list[dict] | None = patrol_group_rules
         self.classroom_priority_rules: list[dict] | None = classroom_priority_rules
+        self.enable_max_days_constraint: bool = enable_max_days_constraint
+        self.enable_day_continuity_constraint: bool = enable_day_continuity_constraint
         self._patrol_slot_pairs_used: set[tuple[int, int]] = set()
         self.force_one_teacher_per_room: bool = False
 
@@ -159,6 +165,12 @@ class SchedulingEngine:
         used_time_slots: set[int] = set()  # 已被使用的时段
         teacher_usage: dict[int, list[int]] = create_teacher_usage_tracker(teachers)  # 教师->时段列表
         room_slot_usage: dict[int, set[int]] = {}  # 时段ID -> 已占用教室ID集合
+
+        # 动态计算最大监考天数 = 实际排考天数 - 1
+        actual_exam_days: set[int] = set()
+        for ts in time_slots:
+            actual_exam_days.add(ts.day_of_week)
+        max_days: int = max(len(actual_exam_days) - 1, 1)  # 至少为1
         exam_results: list[ExamResult] = []  # 结果
         patrol_results: list[PatrolResult] = []  # 流动监考结果
         violations: list[str] = []  # 违规信息
@@ -868,6 +880,10 @@ class SchedulingEngine:
             classrooms=room_assignments,
             teacher_states=teacher_states,
             teachers_per_room=self.fixed_teachers_per_room,
+            exam_day=time_slot.day_of_week,
+            enable_max_days_constraint=self.enable_max_days_constraint,
+            max_days=max_days,
+            enable_day_continuity_constraint=self.enable_day_continuity_constraint,
         )
         if not fixed_teachers and room_assignments:
             violations.append(f"课程 {course.name} 固定监考分配失败：无可用教师")
@@ -901,6 +917,9 @@ class SchedulingEngine:
             group_rules=self.patrol_group_rules,
             used_slot_pairs=self._patrol_slot_pairs_used,
             classrooms_in_slot=[classroom_map[r.classroom_id] for r in room_assignments],
+            enable_max_days_constraint=self.enable_max_days_constraint,
+            max_days=max_days,
+            enable_day_continuity_constraint=self.enable_day_continuity_constraint,
         )
 
         # 更新教师使用追踪
