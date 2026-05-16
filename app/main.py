@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.routers import (
     adjustments_router,
     audit_logs_router,
+    chat_router,
     classes_router,
     classrooms_router,
     courses_router,
@@ -97,3 +98,4 @@ app.include_router(scheduler_router, prefix="/api/scheduler", tags=["排考引�
 app.include_router(adjustments_router, prefix="/api/adjustments", tags=["排考调剂"])
 app.include_router(audit_logs_router, prefix="/api/audit-logs", tags=["审计日志"])
 app.include_router(import_export_router, prefix="/api/import-export", tags=["导入导出"])
+app.include_router(chat_router, prefix="/api/chat", tags=["AI 助手"])

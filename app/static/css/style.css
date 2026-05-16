@@ -84,3 +84,45 @@
 /* 响应式表格横向滚动 */
 .table-scroll-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .table-scroll-wrapper table { min-width: 100%; }
+
+/* ============================================================
+   AI 助手聊天面板样式
+   ============================================================ */
+
+/* 聊天消息气泡动画 */
+#chatMessages > div {
+  animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 打字机光标效果（用于流式文字） */
+.assistant-content {
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* 发送按钮激活状态 */
+#chatSendBtn:not(:disabled) {
+  transition: all 0.2s;
+}
+
+#chatSendBtn:not(:disabled):hover {
+  transform: scale(1.05);
+}
+
+/* 移动端适配 */
+@media (max-width: 480px) {
+  #aiChatPanel {
+    width: 100% !important;
+  }
+}

@@ -2635,6 +2635,211 @@ const App = {
     App.nav.to('dashboard');
     App.utils.showToast('考试排考系统已加载', 'success');
   },
+
+  // ============================================================
+  // AI 聊天助手模块
+  // ============================================================
+  chat: {
+    sessionId: `session_${Date.now()}`,
+    isLoading: false,
+    messages: [],  // 存储对话历史
+
+    /** 打开聊天面板 */
+    openPanel() {
+      const panel = document.getElementById('aiChatPanel');
+      if (panel) {
+        panel.classList.remove('translate-x-full');
+        document.getElementById('aiChatInput')?.focus();
+      }
+    },
+
+    /** 关闭聊天面板 */
+    closePanel() {
+      const panel = document.getElementById('aiChatPanel');
+      if (panel) {
+        panel.classList.add('translate-x-full');
+      }
+    },
+
+    /** 发送消息 */
+    async sendMessage() {
+      const input = document.getElementById('chatInput');
+      if (!input) return;
+
+      const content = input.value.trim();
+      if (!content || this.isLoading) return;
+
+      // 清空输入框
+      input.value = '';
+
+      // 添加用户消息到历史和 UI
+      this.messages.push({ role: 'user', content });
+      this.appendMessage('user', content);
+
+      // 显示加载状态
+      this.isLoading = true;
+      const loadingDiv = this.showLoading();
+
+      try {
+        // 发起 SSE 请求
+        const response = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: this.sessionId,
+            messages: this.messages,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        // 创建助手消息占位
+        const assistantMsg = { role: 'assistant', content: '' };
+        this.messages.push(assistantMsg);
+        const msgDiv = this.appendMessage('assistant', '');
+
+        // 读取 SSE 流
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data:')) continue;
+            const dataStr = line.slice(5).trim();
+            if (!dataStr || dataStr === '[DONE]') continue;
+
+            try {
+              const data = JSON.parse(dataStr);
+
+              if (data.type === 'text') {
+                // 流式追加文字
+                assistantMsg.content += data.content;
+                this.appendText(msgDiv, data.content);
+              } else if (data.type === 'done') {
+                this.isLoading = false;
+                this.hideLoading(loadingDiv);
+              }
+            } catch (e) {
+              // 忽略解析错误
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Chat error:', err);
+        this.hideLoading(loadingDiv);
+        this.isLoading = false;
+        this.appendMessage('error', '连接失败，请稍后重试。');
+      }
+    },
+
+    /** 添加消息到 UI */
+    appendMessage(role, content) {
+      const container = document.getElementById('chatMessages');
+      if (!container) return null;
+
+      const div = document.createElement('div');
+      div.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+
+      if (role === 'user') {
+        div.innerHTML = `
+          <div class="max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md" style="background: #3B82F6; color: white;">
+            ${this.escapeHtml(content)}
+          </div>
+        `;
+      } else if (role === 'assistant') {
+        div.innerHTML = `
+          <div class="max-w-[85%] px-3 py-2 rounded-2xl rounded-bl-md bg-white border" style="border-color: #E5E7EB;">
+            <div class="flex items-start gap-2">
+              <i class="fas fa-robot text-blue-500 mt-0.5"></i>
+              <div class="assistant-content">${content || '<span class="text-gray-400">...</span>'}</div>
+            </div>
+          </div>
+        `;
+      } else if (role === 'error') {
+        div.innerHTML = `
+          <div class="max-w-[85%] px-3 py-2 rounded-2xl bg-red-50 text-red-600 border border-red-200">
+            <i class="fas fa-exclamation-circle mr-1"></i>${this.escapeHtml(content)}
+          </div>
+        `;
+      }
+
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+      return div;
+    },
+
+    /** 流式追加文字到消息元素 */
+    appendText(msgDiv, text) {
+      if (!msgDiv) return;
+      const contentDiv = msgDiv.querySelector('.assistant-content');
+      if (contentDiv) {
+        contentDiv.textContent += text;
+        // 滚动到底部
+        const container = document.getElementById('chatMessages');
+        if (container) container.scrollTop = container.scrollHeight;
+      }
+    },
+
+    /** 显示加载动画 */
+    showLoading() {
+      const container = document.getElementById('chatMessages');
+      if (!container) return null;
+
+      const div = document.createElement('div');
+      div.className = 'flex justify-start';
+      div.id = 'chatLoading';
+      div.innerHTML = `
+        <div class="px-3 py-2 rounded-2xl rounded-bl-md bg-white border" style="border-color: #E5E7EB;">
+          <div class="flex items-center gap-2">
+            <i class="fas fa-robot text-blue-500"></i>
+            <div class="flex gap-1">
+              <span class="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 0ms;"></span>
+              <span class="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 150ms;"></span>
+              <span class="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 300ms;"></span>
+            </div>
+          </div>
+        </div>
+      `;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+      return div;
+    },
+
+    /** 隐藏加载动画 */
+    hideLoading(loadingDiv) {
+      if (loadingDiv && loadingDiv.parentNode) {
+        loadingDiv.parentNode.removeChild(loadingDiv);
+      }
+      const loading = document.getElementById('chatLoading');
+      if (loading) loading.remove();
+    },
+
+    /** HTML 转义 */
+    escapeHtml(str) {
+      if (typeof str !== 'string') return str;
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    },
+
+    /** 获取对话历史（发送给后端） */
+    getHistory() {
+      return this.messages.map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+    },
+  },
 };
 
 // Launch

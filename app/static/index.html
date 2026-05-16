@@ -1044,6 +1044,39 @@
 
     </main>
 
+    <!-- ============================================================
+         AI 助手聊天面板
+         ============================================================ -->
+    <!-- 唤起按钮 -->
+    <button id="aiChatFab" class="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-xl hover:shadow-2xl hover:scale-110 transition-all duration-300 z-50 flex items-center justify-center" onclick="App.chat.openPanel()" title="排考小助手">
+        <i class="fas fa-robot text-xl"></i>
+    </button>
+
+    <!-- 聊天面板 -->
+    <div id="aiChatPanel" class="fixed right-0 top-0 h-full w-96 max-w-full bg-white shadow-2xl transform translate-x-full transition-transform duration-300 z-50 flex flex-col" style="border-left: 1px solid #E5E7EB;">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-4 py-3 border-b" style="background: linear-gradient(135deg, #3B82F6, #6366F1); color: white;">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-robot text-lg"></i>
+                <span class="font-semibold">排考小助手</span>
+            </div>
+            <button onclick="App.chat.closePanel()" class="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <!-- Messages -->
+        <div id="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-3" style="background: #F9FAFB;"></div>
+        <!-- Input -->
+        <div class="p-3 border-t bg-white">
+            <div class="flex gap-2">
+                <input type="text" id="chatInput" class="form-input flex-1" placeholder="输入问题，按回车发送..." onkeydown="if(event.key==='Enter')App.chat.sendMessage()">
+                <button id="chatSendBtn" class="btn btn-primary" onclick="App.chat.sendMessage()">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- JavaScript -->
     <script src="/static/js/app.js?v=44"></script>
 </body>
