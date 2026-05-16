@@ -2993,6 +2993,32 @@ const App = {
   },
 };
 
+// ==========
+// UI 通用折叠控制
+// ==========
+App.ui = {
+  toggleSection(id) {
+    const section = document.getElementById(id);
+    const body = document.getElementById(id + '-body');
+    const icon = section.querySelector('.toggle-icon');
+    if (!body) return;
+    const isCollapsed = body.style.display === 'none';
+    body.style.display = isCollapsed ? 'block' : 'none';
+    if (icon) icon.style.transform = isCollapsed ? '' : 'rotate(-90deg)';
+  },
+
+  // 初始化：默认折叠下方三个栏目，让聊天框占满空间
+  initDashboardCollapse() {
+    const ids = ['section-stats', 'section-quick', 'section-activity'];
+    ids.forEach(id => {
+      const body = document.getElementById(id + '-body');
+      const icon = document.getElementById(id)?.querySelector('.toggle-icon');
+      if (body) body.style.display = 'none';
+      if (icon) icon.style.transform = 'rotate(-90deg)';
+    });
+  },
+};
+
 // Debug: 确保 chat 模块已加载
 console.log('[Debug] App.chat loaded:', typeof App.chat !== 'undefined' ? 'YES' : 'NO');
 if (typeof App.chat === 'undefined') {
@@ -3000,4 +3026,7 @@ if (typeof App.chat === 'undefined') {
 }
 
 // Launch
-document.addEventListener('DOMContentLoaded', () => App.init());
+document.addEventListener('DOMContentLoaded', () => {
+  App.init();
+  App.ui.initDashboardCollapse();
+});
