@@ -54,7 +54,14 @@ htmlcov/
 .coverage
 .coverage.*
 pytest_cache/
+.pytest_cache/
 .tox/
 
 # Node (if any)
 node_modules/
+
+# Local output (排考结果输出目录)
+output_results/
+
+# System logs (NVIDIA driver logs, etc.)
+NVIDIA Corporation/
