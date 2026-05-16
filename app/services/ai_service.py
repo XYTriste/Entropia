@@ -75,6 +75,28 @@ TOOLS = [
                 "required": []
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_teacher_assignments",
+            "description": "查询教师的监考安排，包括固定监考和流动监考。当用户询问某位老师的监考安排、监考场次时调用此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "teacher_name": {
+                        "type": "string",
+                        "description": "教师姓名，支持模糊匹配。如'张老师'→'张'，'李明'→'李明'。用户提到某位老师时传入。"
+                    },
+                    "day_of_week": {
+                        "type": "integer",
+                        "description": "可选，过滤星期几（1=星期一, ..., 5=星期五）。用户指定某天时传入，未指定时不传。",
+                        "enum": [1, 2, 3, 4, 5]
+                    }
+                },
+                "required": ["teacher_name"]
+            }
+        }
     }
 ]
 
@@ -144,7 +166,9 @@ def register_tool(name: str, func):
 def init_tools():
     """初始化所有工具函数"""
     from app.tools.classroom_tools import query_classrooms
+    from app.tools.teacher_tools import query_teacher_assignments
     register_tool("query_classrooms", query_classrooms)
+    register_tool("query_teacher_assignments", query_teacher_assignments)
 
 
 # ============================================================
@@ -176,10 +200,11 @@ async def stream_chat(
             "content": """你是一个考试安排管理系统的智能助手。
 
 你的职责：
-1. 回答用户关于教室查询、考试安排等问题
+1. 回答用户关于教室查询、考试安排、教师监考安排等问题
 2. 当用户询问空闲教室、教室状态、排考安排时，必须调用 query_classrooms 工具
-3. 用简洁友好的中文回复，不要复述工具结果
-4. 如果用户只是闲聊，简短回应即可
+3. 当用户询问某位老师的监考安排、监考场次时，必须调用 query_teacher_assignments 工具
+4. 用简洁友好的中文回复，不要复述工具结果
+5. 如果用户只是闲聊，简短回应即可
 
 【角色约束——你必须严格遵守】：
 1. 你只能回答与考试安排、教室查询、考试管理相关的问题。
@@ -201,6 +226,10 @@ async def stream_chat(
       ... 以此类推，理东二 → "理东二"
       用户说"201和202" → classroom="5-201,5-202"
   - 用户没指定教室 → 不传 classroom 参数，让工具返回所有教室
+- 调用 query_teacher_assignments 工具时，必须严格按用户描述提取参数：
+  - teacher_name：用户提到的教师姓名，如"张老师""李明""王教授"→ 提取姓名部分
+  - day_of_week：用户指定某天时传入（如"周一""星期一"→1），未指定时不传此参数
+  - 关键：即使用户要求详细回答，如果你有相关工具，必须调用工具获取数据，不得自行编造
 - 如果你没有相关的工具来完成用户的请求（例如：修改排考、删除考试等），请诚实告知用户"抱歉，我目前还不支持这个功能，请联系管理员添加相关功能。"
 - 不要编造不存在的功能或数据。
 
