@@ -96,7 +96,7 @@ async def query_classrooms(
             select(Exam)
             .options(
                 selectinload(Exam.course),
-                selectinload(Exam.time_slot).selectinload(TimeSlot.patrol_assignments).selectinload(PatrolTeacher.teacher),
+                selectinload(Exam.time_slot).selectinload(TimeSlot.patrol_teachers).selectinload(PatrolTeacher.teacher),
                 selectinload(Exam.classroom_assignments)
                 .selectinload(ExamClassroom.class_assignments)
                 .selectinload(ExamClassroomClass.class_),
@@ -148,8 +148,8 @@ async def query_classrooms(
                 
                 # 获取该时段的流动监考老师
                 patrol_teachers = []
-                if exam.time_slot and exam.time_slot.patrol_assignments:
-                    for pt in exam.time_slot.patrol_assignments:
+                if exam.time_slot and exam.time_slot.patrol_teachers:
+                    for pt in exam.time_slot.patrol_teachers:
                         if pt.teacher:
                             patrol_teachers.append(pt.teacher.name)
                 
