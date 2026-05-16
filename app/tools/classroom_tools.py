@@ -7,6 +7,7 @@ Provides functions to query classroom availability.
 from typing import Any, Optional
 
 from sqlalchemy import select, or_
+
 from sqlalchemy.orm import selectinload
 
 from app.database import AsyncSessionLocal
@@ -15,6 +16,8 @@ from app.models.classroom import Classroom
 from app.models.exam import Exam, ExamStatus
 from app.models.exam_classroom import ExamClassroom
 from app.models.exam_classroom_class import ExamClassroomClass
+from app.models.exam_teacher import ExamTeacher
+from app.models.patrol_teacher import PatrolTeacher
 from app.models.time_slot import TimeSlot
 
 
@@ -93,11 +96,12 @@ async def query_classrooms(
             select(Exam)
             .options(
                 selectinload(Exam.course),
-                selectinload(Exam.time_slot),
+                selectinload(Exam.time_slot).selectinload(TimeSlot.patrol_assignments).selectinload(PatrolTeacher.teacher),
                 selectinload(Exam.classroom_assignments)
                 .selectinload(ExamClassroom.class_assignments)
                 .selectinload(ExamClassroomClass.class_),
-                selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.classroom)
+                selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.classroom),
+                selectinload(Exam.exam_teachers).selectinload(ExamTeacher.teacher)
             )
             .where(Exam.status == ExamStatus.SCHEDULED)
         )
@@ -135,6 +139,20 @@ async def query_classrooms(
                         ecc.class_.name for ecc in ec.class_assignments
                         if ecc.class_
                     ])
+                # 获取固定监考老师
+                fixed_teachers = []
+                if exam.exam_teachers:
+                    for et in exam.exam_teachers:
+                        if et.teacher:
+                            fixed_teachers.append(et.teacher.name)
+                
+                # 获取该时段的流动监考老师
+                patrol_teachers = []
+                if exam.time_slot and exam.time_slot.patrol_assignments:
+                    for pt in exam.time_slot.patrol_assignments:
+                        if pt.teacher:
+                            patrol_teachers.append(pt.teacher.name)
+                
                 occupied_details[cid].append({
                     "exam_id": exam.id,
                     "course_name": exam.course.name if exam.course else f"Exam {exam.id}",
@@ -144,6 +162,8 @@ async def query_classrooms(
                     "slot_code": ts.slot_code if ts else "T0",
                     "time_str": f"{DAY_NAMES_ZH.get(ts.day_of_week, '')} {ts.start_time}-{ts.end_time}" if ts else "",
                     "student_count": ec.total_students,
+                    "fixed_teachers": fixed_teachers,
+                    "patrol_teachers": patrol_teachers,
                 })
 
         # 4. Categorize results
@@ -176,6 +196,8 @@ async def query_classrooms(
                     "classes": info["classes"],
                     "time_str": info["time_str"],
                     "students": info["student_count"],
+                    "fixed_teachers": info.get("fixed_teachers", []),
+                    "patrol_teachers": info.get("patrol_teachers", []),
                 })
             result["occupied"].append({
                 "id": cid,

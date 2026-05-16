@@ -2926,28 +2926,30 @@ const App = {
         html += `<table class="w-full text-sm" style="min-width: 900px;">`;
         html += `<thead><tr class="bg-red-50 text-red-700">`;
         html += `<th class="px-4 py-2 text-left font-semibold">教室</th>`;
-        html += `<th class="px-4 py-2 text-left font-semibold">建筑</th>`;
-        html += `<th class="px-4 py-2 text-center font-semibold" style="width: 80px;">容量</th>`;
         html += `<th class="px-4 py-2 text-center font-semibold" style="width: 90px;">类型</th>`;
         html += `<th class="px-4 py-2 text-left font-semibold">考试科目</th>`;
         html += `<th class="px-4 py-2 text-left font-semibold" style="width: 170px;">考试时间</th>`;
         html += `<th class="px-4 py-2 text-left font-semibold">涉考班级</th>`;
         html += `<th class="px-4 py-2 text-center font-semibold" style="width: 80px;">人数</th>`;
+        html += `<th class="px-4 py-2 text-left font-semibold">固定监考</th>`;
+        html += `<th class="px-4 py-2 text-left font-semibold">流动监考</th>`;
         html += `</tr></thead><tbody>`;
         for (const c of data.occupied) {
           const courseText = c.exams.map(e => this.escapeHtml(e.course) + (e.exam_label ? ` <span class="font-medium ${e.exam_label === 'A' ? 'text-blue-600' : 'text-orange-600'}">(${e.exam_label})</span>` : '')).join('<br>');
           const timeText = c.exams.map(e => this.escapeHtml(e.time_str || '')).join('<br>');
           const classesText = c.exams.map(e => Array.isArray(e.classes) ? e.classes.map(cls => this.escapeHtml(cls)).join(', ') : '').join('<br>');
           const studentsText = c.exams.map(e => e.students + '人').join('<br>');
+          const fixedTeacherText = c.exams.map(e => Array.isArray(e.fixed_teachers) ? e.fixed_teachers.map(t => this.escapeHtml(t)).join(', ') : '').join('<br>');
+          const patrolTeacherText = c.exams.map(e => Array.isArray(e.patrol_teachers) ? e.patrol_teachers.map(t => this.escapeHtml(t)).join(', ') : '').join('<br>');
           html += `<tr class="border-t border-red-100 hover:bg-red-50/50">`;
           html += `<td class="px-4 py-2.5 font-medium text-gray-800">${this.escapeHtml(c.name)}</td>`;
-          html += `<td class="px-4 py-2.5 text-gray-500">${this.escapeHtml(c.building)}</td>`;
-          html += `<td class="px-4 py-2.5 text-center text-gray-500">${c.capacity}</td>`;
           html += `<td class="px-4 py-2.5 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${c.type === 'Lecture' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">${c.type}</span></td>`;
           html += `<td class="px-4 py-2.5 text-gray-700 text-sm">${courseText}</td>`;
           html += `<td class="px-4 py-2.5 text-sm text-gray-600">${timeText}</td>`;
           html += `<td class="px-4 py-2.5 text-sm text-gray-600">${classesText}</td>`;
           html += `<td class="px-4 py-2.5 text-center text-gray-500 text-sm">${studentsText}</td>`;
+          html += `<td class="px-4 py-2.5 text-sm text-gray-800">${fixedTeacherText}</td>`;
+          html += `<td class="px-4 py-2.5 text-sm text-gray-800">${patrolTeacherText}</td>`;
           html += `</tr>`;
         }
         html += `</tbody></table></div></div>`;
@@ -2958,18 +2960,14 @@ const App = {
         html += `<div class="mb-3">`;
         html += `<div class="text-sm font-semibold text-green-700 mb-2 flex items-center gap-1"><i class="fas fa-check-circle"></i> 空闲教室</div>`;
         html += `<div class="overflow-x-auto rounded-lg border border-green-200">`;
-        html += `<table class="w-full text-sm" style="min-width: 500px;">`;
+        html += `<table class="w-full text-sm" style="min-width: 400px;">`;
         html += `<thead><tr class="bg-green-50 text-green-700">`;
         html += `<th class="px-4 py-2 text-left font-semibold">教室</th>`;
-        html += `<th class="px-4 py-2 text-left font-semibold">建筑</th>`;
-        html += `<th class="px-4 py-2 text-center font-semibold" style="width: 80px;">容量</th>`;
         html += `<th class="px-4 py-2 text-center font-semibold" style="width: 90px;">类型</th>`;
         html += `</tr></thead><tbody>`;
         for (const c of data.free) {
           html += `<tr class="border-t border-green-100 hover:bg-green-50/50">`;
           html += `<td class="px-4 py-2.5 font-medium text-gray-800">${this.escapeHtml(c.name)}</td>`;
-          html += `<td class="px-4 py-2.5 text-gray-500">${this.escapeHtml(c.building)}</td>`;
-          html += `<td class="px-4 py-2.5 text-center text-gray-500">${c.capacity}</td>`;
           html += `<td class="px-4 py-2.5 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${c.type === 'Lecture' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">${c.type}</span></td>`;
           html += `</tr>`;
         }
