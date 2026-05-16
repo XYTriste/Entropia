@@ -138,6 +138,7 @@ async def query_classrooms(
                 occupied_details[cid].append({
                     "exam_id": exam.id,
                     "course_name": exam.course.name if exam.course else f"Exam {exam.id}",
+                    "exam_label": exam.exam_label.value if exam.exam_label else None,
                     "classes": classes,
                     "day_of_week": ts.day_of_week if ts else 0,
                     "slot_code": ts.slot_code if ts else "T0",

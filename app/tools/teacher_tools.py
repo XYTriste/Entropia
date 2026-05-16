@@ -139,6 +139,7 @@ async def query_teacher_assignments(
             assignment_info = {
                 "exam_id": exam.id,
                 "course_name": exam.course.name if exam.course else f"Exam {exam.id}",
+                "exam_label": exam.exam_label.value if exam.exam_label else None,
                 "day_of_week": ts.day_of_week,
                 "day_name": DAY_NAMES_ZH.get(ts.day_of_week, ""),
                 "slot_code": ts.slot_code,

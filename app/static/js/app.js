@@ -2935,7 +2935,7 @@ const App = {
         html += `<th class="px-4 py-2 text-center font-semibold" style="width: 80px;">人数</th>`;
         html += `</tr></thead><tbody>`;
         for (const c of data.occupied) {
-          const courseText = c.exams.map(e => this.escapeHtml(e.course)).join('<br>');
+          const courseText = c.exams.map(e => this.escapeHtml(e.course) + (e.exam_label ? ` <span class="font-medium ${e.exam_label === 'A' ? 'text-blue-600' : 'text-orange-600'}">(${e.exam_label})</span>` : '')).join('<br>');
           const timeText = c.exams.map(e => this.escapeHtml(e.time_str || '')).join('<br>');
           const classesText = c.exams.map(e => Array.isArray(e.classes) ? e.classes.map(cls => this.escapeHtml(cls)).join(', ') : '').join('<br>');
           const studentsText = c.exams.map(e => e.students + '人').join('<br>');
@@ -3034,7 +3034,7 @@ const App = {
 
         for (const a of data.assignments) {
           html += `<tr class="border-t border-blue-100 hover:bg-blue-50/50">`;
-          html += `<td class="px-4 py-2.5 font-medium text-gray-800">${this.escapeHtml(a.course_name)}</td>`;
+          html += `<td class="px-4 py-2.5 font-medium text-gray-800">${this.escapeHtml(a.course_name)}${a.exam_label ? ` <span class="font-medium ${a.exam_label === 'A' ? 'text-blue-600' : 'text-orange-600'}">(${a.exam_label})</span>` : ''}</td>`;
           html += `<td class="px-4 py-2.5 text-gray-600">${this.escapeHtml(a.day_name || '')} ${this.escapeHtml(a.time_str || '')}</td>`;
           html += `<td class="px-4 py-2.5 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${a.role === '固定监考' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}">${a.role}</span></td>`;
           html += `<td class="px-4 py-2.5 text-gray-600">${a.classroom ? this.escapeHtml(a.classroom) : '<span class="text-gray-400">-</span>'}</td>`;
