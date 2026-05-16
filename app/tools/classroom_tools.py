@@ -139,11 +139,12 @@ async def query_classrooms(
                         ecc.class_.name for ecc in ec.class_assignments
                         if ecc.class_
                     ])
-                # 获取固定监考老师
+                # 获取固定监考老师（仅限在这个教室监考的）
                 fixed_teachers = []
                 if exam.teacher_assignments:
                     for et in exam.teacher_assignments:
-                        if et.teacher:
+                        # 只添加分配到这个教室的固定监考老师
+                        if et.classroom_id == cid and et.teacher:
                             fixed_teachers.append(et.teacher.name)
                 
                 # 获取该时段的流动监考老师
