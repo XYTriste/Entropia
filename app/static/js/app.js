@@ -2654,12 +2654,12 @@ const App = {
 
       if (this.isExpanded) {
         // 收起
-        body.style.display = 'none';
+        body.classList.remove('expanded');
         if (icon) icon.classList.remove('rotate-180');
         if (hint) hint.textContent = '点击展开';
       } else {
         // 展开
-        body.style.display = 'flex';
+        body.classList.add('expanded');
         if (icon) icon.classList.add('rotate-180');
         if (hint) hint.textContent = '点击收起';
         // 聚焦输入框

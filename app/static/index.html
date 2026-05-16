@@ -173,6 +173,10 @@
         .dash-section-header-blue { background: linear-gradient(135deg, #3B82F6, #6366F1); color: white; }
         .dash-section-header-green { background: linear-gradient(135deg, #10B981, #059669); color: white; }
         .dash-section-header-purple { background: linear-gradient(135deg, #8B5CF6, #7C3AED); color: white; }
+        /* 聊天面板：展开时占满75vh，消息区自动撑满剩余空间 */
+        #chatPanelBody { display: none; flex-direction: column; height: 75vh; }
+        #chatPanelBody.expanded { display: flex; }
+        #chatMessages { flex: 1; overflow-y: auto; background: #F9FAFB; }
     </style>
 </head>
 <body>
@@ -259,9 +263,9 @@
                     </div>
                 </div>
                 <!-- 聊天内容区 -->
-                <div id="chatPanelBody" style="display: none; flex-direction: column; height: 75vh;">
+                <div id="chatPanelBody" class="chat-panel-body">
                     <!-- Messages -->
-                    <div id="chatMessages" class="overflow-y-auto p-4 space-y-3" style="background: #F9FAFB; max-height: 500px;">
+                    <div id="chatMessages" class="chat-messages p-4 space-y-3">
                         <!-- 欢迎语（首次展开显示，发消息后隐藏） -->
                         <div id="chatWelcome" class="flex justify-start">
                             <div class="max-w-[95%] px-4 py-3 rounded-2xl rounded-bl-md bg-white border border-blue-100 shadow-sm">
