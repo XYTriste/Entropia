@@ -1,10 +1,17 @@
 import json
+import os
 import sys
 sys.path.insert(0, "/app")
 
 from sqlalchemy import create_engine, text
 
-engine = create_engine("postgresql://scheduler:scheduler@db:5432/exam_scheduler")
+db_url = os.environ.get("SCHEDULER_DATABASE_SYNC_URL")
+if not db_url:
+    raise RuntimeError(
+        "未找到环境变量 SCHEDULER_DATABASE_SYNC_URL。"
+        "请在 .env 文件中配置数据库连接信息，参考 .env.example。"
+    )
+engine = create_engine(db_url)
 with engine.connect() as conn:
     row = conn.execute(text("SELECT data_snapshot FROM schedule_versions WHERE id = 26")).fetchone()
     snap = json.loads(row[0])

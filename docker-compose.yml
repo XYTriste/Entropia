@@ -13,10 +13,12 @@ services:
     image: postgres:15-alpine
     container_name: exam-scheduler-db
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: scheduler
-      POSTGRES_PASSWORD: scheduler
-      POSTGRES_DB: exam_scheduler
+      POSTGRES_USER: ${POSTGRES_USER:-scheduler}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-exam_scheduler}
       # 中文排序支持
       LC_COLLATE: zh_CN.UTF-8
       LC_CTYPE: zh_CN.UTF-8
@@ -50,10 +52,10 @@ services:
       db:
         condition: service_healthy  # 确保数据库就绪后才启动
     environment:
-      # 数据库连接（使用异步驱动）
-      SCHEDULER_DATABASE_URL: postgresql+asyncpg://scheduler:scheduler@db:5432/exam_scheduler
+      # 数据库连接（通过环境变量读取，参考 .env.example 配置）
+      SCHEDULER_DATABASE_URL: ${SCHEDULER_DATABASE_URL}
       # 数据库连接（同步驱动，用于alembic迁移）
-      SCHEDULER_DATABASE_SYNC_URL: postgresql://scheduler:scheduler@db:5432/exam_scheduler
+      SCHEDULER_DATABASE_SYNC_URL: ${SCHEDULER_DATABASE_SYNC_URL}
       # 应用配置
       SCHEDULER_DEBUG: "false"
       SCHEDULER_SECRET_KEY: ${SCHEDULER_SECRET_KEY:-change-me-in-production}

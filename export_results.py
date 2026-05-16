@@ -61,7 +61,12 @@ def _auto_width(worksheet, min_width=10, max_width=40):
 
 
 def main():
-    db_url = "postgresql://scheduler:scheduler@db:5432/exam_scheduler"
+    db_url = os.environ.get("SCHEDULER_DATABASE_SYNC_URL")
+    if not db_url:
+        raise RuntimeError(
+            "未找到环境变量 SCHEDULER_DATABASE_SYNC_URL。"
+            "请在 .env 文件中配置数据库连接信息，参考 .env.example。"
+        )
     engine = create_engine(db_url)
     Session = sessionmaker(bind=engine)
     session = Session()

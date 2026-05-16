@@ -90,12 +90,18 @@ def get_database_url(sync: bool = True) -> str:
         async_url = os.environ.get("SCHEDULER_DATABASE_URL", "")
         if async_url:
             return async_url.replace("postgresql+asyncpg", "postgresql", 1)
-        return "postgresql://scheduler:scheduler@localhost:5432/exam_scheduler"
+        raise RuntimeError(
+            "未找到数据库连接配置。请设置环境变量 SCHEDULER_DATABASE_SYNC_URL 或 SCHEDULER_DATABASE_URL。"
+            "参考 .env.example 文件配置。"
+        )
     else:
         url = os.environ.get("SCHEDULER_DATABASE_URL")
         if url:
             return url
-        return "postgresql+asyncpg://scheduler:scheduler@localhost:5432/exam_scheduler"
+        raise RuntimeError(
+            "未找到数据库连接配置。请设置环境变量 SCHEDULER_DATABASE_URL。"
+            "参考 .env.example 文件配置。"
+        )
 
 
 def create_tables_sync(sync_engine) -> None:

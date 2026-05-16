@@ -27,18 +27,17 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # 数据库配置 (PostgreSQL)
-    DATABASE_URL: str = (
-        "postgresql+asyncpg://scheduler:scheduler@localhost:5432/exam_scheduler"
-    )
+    # 注意：生产环境请通过环境变量 SCHEDULER_DATABASE_URL 设置
+    # 默认值仅用于本地开发，勿在生产环境使用
+    DATABASE_URL: str = ""
     DATABASE_POOL_SIZE: int = 20
     DATABASE_MAX_OVERFLOW: int = 10
     DATABASE_POOL_RECYCLE: int = 3600
     DATABASE_ECHO: bool = False
 
     # 同步数据库URL (用于alembic)
-    DATABASE_SYNC_URL: str = (
-        "postgresql://scheduler:scheduler@localhost:5432/exam_scheduler"
-    )
+    # 注意：生产环境请通过环境变量 SCHEDULER_DATABASE_SYNC_URL 设置
+    DATABASE_SYNC_URL: str = ""
 
     # CORS 配置
     CORS_ORIGINS: List[str] = ["http://localhost:8080", "http://127.0.0.1:8080"]
