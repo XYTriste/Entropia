@@ -64,7 +64,7 @@
       width="500px"
       :close-on-click-modal="false"
     >
-      <el-form :model="form" label-width="100px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item
           v-for="field in formFields"
           :key="field.key"
@@ -125,6 +125,7 @@ const props = defineProps({
   entity:     { type: String, required: true },
   columns:    { type: Array,  required: true },
   formFields: { type: Array,  required: true },
+  rules:      { type: Object,  default: () => ({}) },
 })
 
 const emit = defineEmits(['saved', 'deleted'])
@@ -143,6 +144,7 @@ const {
   deleteItem,
 } = useCrud(props.entity)
 
+const formRef = ref(null)
 const localFilters = ref({ ...filters.value })
 
 function onSearch() {
@@ -152,10 +154,22 @@ function onSearch() {
 }
 
 async function save() {
-  try {
+  if (!formRef.value) {
     await originalSave()
     ElMessage.success('保存成功')
     emit('saved')
+    return
+  }
+  try {
+    await formRef.value.validate(async (valid) => {
+      if (!valid) {
+        ElMessage.warning('请检查表单输入')
+        return
+      }
+      await originalSave()
+      ElMessage.success('保存成功')
+      emit('saved')
+    })
   } catch (e) {
     ElMessage.error('保存失败')
   }

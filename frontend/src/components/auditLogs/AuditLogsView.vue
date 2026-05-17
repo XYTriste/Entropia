@@ -55,12 +55,7 @@
                 row.action === 'schedule' ? 'warning' : 'info'
               "
             >
-              {{
-                create: '创建',
-                update: '更新',
-                delete: '删除',
-                schedule: '排考',
-              }[row.action] || row.action }}
+              {{ getActionText(row.action) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -89,6 +84,17 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '@/api/index.js'
+
+const actionTextMap = {
+  create: '创建',
+  update: '更新',
+  delete: '删除',
+  schedule: '排考',
+}
+
+function getActionText(action) {
+  return actionTextMap[action] || action
+}
 
 const logs = ref([])
 const loading = ref(false)

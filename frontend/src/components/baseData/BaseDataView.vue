@@ -5,27 +5,27 @@
     <el-tabs v-model="activeTab" class="data-tabs">
       <!-- 教师 -->
       <el-tab-pane label="教师" name="teachers">
-        <CrudTab entity="teachers" :columns="teacherColumns" :formFields="teacherFormFields" />
+        <CrudTab entity="teachers" :columns="teacherColumns" :formFields="teacherFormFields" :rules="teacherRules" />
       </el-tab-pane>
 
       <!-- 教室 -->
       <el-tab-pane label="教室" name="classrooms">
-        <CrudTab entity="classrooms" :columns="classroomColumns" :formFields="classroomFormFields" />
+        <CrudTab entity="classrooms" :columns="classroomColumns" :formFields="classroomFormFields" :rules="classroomRules" />
       </el-tab-pane>
 
       <!-- 课程 -->
       <el-tab-pane label="课程" name="courses">
-        <CrudTab entity="courses" :columns="courseColumns" :formFields="courseFormFields" />
+        <CrudTab entity="courses" :columns="courseColumns" :formFields="courseFormFields" :rules="courseRules" />
       </el-tab-pane>
 
       <!-- 班级 -->
       <el-tab-pane label="班级" name="classes">
-        <CrudTab entity="classes" :columns="classColumns" :formFields="classFormFields" />
+        <CrudTab entity="classes" :columns="classColumns" :formFields="classFormFields" :rules="classRules" />
       </el-tab-pane>
 
       <!-- 时段 -->
       <el-tab-pane label="时段" name="time-slots">
-        <CrudTab entity="time-slots" :columns="slotColumns" :formFields="slotFormFields" />
+        <CrudTab entity="time-slots" :columns="slotColumns" :formFields="slotFormFields" :rules="slotRules" />
       </el-tab-pane>
 
       <!-- 学生 -->
@@ -35,16 +35,43 @@
 
       <!-- 专业 -->
       <el-tab-pane label="专业" name="majors">
-        <CrudTab entity="majors" :columns="majorColumns" :formFields="majorFormFields" />
+        <CrudTab entity="majors" :columns="majorColumns" :formFields="majorFormFields" :rules="majorRules" />
       </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import CrudTab from '@/components/common/CrudTab.vue'
 
 const activeTab = ref('teachers')
+
+// 表单校验规则
+const teacherRules = {
+  name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  max_slots: [{ required: true, message: '请输入最大场次', trigger: 'blur' }],
+}
+const classroomRules = {
+  name: [{ required: true, message: '请输入教室名称', trigger: 'blur' }],
+  capacity: [{ required: true, message: '请输入容量', trigger: 'blur' }],
+}
+const courseRules = {
+  name: [{ required: true, message: '请输入课程名称', trigger: 'blur' }],
+}
+const classRules = {
+  name: [{ required: true, message: '请输入班级名称', trigger: 'blur' }],
+  student_count: [{ required: true, message: '请输入人数', trigger: 'blur' }],
+}
+const slotRules = {
+  day_of_week: [{ required: true, message: '请选择星期', trigger: 'change' }],
+  slot_code: [{ required: true, message: '请选择时段代码', trigger: 'change' }],
+  start_time: [{ required: true, message: '请输入开始时间', trigger: 'blur' }],
+  end_time: [{ required: true, message: '请输入结束时间', trigger: 'blur' }],
+}
+const majorRules = {
+  name: [{ required: true, message: '请输入专业名称', trigger: 'blur' }],
+}
 
 // ------- 教师 -------
 const teacherColumns = [

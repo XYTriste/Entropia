@@ -21,6 +21,7 @@
 ### 3. 通用组件
 - ✅ `composables/useCrud.js`：通用 CRUD 组合式函数（支持分页、筛选、增删改查）
 - ✅ `components/common/CrudTab.vue`：通用 CRUD 标签页组件（支持自定义列插槽和表单字段配置）
+- ✅ `CrudTab.vue` 支持表单校验（通过 `:rules` 属性传递校验规则）
 
 ### 4. BaseDataView.vue（基础数据管理）
 - ✅ 7 个标签页：教师、教室、课程、班级、时段、学生、专业
@@ -70,16 +71,7 @@
 1. **`AdjustmentsView.vue` 缺少拖拽功能**
    原版使用 HTML5 拖拽 API 实现教师卡片拖拽调整。当前版本使用"移除/添加"按钮和模态框，功能完整但交互体验待提升。
 
-2. **Font Awesome 图标未引入**
-   `DashboardView.vue` 中 `tool_result` 渲染的 HTML 使用了 `fas fa-*` 类名，但 `index.html` 可能未引入 Font Awesome CDN。需要添加：
-   ```html
-   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-   ```
-
-3. **`CrudTab.vue` 的表单校验缺失**
-   当前创建/编辑对话框没有做字段校验（如教师姓名非空、容量正数等），需要后续添加 `el-form` 的 `rules`。
-
-4. **部分 API 响应格式假设**
+2. **部分 API 响应格式假设**
    `useCrud.js` 假设响应格式为 `{ items: [...], total: N }`，如果实际后端返回格式不同需要调整。
 
 ---
@@ -103,9 +95,7 @@
 
 ## 四、下一步建议
 
-1. **补充 Font Awesome CDN** — 修复 `tool_result` 图标显示
-2. **实现拖拽调整** — 引入 `vue-draggable-next` 或手写拖拽逻辑
-3. **添加表单校验** — 所有 `CrudTab` 的创建/编辑表单
-4. **连通后端联调** — 逐页测试 CRUD、排考、结果导出等
-5. **构建与部署** — `npm run build` 输出到 `app/static/dist`，更新 Dockerfile 或 Nginx 配置
-6. **Git 推送** — 当前有未推送的提交，需要网络连接恢复后推送
+1. **实现拖拽调整** — 引入 `vue-draggable-next` 或手写拖拽逻辑（AdjustmentsView）
+2. **连通后端联调** — 逐页测试 CRUD、排考、结果导出等
+3. **构建与部署** — `npm run build` 输出到 `app/static/dist`，更新 Dockerfile 或 Nginx 配置
+4. **Git 推送** — 当前有未推送的提交，需要网络连接恢复后推送
