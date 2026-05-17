@@ -35,8 +35,9 @@ async def list_classrooms(
     if is_active is not None:
         query = query.where(Classroom.is_active == is_active)
 
-    count_result = await db.execute(select(func.count(Classroom.id)).select_from(query.subquery()))
-    total = count_result.scalar_one()
+    count_query = select(func.count()).select_from(query.subquery())
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one() or 0
 
     result = await db.execute(query.offset(skip).limit(limit).order_by(Classroom.id))
     items = result.scalars().all()

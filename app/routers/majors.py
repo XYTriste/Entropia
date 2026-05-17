@@ -28,8 +28,9 @@ async def list_majors(
     if search:
         query = query.where(Major.name.ilike(f"%{search}%"))
 
-    count_result = await db.execute(select(func.count(Major.id)).select_from(query.subquery()))
-    total = count_result.scalar_one()
+    count_query = select(func.count()).select_from(query.subquery())
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one() or 0
 
     result = await db.execute(query.offset(skip).limit(limit).order_by(Major.id))
     items = result.scalars().all()

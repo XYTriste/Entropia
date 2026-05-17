@@ -138,8 +138,9 @@ async def list_audit_logs(
         except ValueError:
             pass
 
-    count_result = await db.execute(select(func.count(AuditLog.id)).select_from(query.subquery()))
-    total = count_result.scalar_one()
+    count_query = select(func.count()).select_from(query.subquery())
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one() or 0
 
     result = await db.execute(query.order_by(AuditLog.created_at.desc()).offset(skip).limit(limit))
     items = result.scalars().all()

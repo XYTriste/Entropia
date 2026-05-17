@@ -36,8 +36,9 @@ async def list_students(
             (Student.name.ilike(f"%{search}%")) | (Student.student_no.ilike(f"%{search}%"))
         )
 
-    count_result = await db.execute(select(func.count(Student.id)).select_from(query.subquery()))
-    total = count_result.scalar_one()
+    count_query = select(func.count()).select_from(query.subquery())
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one() or 0
 
     result = await db.execute(query.offset(skip).limit(limit).order_by(Student.id))
     items = result.scalars().all()

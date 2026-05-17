@@ -37,8 +37,9 @@ async def list_classes(
     if search:
         query = query.where(Class.name.ilike(f"%{search}%"))
 
-    count_result = await db.execute(select(func.count(Class.id)).select_from(query.subquery()))
-    total = count_result.scalar_one()
+    count_query = select(func.count()).select_from(query.subquery())
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one() or 0
 
     result = await db.execute(query.offset(skip).limit(limit).order_by(Class.id))
     items = result.scalars().all()

@@ -55,11 +55,10 @@ async def list_teachers(
     if is_active is not None:
         query = query.where(Teacher.is_active == is_active)
 
-    # 总数
-    count_result = await db.execute(
-        select(func.count(Teacher.id)).select_from(query.subquery())
-    )
-    total = count_result.scalar_one()
+    # 总数 - 正确的写法
+    count_query = select(func.count()).select_from(query.subquery())
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one() or 0
 
     # 分页数据
     query = query.offset(skip).limit(limit).order_by(Teacher.id)

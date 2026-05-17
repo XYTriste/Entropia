@@ -39,8 +39,9 @@ async def list_courses(
     if search:
         query = query.where(Course.name.ilike(f"%{search}%"))
 
-    count_result = await db.execute(select(func.count(Course.id)).select_from(query.subquery()))
-    total = count_result.scalar_one()
+    count_query = select(func.count()).select_from(query.subquery())
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one() or 0
 
     result = await db.execute(query.offset(skip).limit(limit).order_by(Course.id))
     items = result.scalars().all()

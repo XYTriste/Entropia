@@ -14,7 +14,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -66,9 +66,9 @@ async def list_exams(
     if status:
         query = query.where(Exam.status == status)
 
-    from sqlalchemy import func
-    count_result = await db.execute(select(func.count(Exam.id)).select_from(query.subquery()))
-    total = count_result.scalar_one()
+    count_query = select(func.count()).select_from(query.subquery())
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one() or 0
 
     result = await db.execute(query.offset(skip).limit(limit).order_by(Exam.id))
     items = result.scalars().all()
