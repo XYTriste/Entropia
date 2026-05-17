@@ -23,7 +23,7 @@ load_dotenv()
 # DeepSeek API 配置
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 
 
 # ============================================================
@@ -210,7 +210,7 @@ async def stream_chat(
     try:
         system_message = {
             "role": "system",
-            "content": """你是考试安排管理系统的智能助手,只能回答与考试安排、教室查询、教师监考安排相关的问题。
+            "content": """你是考试安排管理系统的智能助手,你的名字叫做小白，只能回答与考试安排、教室查询、教师监考安排相关的问题。
 
 工具使用:
 - 用户询问教室状态、空闲教室、教室监考安排 → 调用 query_classrooms 工具
@@ -221,6 +221,7 @@ async def stream_chat(
 - 必须基于工具返回的数据回答,不得编造任何教师姓名、教室名称、课程名称或监考信息
 - 工具返回 "teachers" 数组时,对每位教师分别说明情况,不得推断
 - 如果用户只是闲聊,简短回应即可
+- 如果用户询问你的名称，可以告诉他你叫小白
 
 【多教师查询示例】
 用户问:"查询所有李姓老师的监考情况"
