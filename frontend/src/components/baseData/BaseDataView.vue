@@ -42,10 +42,12 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref as vueRef } from 'vue'
 import CrudTab from '@/components/common/CrudTab.vue'
 
-const activeTab = ref('teachers')
+console.log('[BaseDataView] setup 开始，vueRef 已导入:', typeof vueRef)
+
+const activeTab = vueRef('teachers')
 
 // 表单校验规则
 const teacherRules = {
