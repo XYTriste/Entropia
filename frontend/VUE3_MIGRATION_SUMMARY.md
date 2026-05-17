@@ -46,37 +46,40 @@
 - ✅ 操作类型筛选、实体类型筛选
 - ✅ 分页日志表格（操作标签、时间、详情）
 
-### 9. AdjustmentsView.vue（手动微调·基础版）
+### 9. AdjustmentsView.vue（手动微调）
 - ✅ 排考版本选择
 - ✅ 已排考试列表（展开行显示监考教师）
-- ✅ 从考试中移除教师、向考试添加教师
+- ✅ 调整考试安排模态框（调整时段、教室）
+- ✅ 更换监考教师模态框
+- ✅ 调用真实后端 API（`/api/adjustments/move-exam-time`、`/api/adjustments/change-classroom`、`/api/adjustments/change-teacher`）
+- ✅ 撤销上次操作功能
 - ⚠️ 暂未实现拖拽调整（原版使用 HTML5 原生拖拽，待后续增强）
 
-### 10. TransferView.vue（教师调剂·基础版）
-- ✅ 选择源教师和目标考试
+### 10. TransferView.vue（教师调剂）
+- ✅ 教师交换（swap）
+- ✅ 单场转移（transfer）
+- ✅ 批量转交（batch-transfer）
+- ✅ 撤销上次调剂
+- ✅ 调用真实后端 API（`/api/adjustments/teacher-swap`、`/api/adjustments/teacher-transfer`、`/api/adjustments/teacher-batch-transfer`）
 - ✅ 调剂记录预览
-- ⚠️ 暂未接入真实调剂 API（当前为演示模式）
 
 ---
 
 ## 二、已知问题与限制
 
-1. **`AdjustmentsView.vue` 缺少拖拽功能**  
-   原版使用 HTML5 拖拽 API 实现教师卡片拖拽调整。当前版本使用"移除/添加"按钮代替，功能可用但交互体验待提升。
+1. **`AdjustmentsView.vue` 缺少拖拽功能**
+   原版使用 HTML5 拖拽 API 实现教师卡片拖拽调整。当前版本使用"移除/添加"按钮和模态框，功能完整但交互体验待提升。
 
-2. **`TransferView.vue` 未接入真实 API**  
-   当前为演示模式，点击"确认调剂"只会记录在界面中，不会实际调用后端接口。需要后续补充 `POST /api/adjustments/transfer` 调用。
-
-3. **Font Awesome 图标未引入**  
+2. **Font Awesome 图标未引入**
    `DashboardView.vue` 中 `tool_result` 渲染的 HTML 使用了 `fas fa-*` 类名，但 `index.html` 可能未引入 Font Awesome CDN。需要添加：
    ```html
    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
    ```
 
-4. **`CrudTab.vue` 的表单校验缺失**  
+3. **`CrudTab.vue` 的表单校验缺失**
    当前创建/编辑对话框没有做字段校验（如教师姓名非空、容量正数等），需要后续添加 `el-form` 的 `rules`。
 
-5. **部分 API 响应格式假设**  
+4. **部分 API 响应格式假设**
    `useCrud.js` 假设响应格式为 `{ items: [...], total: N }`，如果实际后端返回格式不同需要调整。
 
 ---
@@ -90,8 +93,9 @@
 | 基础数据 CRUD | ✅ | ✅ | 已完成 |
 | 智能排考 | ✅ | ✅ | 已完成 |
 | 排考结果查看 | ✅ | ✅ | 已完成 |
+| 手动微调（调整安排、换教师） | ✅ | ✅ | 已完成 |
 | 手动微调（拖拽） | ✅ | ⚠️ | 基础版（无拖拽） |
-| 教师调剂 | ✅ | ⚠️ | 基础版（演示模式） |
+| 教师调剂（交换/转移/批量） | ✅ | ✅ | 已完成 |
 | 导入/导出 | ✅ | ✅ | 已完成 |
 | 审计日志 | ✅ | ✅ | 已完成 |
 
@@ -101,7 +105,7 @@
 
 1. **补充 Font Awesome CDN** — 修复 `tool_result` 图标显示
 2. **实现拖拽调整** — 引入 `vue-draggable-next` 或手写拖拽逻辑
-3. **接入调剂 API** — 完善 `TransferView.vue` 的实际调用
-4. **添加表单校验** — 所有 `CrudTab` 的创建/编辑表单
-5. **连通后端联调** — 逐页测试 CRUD、排考、结果导出等
-6. **构建与部署** — `npm run build` 输出到 `app/static/dist`，更新 Dockerfile 或 Nginx 配置
+3. **添加表单校验** — 所有 `CrudTab` 的创建/编辑表单
+4. **连通后端联调** — 逐页测试 CRUD、排考、结果导出等
+5. **构建与部署** — `npm run build` 输出到 `app/static/dist`，更新 Dockerfile 或 Nginx 配置
+6. **Git 推送** — 当前有未推送的提交，需要网络连接恢复后推送

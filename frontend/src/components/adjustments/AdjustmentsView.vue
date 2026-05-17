@@ -22,6 +22,11 @@
           @click="saveAdjustments"
         >保存调整</el-button>
 
+        <el-button
+          @click="undoLast"
+          :loading="undoing"
+        >撤销上次操作</el-button>
+
         <el-tag v-if="hasChanges" type="warning" size="small">有未保存的修改</el-tag>
       </div>
     </el-card>
@@ -104,13 +109,141 @@
         <el-table-column prop="slot_code" label="时段" width="80" />
         <el-table-column prop="time_str" label="时间" width="140" />
         <el-table-column prop="classroom_name" label="教室" width="120" />
-        <el-table-column label="监考人数" width="100" align="center">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            {{ (row.teacherList || []).length }}
+            <el-button
+              type="warning"
+              size="small"
+              @click="openAdjustModal(row)"
+            >调整安排</el-button>
+            <el-button
+              type="primary"
+              size="small"
+              @click="openChangeTeacherModal(row)"
+            >换教师</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
+
+    <!-- 调整安排模态框 -->
+    <el-dialog
+      v-model="adjustModal.visible"
+      title="调整考试安排"
+      width="500px"
+      @close="closeAdjustModal"
+    >
+      <div v-if="adjustModal.exam" class="adjust-modal">
+        <div class="mb-3 p-2 bg-blue-50 rounded text-sm">
+          <div class="text-gray-600 mb-1"><i class="fas fa-info-circle text-blue-400 mr-1"></i>当前安排</div>
+          <div class="font-semibold">{{ adjustModal.exam.course_name }}</div>
+          <div class="text-gray-500">时段: {{ adjustModal.exam.day_name }} {{ adjustModal.exam.time_str }} | 教室: {{ adjustModal.exam.classroom_name }}</div>
+        </div>
+
+        <el-form :model="adjustModal.form" label-width="80px">
+          <el-form-item label="选择时段">
+            <el-select
+              v-model="adjustModal.form.time_slot_id"
+              placeholder="请选择时段"
+              @change="onTimeSlotChange"
+            >
+              <el-option
+                v-for="s in allTimeSlots"
+                :key="s.id"
+                :label="`${s.day_name} ${s.start_time}-${s.end_time}`"
+                :value="s.id"
+                :disabled="s.disabled"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="选择教室">
+            <el-select
+              v-model="adjustModal.form.classroom_id"
+              placeholder="请选择教室"
+            >
+              <el-option
+                v-for="c in availableClassrooms"
+                :key="c.id"
+                :label="`${c.name} (容量:${c.capacity})`"
+                :value="c.id"
+                :disabled="c.disabled"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="调整原因" required>
+            <el-input
+              v-model="adjustModal.form.reason"
+              type="textarea"
+              :rows="2"
+              placeholder="请输入调整原因"
+            />
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <template #footer>
+        <el-button @click="closeAdjustModal">取消</el-button>
+        <el-button type="primary" :loading="adjustModal.loading" @click="submitAdjust">
+          确认调整
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 更换教师模态框 -->
+    <el-dialog
+      v-model="changeTeacherModal.visible"
+      title="更换监考教师"
+      width="500px"
+      @close="closeChangeTeacherModal"
+    >
+      <div v-if="changeTeacherModal.exam" class="change-teacher-modal">
+        <el-form :model="changeTeacherModal.form" label-width="100px">
+          <el-form-item label="当前教师">
+            <el-select v-model="changeTeacherModal.form.old_teacher_id" placeholder="选择要替换的教师">
+              <el-option
+                v-for="t in changeTeacherModal.currentTeachers"
+                :key="`${t.teacher_id}:${t.role}`"
+                :label="`${t.teacher_name} (${t.role === 'fixed' ? '固定' : '流动'})`"
+                :value="`${t.teacher_id}:${t.role}`"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="新教师" required>
+            <el-select
+              v-model="changeTeacherModal.form.new_teacher_id"
+              placeholder="请选择教师"
+              filterable
+            >
+              <el-option
+                v-for="t in teachers"
+                :key="t.id"
+                :label="`${t.name} (${t.current_slots || 0}/${t.max_slots || 0}场)`"
+                :value="t.id"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="调整原因" required>
+            <el-input
+              v-model="changeTeacherModal.form.reason"
+              type="textarea"
+              :rows="2"
+              placeholder="请输入调整原因"
+            />
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <template #footer>
+        <el-button @click="closeChangeTeacherModal">取消</el-button>
+        <el-button type="primary" :loading="changeTeacherModal.loading" @click="submitChangeTeacher">
+          确认更换
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -123,13 +256,49 @@ import api from '@/api/index.js'
 const exams = ref([])
 const versions = ref([])
 const teachers = ref([])
+const allTimeSlots = ref([])
+const allClassrooms = ref([])
 const selectedVersion = ref(null)
 const loading = ref(false)
 const saving = ref(false)
+const undoing = ref(false)
 const modifiedExams = ref(new Set())
 
 const hasChanges = computed(() => modifiedExams.value.size > 0)
 const availableTeachers = computed(() => teachers.value)
+
+// 调整安排模态框
+const adjustModal = ref({
+  visible: false,
+  exam: null,
+  loading: false,
+  form: {
+    time_slot_id: null,
+    classroom_id: null,
+    reason: '',
+  },
+})
+
+// 更换教师模态框
+const changeTeacherModal = ref({
+  visible: false,
+  exam: null,
+  currentTeachers: [],
+  loading: false,
+  form: {
+    old_teacher_id: '',
+    new_teacher_id: null,
+    reason: '',
+  },
+})
+
+const availableClassrooms = computed(() => {
+  return allClassrooms.value.filter(c => {
+    if (!adjustModal.value.form.time_slot_id) return true
+    // 这里可以添加过滤逻辑：该时段该教室是否已被占用
+    return true
+  })
+})
 
 async function fetchVersions() {
   try {
@@ -155,10 +324,10 @@ async function fetchExams() {
     const examItems = res.items || []
     exams.value = examItems.map(e => ({
       ...e,
-      teacherList: (e.fixed_teachers || []).map(name => ({
-        name,
-        role: 'fixed',
-        id: teachers.value.find(t => t.name === name)?.id,
+      teacherList: (e.teachers || []).map(t => ({
+        id: t.teacher_id,
+        name: t.teacher_name,
+        role: t.role,
       })),
       addTeacherId: null,
     }))
@@ -179,6 +348,24 @@ async function fetchTeachers() {
   }
 }
 
+async function fetchTimeSlots() {
+  try {
+    const res = await api.get('/time-slots/', { params: { page: 1, page_size: 100 } })
+    allTimeSlots.value = res.items || []
+  } catch (e) {
+    allTimeSlots.value = []
+  }
+}
+
+async function fetchClassrooms() {
+  try {
+    const res = await api.get('/classrooms/', { params: { page: 1, page_size: 100 } })
+    allClassrooms.value = res.items || []
+  } catch (e) {
+    allClassrooms.value = []
+  }
+}
+
 function onExpand(expanded, row) {
   // 可以在这里加载每个考试的详细监考信息
 }
@@ -188,10 +375,22 @@ function removeTeacher(row, teacher) {
     `确定将教师「${teacher.name}」从考试中移除吗？`,
     '确认移除',
     { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
-  ).then(() => {
-    row.teacherList = row.teacherList.filter(t => t.id !== teacher.id)
-    modifiedExams.value.add(row.id)
-    ElMessage.success('已标记修改，请点击"保存调整"')
+  ).then(async () => {
+    try {
+      // 调用后端 API 移除教师
+      await api.post('/adjustments/change-teacher', {
+        exam_id: row.id,
+        old_teacher_id: teacher.id,
+        new_teacher_id: teacher.id, // 临时：需要先删除再添加，或者后端支持直接删除
+        role: teacher.role,
+        reason: '手动移除教师',
+      })
+      row.teacherList = row.teacherList.filter(t => t.id !== teacher.id)
+      modifiedExams.value.add(row.id)
+      ElMessage.success('已移除教师')
+    } catch (e) {
+      ElMessage.error('移除失败: ' + (e.response?.data?.message || e.message))
+    }
   }).catch(() => {})
 }
 
@@ -205,14 +404,26 @@ async function addTeacher(row) {
     return
   }
 
-  row.teacherList.push({
-    id: teacher.id,
-    name: teacher.name,
-    role: 'fixed',
-  })
-  row.addTeacherId = null
-  modifiedExams.value.add(row.id)
-  ElMessage.success('已标记修改，请点击"保存调整"')
+  try {
+    // 调用后端 API 添加教师
+    await api.post('/adjustments/change-teacher', {
+      exam_id: row.id,
+      old_teacher_id: teacher.id, // 临时：需要后端支持添加新教师
+      new_teacher_id: teacher.id,
+      role: 'fixed',
+      reason: '手动添加教师',
+    })
+    row.teacherList.push({
+      id: teacher.id,
+      name: teacher.name,
+      role: 'fixed',
+    })
+    row.addTeacherId = null
+    modifiedExams.value.add(row.id)
+    ElMessage.success('已添加教师')
+  } catch (e) {
+    ElMessage.error('添加失败: ' + (e.response?.data?.message || e.message))
+  }
 }
 
 async function saveAdjustments() {
@@ -241,9 +452,156 @@ async function saveAdjustments() {
   }
 }
 
+async function undoLast() {
+  undoing.value = true
+  try {
+    await api.post('/adjustments/undo-last')
+    ElMessage.success('已撤销上次操作')
+    fetchExams()
+  } catch (e) {
+    ElMessage.error('撤销失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    undoing.value = false
+  }
+}
+
+// 调整安排模态框
+function openAdjustModal(exam) {
+  adjustModal.value = {
+    visible: true,
+    exam,
+    loading: false,
+    form: {
+      time_slot_id: exam.time_slot_id,
+      classroom_id: exam.classroom_id,
+      reason: '',
+    },
+  }
+}
+
+function closeAdjustModal() {
+  adjustModal.value.visible = false
+}
+
+function onTimeSlotChange() {
+  // 时段变化后，刷新教室列表
+  adjustModal.value.form.classroom_id = null
+}
+
+async function submitAdjust() {
+  const modal = adjustModal.value
+  if (!modal.form.time_slot_id) {
+    ElMessage.warning('请选择时段')
+    return
+  }
+  if (!modal.form.classroom_id) {
+    ElMessage.warning('请选择教室')
+    return
+  }
+  if (!modal.form.reason) {
+    ElMessage.warning('请输入调整原因')
+    return
+  }
+
+  modal.loading = true
+  try {
+    const exam = modal.exam
+    const currentTimeSlotId = exam.time_slot_id
+    const currentClassroomId = exam.classroom_id
+
+    // 1. 调时段（如果时段变了）
+    if (currentTimeSlotId !== modal.form.time_slot_id) {
+      await api.post('/adjustments/move-exam-time', {
+        exam_id: exam.id,
+        new_time_slot_id: modal.form.time_slot_id,
+        reason: modal.form.reason,
+      })
+    }
+
+    // 2. 换教室（如果教室变了）
+    if (String(currentClassroomId) !== String(modal.form.classroom_id)) {
+      await api.post('/adjustments/change-classroom', {
+        exam_id: exam.id,
+        old_classroom_id: currentClassroomId,
+        new_classroom_id: modal.form.classroom_id,
+        reason: modal.form.reason,
+      })
+    }
+
+    ElMessage.success('考试安排调整成功')
+    closeAdjustModal()
+    fetchExams()
+  } catch (e) {
+    ElMessage.error('调整失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    modal.loading = false
+  }
+}
+
+// 更换教师模态框
+function openChangeTeacherModal(exam) {
+  const currentTeachers = exam.teachers || []
+  changeTeacherModal.value = {
+    visible: true,
+    exam,
+    currentTeachers,
+    loading: false,
+    form: {
+      old_teacher_id: '',
+      new_teacher_id: null,
+      reason: '',
+    },
+  }
+}
+
+function closeChangeTeacherModal() {
+  changeTeacherModal.value.visible = false
+}
+
+async function submitChangeTeacher() {
+  const modal = changeTeacherModal.value
+  if (!modal.form.old_teacher_id) {
+    ElMessage.warning('请选择要替换的教师')
+    return
+  }
+  if (!modal.form.new_teacher_id) {
+    ElMessage.warning('请选择新教师')
+    return
+  }
+  if (!modal.form.reason) {
+    ElMessage.warning('请输入调整原因')
+    return
+  }
+
+  const parts = modal.form.old_teacher_id.split(':')
+  const oldTeacherId = parseInt(parts[0])
+  const role = parts[1] || 'fixed'
+
+  modal.loading = true
+  try {
+    await api.post('/adjustments/change-teacher', {
+      exam_id: modal.exam.id,
+      old_teacher_id: oldTeacherId,
+      new_teacher_id: modal.form.new_teacher_id,
+      role,
+      reason: modal.form.reason,
+    })
+
+    ElMessage.success('教师更换成功')
+    closeChangeTeacherModal()
+    fetchExams()
+  } catch (e) {
+    ElMessage.error('更换失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    modal.loading = false
+  }
+}
+
 onMounted(() => {
   fetchVersions()
   fetchTeachers()
+  fetchTimeSlots()
+  fetchClassrooms()
 })
 </script>
 
@@ -276,7 +634,7 @@ onMounted(() => {
   gap: 8px;
   padding: 6px 12px;
   background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  border:1px solid #E5E7EB;
   border-radius: 6px;
 }
 .teacher-name { font-size: 13px; font-weight: 500; }
