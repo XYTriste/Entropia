@@ -65,3 +65,6 @@ output_results/
 
 # System logs (NVIDIA driver logs, etc.)
 NVIDIA Corporation/
+
+# WorkBuddy local memory (don't commit workspace memory)
+.workbuddy/
