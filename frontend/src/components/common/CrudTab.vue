@@ -23,6 +23,8 @@
       v-loading="loading"
       empty-text="暂无数据"
       class="crud-table"
+      :header-cell-style="headerStyle"
+      :cell-style="cellStyle"
     >
       <el-table-column
         v-for="col in columns"
@@ -33,7 +35,42 @@
         :min-width="col.minWidth"
       >
         <template v-if="col.slot" #default="{ row }">
-          <slot :name="col.slot" :row="row"></slot>
+          <!-- teacher_type: full_time / part_time -->
+          <el-tag
+            v-if="col.slot === 'teacher_type'"
+            :type="row.teacher_type === 'full_time' ? '' : 'warning'"
+            size="small"
+            effect="light"
+          >{{ row.teacher_type === 'full_time' ? '专任' : '兼职' }}</el-tag>
+
+          <!-- classroom type: Lecture / Lab -->
+          <el-tag
+            v-else-if="col.slot === 'classroom_type'"
+            :type="row.type === 'Lecture' ? '' : 'success'"
+            size="small"
+            effect="light"
+          >{{ row.type === 'Lecture' ? '教室' : '实验室' }}</el-tag>
+
+          <!-- boolean slots -->
+          <el-tag
+            v-else-if="col.slot === 'is_public'"
+            :type="row.is_public ? '' : 'info'"
+            size="small"
+            effect="light"
+          >{{ row.is_public ? '是' : '否' }}</el-tag>
+
+          <el-tag
+            v-else-if="col.slot === 'has_ab_split'"
+            :type="row.has_ab_split ? 'warning' : 'info'"
+            size="small"
+            effect="light"
+          >{{ row.has_ab_split ? '是' : '否' }}</el-tag>
+
+          <!-- major_name: 直接显示 -->
+          <span v-else-if="col.slot === 'major_name'">{{ row.major_name || '-' }}</span>
+
+          <!-- fallback: 直接显示 row[col.slot] 或 row[col.key] -->
+          <span v-else>{{ row[col.slot] ?? row[col.key] ?? '-' }}</span>
         </template>
       </el-table-column>
 
@@ -130,6 +167,23 @@ const props = defineProps({
 
 const emit = defineEmits(['saved', 'deleted'])
 
+/* 表格样式函数（Ant Design 风格） */
+function headerStyle() {
+  return {
+    background: '#FAFAFA',
+    color: 'rgba(0,0,0,0.65)',
+    fontWeight: '600',
+    fontSize: '13px',
+    borderBottom: '1px solid #F0F0F0',
+  }
+}
+function cellStyle() {
+  return {
+    borderBottom: '1px solid #F0F0F0',
+    fontSize: '14px',
+  }
+}
+
 const {
   data,
   loading,
@@ -199,19 +253,38 @@ defineExpose({ openDialog })
 </script>
 
 <style scoped>
+.crud-tab {
+  background: var(--color-bg-container, #FFFFFF);
+  border-radius: var(--radius-md, 12px);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-lg, 24px);
+}
+
 .crud-toolbar {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 16px;
+  align-items: center;
+  margin-bottom: var(--space-md, 16px);
+  gap: var(--space-md, 16px);
 }
 .crud-search {
-  max-width: 300px;
+  max-width: 320px;
 }
+
 .crud-table {
-  margin-bottom: 16px;
+  border-radius: var(--radius-md, 12px);
+  overflow: hidden;
+  font-size: 14px;
 }
+
 .crud-pagination {
   display: flex;
   justify-content: flex-end;
+  padding-top: var(--space-md, 16px);
+}
+
+/* 对话框表单间距 */
+.crud-dialog-form :deep(.el-form-item) {
+  margin-bottom: 20px;
 }
 </style>

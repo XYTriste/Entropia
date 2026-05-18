@@ -1,6 +1,11 @@
 <template>
   <div class="base-data-view">
-    <h2 class="page-title">基础数据管理</h2>
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">基础数据管理</h2>
+        <p class="page-desc">管理教师、教室、课程、班级、时段、学生、专业等基础数据</p>
+      </div>
+    </div>
 
     <el-tabs v-model="activeTab" class="data-tabs">
       <!-- 教师 -->
@@ -201,19 +206,45 @@ export default {
 
 <style scoped>
 .base-data-view {
-  padding: 20px;
+  padding: var(--space-xl, 32px);
   max-width: 1400px;
   margin: 0 auto;
+  min-height: calc(100vh - 64px);
+  background: var(--color-bg-page, #F0F2F5);
 }
+
+.page-header {
+  margin-bottom: var(--space-lg, 24px);
+}
+
 .page-title {
-  font-size: 1.5rem;
+  font-size: var(--font-size-xxl, 24px);
   font-weight: 700;
-  color: #1F2937;
-  margin-bottom: 16px;
+  color: var(--color-text-primary, rgba(0,0,0,0.88));
+  margin: 0;
+  letter-spacing: -0.5px;
 }
+
+.page-desc {
+  font-size: var(--font-size-md, 14px);
+  color: var(--color-text-tertiary, rgba(0,0,0,0.45));
+  margin: 4px 0 0 0;
+}
+
 .data-tabs {
-  background: white;
-  border-radius: 8px;
-  padding: 16px;
+  background: var(--color-bg-container, #FFFFFF);
+  border-radius: var(--radius-md, 12px);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-lg, 24px);
+  min-height: 500px;
+}
+
+/* 给 el-tabs 内部一点样式覆盖 */
+.data-tabs :deep(.el-tabs__header) {
+  margin-bottom: var(--space-lg, 24px);
+}
+
+.data-tabs :deep(.el-tab-pane) {
+  outline: none;
 }
 </style>
