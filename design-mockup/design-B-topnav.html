@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>排考系统 - 设计方案 B（顶部导航）</title>
+<style>
+/* ============================================================
+   设计方案 B：顶部导航 + Material Design 3 风格
+   特点：大圆角、大阴影、FAB按钮、鲜艳配色
+   ============================================================ */
+:root {
+  --primary: #1565C0;
+  --primary-container: #D1E4FF;
+  --on-primary: #FFFFFF;
+  --secondary: #00897B;
+  --secondary-container: #B2DFDB;
+  --bg: #F8F9FA;
+  --surface: #FFFFFF;
+  --surface-variant: #F2F2F2;
+  --on-surface: #1C1B1F;
+  --on-surface-variant: #49454F;
+  --outline: #79747E;
+  --outline-variant: #CAC4D0;
+  --error: #B3261E;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 8px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 16px rgba(0,0,0,0.1);
+  --shadow-xl: 0 16px 32px rgba(0,0,0,0.12);
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 28px;
+  --header-h: 64px;
+  --font: 'Google Sans', -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; font-family:var(--font); font-size:14px; color:var(--on-surface); background:var(--bg); }
+body { display:flex; flex-direction:column; }
+
+/* --- Top App Bar (MD3) --- */
+.topbar {
+  height:var(--header-h); background:var(--surface);
+  box-shadow:var(--shadow-sm);
+  display:flex; align-items:center; padding:0 24px;
+  gap:20px; z-index:100; position:sticky; top:0;
+  border-bottom:1px solid var(--outline-variant);
+}
+.topbar-logo {
+  display:flex; align-items:center; gap:10px;
+  font-size:20px; font-weight:700; color:var(--primary);
+  letter-spacing:-0.5px; cursor:pointer;
+}
+.topbar-logo .icon {
+  width:36px; height:36px; background:linear-gradient(135deg, #1565C0, #42A5F5);
+  border-radius:10px; display:flex; align-items:center; justify-content:center;
+  color:white; font-weight:800; font-size:16px;
+}
+.topbar-nav { display:flex; gap:4px; margin-left:32px; }
+.topbar-nav a {
+  padding:8px 16px; border-radius:100px; font-size:14px; font-weight:500;
+  color:var(--on-surface-variant); transition:all 0.2s; position:relative;
+}
+.topbar-nav a:hover { background:var(--surface-variant); color:var(--on-surface); }
+.topbar-nav a.active { background:var(--primary-container); color:var(--primary); font-weight:600; }
+.topbar-actions { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.topbar-btn {
+  width:40px; height:40px; display:flex; align-items:center; justify-content:center;
+  border-radius:50%; cursor:pointer; transition:background 0.2s;
+  color:var(--on-surface-variant); font-size:18px; border:none; background:transparent;
+}
+.topbar-btn:hover { background:var(--surface-variant); }
+.topbar-btn .notif-dot {
+  position:absolute; top:8px; right:8px; width:8px; height:8px;
+  background:var(--error); border-radius:50%; border:2px solid var(--surface);
+}
+.avatar {
+  width:36px; height:36px; border-radius:50%;
+  background:linear-gradient(135deg, #1565C0, #42A5F5);
+  display:flex; align-items:center; justify-content:center;
+  color:white; font-size:14px; font-weight:600; cursor:pointer;
+}
+
+/* --- Main Content --- */
+.main { flex:1; overflow-y:auto; padding:32px; max-width:1400px; width:100%; margin:0 auto; }
+
+/* --- MD3 Card --- */
+.card {
+  background:var(--surface); border-radius:var(--radius-md);
+  box-shadow:var(--shadow-sm); padding:28px;
+  transition:box-shadow 0.2s, transform 0.2s;
+  border:1px solid var(--outline-variant);
+}
+.card:hover { box-shadow:var(--shadow-md); transform:translateY(-1px); }
+.card-header {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:24px;
+}
+.card-title { font-size:20px; font-weight:600; color:var(--on-surface); }
+.card-subtitle { font-size:13px; color:var(--on-surface-variant); margin-top:4px; }
+
+/* --- Stats Chips (MD3 style) --- */
+.stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:20px; margin-bottom:32px; }
+.stat-card {
+  background:var(--surface); border-radius:var(--radius-md);
+  padding:24px; border:1px solid var(--outline-variant);
+  transition:all 0.2s; cursor:pointer; position:relative; overflow:hidden;
+}
+.stat-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:4px;
+  background:var(--primary); border-radius:0 0 4px 4px; opacity:0; transition:opacity 0.2s;
+}
+.stat-card:hover::before { opacity:1; }
+.stat-card:hover { border-color:var(--primary); box-shadow:var(--shadow-md); transform:translateY(-2px); }
+.stat-label { font-size:13px; color:var(--on-surface-variant); margin-bottom:10px; font-weight:500; }
+.stat-value { font-size:32px; font-weight:700; color:var(--on-surface); line-height:1; }
+.stat-trend { font-size:12px; margin-top:10px; display:flex; align-items:center; gap:4px; font-weight:500; }
+.stat-trend.up { color:var(--secondary); }
+.stat-trend.down { color:var(--error); }
+.stat-chip {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:4px 10px; border-radius:100px; font-size:12px; font-weight:500;
+}
+.chip-blue { background:var(--primary-container); color:var(--primary); }
+.chip-green { background:var(--secondary-container); color:var(--secondary); }
+.chip-orange { background:#FFF3E0; color:#E65100; }
+.chip-purple { background:#F3E5F5; color:#7B1FA2; }
+.stat-icon {
+  position:absolute; right:20px; top:50%; transform:translateY(-50%);
+  width:56px; height:56px; border-radius:16px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:24px; opacity:0.12;
+}
+
+/* --- Buttons (MD3 Filled) --- */
+.btn {
+  display:inline-flex; align-items:center; gap:8px;
+  padding:10px 24px; border-radius:100px;
+  font-size:14px; font-weight:500; cursor:pointer;
+  transition:all 0.15s; border:none;
+}
+.btn-primary { background:var(--primary); color:var(--on-primary); box-shadow:var(--shadow-sm); }
+.btn-primary:hover { background:#0D47A1; box-shadow:var(--shadow-md); }
+.btn-outline { background:transparent; color:var(--primary); border:1px solid var(--outline-variant); }
+.btn-outline:hover { background:var(--primary-container); }
+.btn-sm { padding:6px 16px; font-size:13px; }
+
+/* --- Table (MD3) --- */
+.table-surface { background:var(--surface); border-radius:var(--radius-md); box-shadow:var(--shadow-sm); border:1px solid var(--outline-variant); overflow:hidden; }
+.table-toolbar {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:16px 24px; border-bottom:1px solid var(--outline-variant);
+}
+.table-actions { display:flex; gap:8px; align-items:center; }
+.input {
+  padding:10px 16px; border:1px solid var(--outline-variant); border-radius:100px;
+  font-size:14px; outline:none; transition:border-color 0.2s;
+  background:var(--surface); color:var(--on-surface); width:240px;
+}
+.input:focus { border-color:var(--primary); box-shadow:0 0 0 1px var(--primary); }
+table { width:100%; border-collapse:collapse; }
+thead th {
+  background:var(--surface-variant); padding:14px 20px; text-align:left;
+  font-size:12px; font-weight:600; color:var(--on-surface-variant);
+  text-transform:uppercase; letter-spacing:0.5px;
+}
+tbody td {
+  padding:14px 20px; border-bottom:1px solid var(--outline-variant);
+  font-size:14px;
+}
+tbody tr { transition:background 0.15s; }
+tbody tr:hover { background:var(--primary-container); }
+.tag {
+  display:inline-flex; align-items:center; padding:4px 12px;
+  border-radius:100px; font-size:12px; font-weight:500;
+}
+.tag-blue { background:var(--primary-container); color:var(--primary); }
+.tag-green { background:var(--secondary-container); color:var(--secondary); }
+.tag-orange { background:#FFF3E0; color:#E65100; }
+.tag-red { background:#FFEBEE; color:var(--error); }
+
+.pagination {
+  display:flex; align-items:center; justify-content:flex-end; gap:8px;
+  padding:16px 24px; border-top:1px solid var(--outline-variant);
+}
+.page-btn {
+  min-width:36px; height:36px; display:flex; align-items:center; justify-content:center;
+  border:1px solid var(--outline-variant); border-radius:100px;
+  cursor:pointer; font-size:14px; transition:all 0.15s;
+  background:var(--surface); color:var(--on-surface); padding:0 12px;
+}
+.page-btn:hover { border-color:var(--primary); color:var(--primary); }
+.page-btn.active { background:var(--primary); color:var(--on-primary); border-color:var(--primary); }
+
+/* --- Two Col --- */
+.two-col { display:grid; grid-template-columns:1.2fr 1fr; gap:20px; margin-bottom:32px; }
+
+/* --- Sections --- */
+.section-title {
+  font-size:16px; font-weight:600; color:var(--on-surface);
+  margin-bottom:16px; display:flex; align-items:center; gap:8px;
+}
+
+/* --- Page switcher --- */
+.page { display:none; }
+.page.active { display:block; }
+
+/* --- Responsive --- */
+@media (max-width:1200px) {
+  .stats-grid { grid-template-columns:repeat(2,1fr); }
+  .two-col { grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ====== Top App Bar ====== -->
+<header class="topbar">
+  <div class="topbar-logo" onclick="switchPage('dashboard')">
+    <div class="icon">考</div>
+    <span>排考系统</span>
+  </div>
+  <nav class="topbar-nav">
+    <a onclick="switchPage('dashboard')" class="active">仪表盘</a>
+    <a onclick="switchPage('base-data')">基础数据</a>
+    <a onclick="switchPage('scheduler')">排考引擎</a>
+    <a onclick="switchPage('results')">排考结果</a>
+    <a onclick="switchPage('adjust')">微调</a>
+    <a onclick="switchPage('transfer')">调剂</a>
+  </nav>
+  <div class="topbar-actions">
+    <button class="topbar-btn" title="搜索" style="position:relative;">🔍</button>
+    <button class="topbar-btn" title="通知" style="position:relative;">
+      🔔<span class="notif-dot"></span>
+    </button>
+    <button class="topbar-btn" title="帮助">❓</button>
+    <div class="avatar" title="管理员">管</div>
+  </div>
+</header>
+
+<!-- ====== Main Content ====== -->
+<main class="main">
+
+  <!-- PAGE: Dashboard -->
+  <div class="page active" id="page-dashboard">
+    <div style="margin-bottom:32px;">
+      <h1 style="font-size:28px;font-weight:700;color:var(--on-surface);margin-bottom:4px;">欢迎回来，管理员 👋</h1>
+      <p style="font-size:14px;color:var(--on-surface-variant);">2025-2026 学年 第二学期 · 期末考试排考 · 上次排考 2 小时前</p>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">教师总数</div>
+        <div class="stat-value">49</div>
+        <div class="stat-trend up">↑ 较上学期 +3 人</div>
+        <div class="stat-chip chip-blue" style="margin-top:12px;">专任教师 32 人</div>
+        <div class="stat-icon" style="color:var(--primary);">👨🏫</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">教室总数</div>
+        <div class="stat-value">32</div>
+        <div class="stat-trend up">↑ 较上学期 +2 间</div>
+        <div class="stat-chip chip-green" style="margin-top:12px;">可用 30 间</div>
+        <div class="stat-icon" style="color:var(--secondary);">🏫</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">待排考试</div>
+        <div class="stat-value">12</div>
+        <div class="stat-trend down">↓ 待排 12 场</div>
+        <div class="stat-chip chip-orange" style="margin-top:12px;">共 86 场次</div>
+        <div class="stat-icon" style="color:#E65100;">📝</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">排考进度</div>
+        <div class="stat-value">86%</div>
+        <div class="stat-trend up">↑ 较上周 +15%</div>
+        <div class="stat-chip chip-purple" style="margin-top:12px;">已分配 74/86</div>
+        <div class="stat-icon" style="color:#7B1FA2;">📊</div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">排考进度详情</div>
+            <div class="card-subtitle">各模块完成情况</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:20px;">
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px;">
+              <span style="font-weight:500;">专业课排考</span><span style="font-weight:700;color:var(--primary);">72%</span>
+            </div>
+            <div style="height:10px;background:var(--surface-variant);border-radius:100px;overflow:hidden;">
+              <div style="height:100%;width:72%;background:linear-gradient(90deg,var(--primary),#42A5F5);border-radius:100px;transition:width 0.5s;"></div>
+            </div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px;">
+              <span style="font-weight:500;">公共课排考</span><span style="font-weight:700;color:var(--secondary);">95%</span>
+            </div>
+            <div style="height:10px;background:var(--surface-variant);border-radius:100px;overflow:hidden;">
+              <div style="height:100%;width:95%;background:linear-gradient(90deg,var(--secondary),#4DB6AC);border-radius:100px;"></div>
+            </div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px;">
+              <span style="font-weight:500;">教室分配</span><span style="font-weight:700;color:#E65100;">58%</span>
+            </div>
+            <div style="height:10px;background:var(--surface-variant);border-radius:100px;overflow:hidden;">
+              <div style="height:100%;width:58%;background:linear-gradient(90deg,#E65100,#FF8A65);border-radius:100px;"></div>
+            </div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px;">
+              <span style="font-weight:500;">教师调度</span><span style="font-weight:700;color:#7B1FA2;">81%</span>
+            </div>
+            <div style="height:10px;background:var(--surface-variant);border-radius:100px;overflow:hidden;">
+              <div style="height:100%;width:81%;background:linear-gradient(90deg,#7B1FA2,#CE93D8);border-radius:100px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">最近动态</div>
+            <div class="card-subtitle">排考操作记录</div>
+          </div>
+          <a style="font-size:13px;color:var(--primary);cursor:pointer;font-weight:500;">查看全部 →</a>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0;">
+          <div style="display:flex;align-items:center;padding:14px 0;border-bottom:1px solid var(--outline-variant);gap:14px;">
+            <div style="width:10px;height:10px;border-radius:50%;background:var(--secondary);flex-shrink:0;"></div>
+            <div style="flex:1;">
+              <div style="font-size:14px;font-weight:500;">2025-2026-2 期末考试排考完成</div>
+              <div style="font-size:12px;color:var(--on-surface-variant);margin-top:2px;">管理员张三 · 2小时前</div>
+            </div>
+            <span class="tag tag-green">已完成</span>
+          </div>
+          <div style="display:flex;align-items:center;padding:14px 0;border-bottom:1px solid var(--outline-variant);gap:14px;">
+            <div style="width:10px;height:10px;border-radius:50%;background:var(--primary);flex-shrink:0;"></div>
+            <div style="flex:1;">
+              <div style="font-size:14px;font-weight:500;">2025-2026-1 期中考试排考进行中</div>
+              <div style="font-size:12px;color:var(--on-surface-variant);margin-top:2px;">管理员李四 · 3天前</div>
+            </div>
+            <span class="tag tag-blue">进行中</span>
+          </div>
+          <div style="display:flex;align-items:center;padding:14px 0;gap:14px;">
+            <div style="width:10px;height:10px;border-radius:50%;background:var(--outline-variant);flex-shrink:0;"></div>
+            <div style="flex:1;">
+              <div style="font-size:14px;font-weight:500;">2024-2025-2 期末考试已归档</div>
+              <div style="font-size:12px;color:var(--on-surface-variant);margin-top:2px;">管理员王五 · 6个月前</div>
+            </div>
+            <span class="tag tag-orange">已归档</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE: Base Data -->
+  <div class="page" id="page-base-data">
+    <div style="margin-bottom:24px;">
+      <h1 style="font-size:24px;font-weight:700;color:var(--on-surface);margin-bottom:4px;">基础数据管理</h1>
+      <p style="font-size:14px;color:var(--on-surface-variant);">管理教师、教室、课程、班级、时段、学生、专业等基础数据</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div style="display:flex;border-bottom:1px solid var(--outline-variant);padding:0 8px;">
+        <div style="padding:16px 20px;font-size:14px;font-weight:600;color:var(--primary);border-bottom:3px solid var(--primary);cursor:pointer;">教师</div>
+        <div style="padding:16px 20px;font-size:14px;color:var(--on-surface-variant);cursor:pointer;hover:color:var(--on-surface);">教室</div>
+        <div style="padding:16px 20px;font-size:14px;color:var(--on-surface-variant);cursor:pointer;">课程</div>
+        <div style="padding:16px 20px;font-size:14px;color:var(-on-surface-variant);cursor:pointer;">班级</div>
+        <div style="padding:16px 20px;font-size:14px;color:var(--on-surface-variant);cursor:pointer;">时段</div>
+      </div>
+      <div class="table-toolbar">
+        <div class="table-actions">
+          <button class="btn btn-primary">＋ 新增教师</button>
+          <input class="input" placeholder="搜索教师姓名...">
+        </div>
+        <div class="table-actions">
+          <button class="btn btn-outline">📥 导入</button>
+          <button class="btn btn-outline">📤 导出</button>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:60px;text-align:center;"><input type="checkbox" style="width:16px;height:16px;"></th>
+            <th>ID</th>
+            <th>姓名</th>
+            <th>类型</th>
+            <th>最大场次</th>
+            <th>已排场次</th>
+            <th>状态</th>
+            <th style="width:160px;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="text-align:center;"><input type="checkbox" style="width:16px;height:16px;"></td>
+            <td style="color:var(--on-surface-variant);">148</td>
+            <td style="font-weight:500;">张先成</td>
+            <td><span class="tag tag-orange">兼职</span></td>
+            <td>0</td><td>0</td>
+            <td><span class="tag tag-green">活跃</span></td>
+            <td><button class="btn btn-sm btn-outline">编辑</button> <button class="btn btn-sm" style="color:var(--error);border-color:var(--error);">删除</button></td>
+          </tr>
+          <tr>
+            <td style="text-align:center;"><input type="checkbox" style="width:16px;height:16px;"></td>
+            <td style="color:var(--on-surface-variant);">1</td>
+            <td style="font-weight:500;">王福洋</td>
+            <td><span class="tag tag-blue">专任</span></td>
+            <td>12</td><td>8</td>
+            <td><span class="tag tag-green">活跃</span></td>
+            <td><button class="btn btn-sm btn-outline">编辑</button> <button class="btn btn-sm" style="color:var(--error);border-color:var(--error);">删除</button></td>
+          </tr>
+          <tr>
+            <td style="text-align:center;"><input type="checkbox" style="width:16px;height:16px;"></td>
+            <td style="color:var(--on-surface-variant);">2</td>
+            <td style="font-weight:500;">周建军</td>
+            <td><span class="tag tag-blue">专任</span></td>
+            <td>10</td><td>6</td>
+            <td><span class="tag tag-green">活跃</span></td>
+            <td><button class="btn btn-sm btn-outline">编辑</button> <button class="btn btn-sm" style="color:var(--error);border-color:var(--error);">删除</button></td>
+          </tr>
+          <tr>
+            <td style="text-align:center;"><input type="checkbox" style="width:16px;height:16px;"></td>
+            <td style="color:var(--on-surface-variant);">3</td>
+            <td style="font-weight:500;">李秀英</td>
+            <td><span class="tag tag-blue">专任</span></td>
+            <td>14</td><td>10</td>
+            <td><span class="tag tag-green">活跃</span></td>
+            <td><button class="btn btn-sm btn-outline">编辑</button> <button class="btn btn-sm" style="color:var(--error);border-color:var(--error);">删除</button></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="pagination">
+        <span style="font-size:13px;color:var(--on-surface-variant);">共 49 条</span>
+        <div class="page-btn">‹</div>
+        <div class="page-btn active">1</div>
+        <div class="page-btn">2</div>
+        <div class="page-btn">3</div>
+        <div class="page-btn">...</div>
+        <div class="page-btn">›</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE: Scheduler -->
+  <div class="page" id="page-scheduler">
+    <div style="margin-bottom:24px;">
+      <h1 style="font-size:24px;font-weight:700;color:var(--on-surface);margin-bottom:4px;">排考引擎</h1>
+      <p style="font-size:14px;color:var(--on-surface-variant);">配置参数并启动自动排考</p>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">排考参数</div><div class="card-subtitle">配置 OR-Tools 求解器参数</div></div></div>
+        <div style="display:flex;flex-direction:column;gap:20px;">
+          <div>
+            <label style="font-size:13px;color:var(--on-surface-variant);display:block;margin-bottom:8px;font-weight:500;">学期</label>
+            <select style="width:100%;padding:10px 16px;border:1px solid var(--outline-variant);border-radius:var(--radius-sm);font-size:14px;background:var(--surface);color:var(--on-surface);">
+              <option>2025-2026 学年 第二学期</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:13px;color:var(--on-surface-variant);display:block;margin-bottom:8px;font-weight:500;">优化目标权重</label>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;">
+                  <span>教室使用最小化</span><span style="font-weight:600;color:var(--primary);">80%</span>
+                </div>
+                <div style="height:8px;background:var(--surface-variant);border-radius:100px;"><div style="height:100%;width:80%;background:var(--primary);border-radius:100px;"></div></div>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;">
+                  <span>教师负荷均衡</span><span style="font-weight:600;color:var(--secondary);">90%</span>
+                </div>
+                <div style="height:8px;background:var(--surface-variant);border-radius:100px;"><div style="height:100%;width:90%;background:var(--secondary);border-radius:100px;"></div></div>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;">
+                  <span>学生时间分布</span><span style="font-weight:600;color:#E65100;">70%</span>
+                </div>
+                <div style="height:8px;background:var(--surface-variant);border-radius:100px;"><div style="height:100%;width:70%;background:#E65100;border-radius:100px;"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
+        <div style="width:140px;height:140px;border-radius:50%;border:12px solid var(--surface-variant);display:flex;align-items:center;justify-content:center;flex-direction:column;margin-bottom:28px;position:relative;">
+          <div style="position:absolute;inset:-12px;border:12px solid var(--primary);border-radius:50%;border-right-color:transparent;border-bottom-color:transparent;transform:rotate(0deg);"></div>
+          <div style="font-size:36px;font-weight:700;color:var(--on-surface-variant);">—</div>
+          <div style="font-size:12px;color:var(--on-surface-variant);">就绪</div>
+        </div>
+        <button class="btn btn-primary" style="padding:14px 48px;font-size:16px;margin-bottom:16px;">🎲 启动排考</button>
+        <p style="font-size:13px;color:var(--on-surface-variant);line-height:1.6;">
+          排考引擎将自动分配教室、教师<br>并优化考场安排，预计耗时 3-5 分钟
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Other pages placeholder -->
+  <div class="page" id="page-results"><div class="card"><div class="card-header"><div class="card-title">排考结果</div></div><p style="color:var(--on-surface-variant);padding:60px;text-align:center;font-size:15px;">📊 排考结果日历视图 - 功能开发中...</p></div></div>
+  <div class="page" id="page-adjust"><div class="card"><div class="card-header"><div class="card-title">手动微调</div></div><p style="color:var(--on-surface-variant);padding:60px;text-align:center;font-size:15px;">✏️ 拖拽调整考场安排 - 功能开发中...</p></div></div>
+  <div class="page" id="page-transfer"><div class="card"><div class="card-header"><div class="card-title">教师调剂</div></div><p style="color:var(--on-surface-variant);padding:60px;text-align:center;font-size:15px;">🔄 教师交换 / 转移 - 功能开发中...</p></div></div>
+</main>
+
+<script>
+function switchPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelectorAll('.topbar-nav a').forEach(a => a.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+}
+</script>
+</body>
+</html>

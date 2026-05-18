@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>排考系统 - 设计方案 A（侧边栏布局）</title>
+<style>
+/* ============================================================
+   设计方案 A：Ant Design Pro 风格侧边栏布局
+   ============================================================ */
+
+/* --- CSS Variables --- */
+:root {
+  --primary: #1677FF;
+  --primary-light: #E6F4FF;
+  --primary-dark: #0958D9;
+  --success: #52C41A;
+  --warning: #FAAD14;
+  --danger: #FF4D4F;
+  --bg-page: #F0F2F5;
+  --bg-white: #FFFFFF;
+  --bg-sidebar: #001529;
+  --bg-sidebar-hover: #002140;
+  --bg-sidebar-active: #1677FF;
+  --text-primary: rgba(0,0,0,0.88);
+  --text-secondary: rgba(0,0,0,0.65);
+  --text-tertiary: rgba(0,0,0,0.45);
+  --text-white: #FFFFFF;
+  --text-sidebar: rgba(255,255,255,0.65);
+  --text-sidebar-active: #FFFFFF;
+  --border: #F0F0F0;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --sidebar-w: 240px;
+  --header-h: 56px;
+  --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; font-family: var(--font); font-size: 14px; color: var(--text-primary); background: var(--bg-page); }
+a { text-decoration: none; color: inherit; }
+
+/* --- Layout --- */
+.layout { display: flex; height: 100vh; overflow: hidden; }
+.sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--bg-sidebar);
+  color: var(--text-sidebar);
+  display: flex;
+  flex-direction: column;
+  transition: width var(--transition), min-width var(--transition);
+  overflow: hidden;
+  z-index: 100;
+}
+.sidebar.collapsed { width: 64px; min-width: 64px; }
+.sidebar-logo {
+  height: var(--header-h);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  gap: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sidebar-logo .logo-icon {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, #1677FF, #69B1FF);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-weight: 800; font-size: 16px;
+  flex-shrink: 0;
+}
+.sidebar-logo .logo-text {
+  color: white; font-size: 16px; font-weight: 700; letter-spacing: 0.5px;
+}
+.sidebar-menu { flex: 1; overflow-y: auto; padding: 8px 0; }
+.sidebar-menu::-webkit-scrollbar { width: 0; }
+.menu-section { padding: 12px 16px 4px; font-size: 11px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
+.menu-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; margin: 2px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap; overflow: hidden;
+  font-size: 14px;
+}
+.menu-item:hover { background: var(--bg-sidebar-hover); color: var(--text-white); }
+.menu-item.active { background: var(--bg-sidebar-active); color: var(--text-sidebar-active); font-weight: 600; }
+.menu-item .icon { font-size: 18px; width: 24px; text-align: center; flex-shrink: 0; }
+.menu-item .badge {
+  margin-left: auto; background: var(--danger); color: white;
+  font-size: 11px; padding: 1px 6px; border-radius: 10px; font-weight: 600;
+}
+
+.main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.header {
+  height: var(--header-h);
+  background: var(--bg-white);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px;
+  box-shadow: var(--shadow-sm);
+  z-index: 10;
+}
+.header-left { display: flex; align-items: center; gap: 16px; }
+.header-left .collapse-btn {
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm); cursor: pointer; transition: background var(--transition);
+  color: var(--text-secondary); font-size: 18px;
+}
+.header-left .collapse-btn:hover { background: var(--bg-page); }
+.header-left .breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-tertiary); }
+.header-left .breadcrumb span { color: var(--text-primary); font-weight: 500; }
+.header-right { display: flex; align-items: center; gap: 8px; }
+.header-btn {
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; cursor: pointer; transition: background var(--transition);
+  color: var(--text-secondary); font-size: 18px; position: relative;
+}
+.header-btn:hover { background: var(--bg-page); }
+.header-btn .dot {
+  position: absolute; top: 6px; right: 8px;
+  width: 8px; height: 8px; background: var(--danger); border-radius: 50%;
+  border: 2px solid var(--bg-white);
+}
+.avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: linear-gradient(135deg, #1677FF, #69B1FF);
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+
+.content { flex: 1; overflow-y: auto; padding: 24px; }
+
+/* --- Card --- */
+.card {
+  background: var(--bg-white);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 20px;
+  transition: box-shadow var(--transition);
+}
+.card:hover { box-shadow: var(--shadow-md); }
+.card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.card-title { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.card-subtitle { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+
+/* --- Stats Grid --- */
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+.stat-card {
+  background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm);
+  padding: 20px; display: flex; align-items: flex-start; justify-content: space-between;
+  transition: all var(--transition); cursor: pointer; border: 1px solid transparent;
+}
+.stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--primary); }
+.stat-info {}
+.stat-label { font-size: 13px; color: var(--text-tertiary); margin-bottom: 8px; }
+.stat-value { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+.stat-trend { font-size: 12px; margin-top: 8px; display: flex; align-items: center; gap: 4px; }
+.stat-trend.up { color: var(--success); }
+.stat-trend.down { color: var(--danger); }
+.stat-icon {
+  width: 48px; height: 48px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+}
+.stat-icon.blue { background: var(--primary-light); color: var(--primary); }
+.stat-icon.green { background: #F6FFED; color: var(--success); }
+.stat-icon.orange { background: #FFF7E6; color: #D46B08; }
+.stat-icon.purple { background: #F9F0FF; color: #722ED1; }
+
+/* --- Table --- */
+.table-wrapper { background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); overflow: hidden; }
+.table-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.table-toolbar .left { display: flex; align-items: center; gap: 12px; }
+.table-toolbar .right { display: flex; align-items: center; gap: 8px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: var(--radius-sm);
+  font-size: 14px; font-weight: 500; cursor: pointer;
+  transition: all var(--transition); border: 1px solid var(--border);
+  background: var(--bg-white); color: var(--text-primary);
+}
+.btn:hover { border-color: var(--primary); color: var(--primary); }
+.btn-primary { background: var(--primary); color: white; border-color: var(--primary); box-shadow: 0 2px 0 rgba(22,119,255,0.15); }
+.btn-primary:hover { background: var(--primary-dark); color: white; }
+.btn-sm { padding: 4px 12px; font-size: 13px; }
+.btn-danger { color: var(--danger); border-color: var(--danger); }
+.btn-danger:hover { background: var(--danger); color: white; }
+.input {
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 14px; outline: none; transition: border-color var(--transition);
+  background: var(--bg-white); color: var(--text-primary); width: 240px;
+}
+.input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(22,119,255,0.15); }
+.input::placeholder { color: var(--text-tertiary); }
+
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  background: #FAFAFA; padding: 14px 16px; text-align: left;
+  font-size: 13px; font-weight: 600; color: var(--text-secondary);
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+tbody td {
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  font-size: 14px; color: var(--text-primary);
+}
+tbody tr { transition: background var(--transition); }
+tbody tr:hover { background: var(--primary-light); }
+.tag {
+  display: inline-flex; align-items: center; padding: 2px 10px;
+  border-radius: 4px; font-size: 12px; font-weight: 500; line-height: 20px;
+}
+.tag-blue { background: var(--primary-light); color: var(--primary); }
+.tag-green { background: #F6FFED; color: var(--success); }
+.tag-orange { background: #FFF7E6; color: #D46B08; }
+.tag-red { background: #FFF2F0; color: var(--danger); }
+.pagination {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 16px 20px; border-top: 1px solid var(--border);
+}
+.page-btn {
+  min-width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  cursor: pointer; font-size: 14px; transition: all var(--transition);
+  background: var(--bg-white); color: var(--text-primary); padding: 0 8px;
+}
+.page-btn:hover { border-color: var(--primary); color: var(--primary); }
+.page-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+/* --- Two Col Layout --- */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+/* --- Schedule Calendar --- */
+.calendar-grid { display: grid; grid-template-columns: 100px repeat(4, 1fr); gap: 1px; background: var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.calendar-header {
+  background: #FAFAFA; padding: 12px; text-align: center;
+  font-size: 13px; font-weight: 600; color: var(--text-secondary);
+}
+.calendar-time {
+  background: #FAFAFA; padding: 12px; font-size: 13px;
+  color: var(--text-secondary); display: flex; align-items: center; justify-content: center;
+}
+.calendar-cell {
+  background: var(--bg-white); padding: 8px; min-height: 64px;
+  font-size: 12px; cursor: pointer; transition: background var(--transition);
+}
+.calendar-cell:hover { background: var(--primary-light); }
+.calendar-event {
+  background: var(--primary-light); color: var(--primary);
+  border-left: 3px solid var(--primary);
+  padding: 4px 8px; border-radius: 0 4px 4px 0;
+  font-size: 12px; margin-bottom: 4px; font-weight: 500;
+}
+
+/* --- Progress Bar --- */
+.progress-bar { height: 8px; background: #F0F0F0; border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+
+/* --- Toggle Switch --- */
+.toggle { display: none; }
+
+/* --- Responsive --- */
+@media (max-width: 1200px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- ====== Sidebar ====== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">考</div>
+      <div class="logo-text">考试排考系统</div>
+    </div>
+    <nav class="sidebar-menu">
+      <div class="menu-section">主要功能</div>
+      <div class="menu-item" onclick="switchPage('dashboard')">
+        <span class="icon">📊</span> 仪表盘
+      </div>
+      <div class="menu-item active" onclick="switchPage('base-data')">
+        <span class="icon">📋</span> 基础数据
+        <span class="badge">3</span>
+      </div>
+      <div class="menu-item" onclick="switchPage('scheduler')">
+        <span class="icon">⚙️</span> 排考引擎
+      </div>
+      <div class="menu-item" onclick="switchPage('results')">
+        <span class="icon">📈</span> 排考结果
+      </div>
+      <div class="menu-section">管理功能</div>
+      <div class="menu-item" onclick="switchPage('adjust')">
+        <span class="icon">✏️</span> 手动微调
+      </div>
+      <div class="menu-item" onclick="switchPage('transfer')">
+        <span class="icon">🔄</span> 教师调剂
+      </div>
+      <div class="menu-item" onclick="switchPage('import')">
+        <span class="icon">📥</span> 导入导出
+      </div>
+      <div class="menu-item" onclick="switchPage('audit')">
+        <span class="icon">📝</span> 审计日志
+      </div>
+    </nav>
+  </aside>
+
+  <!-- ====== Main Area ====== -->
+  <div class="main-area">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="collapse-btn" onclick="toggleSidebar()">☰</div>
+        <div class="breadcrumb">
+          首页 / <span id="page-title">基础数据</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="header-btn" title="搜索">🔍</div>
+        <div class="header-btn" title="通知">
+          🔔<span class="dot"></span>
+        </div>
+        <div class="header-btn" title="全屏">⛶</div>
+        <div class="avatar" title="管理员">管</div>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <main class="content">
+
+      <!-- ====== PAGE: Dashboard ====== -->
+      <div class="page" id="page-dashboard">
+        <div class="card" style="margin-bottom:24px;">
+          <div class="card-header">
+            <div>
+              <div class="card-title">欢迎回来，管理员 👋</div>
+              <div class="card-subtitle">2025-2026 学年 第二学期 · 期末考试排考</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-primary">🚀 开始排考</button>
+              <button class="btn">📄 查看报告</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-info">
+              <div class="stat-label">教师总数</div>
+              <div class="stat-value">49</div>
+              <div class="stat-trend up">↑ 较上学期 +3</div>
+            </div>
+            <div class="stat-icon blue">👨🏫</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-info">
+              <div class="stat-label">教室总数</div>
+              <div class="stat-value">32</div>
+              <div class="stat-trend up">↑ 较上学期 +2</div>
+            </div>
+            <div class="stat-icon green">🏫</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-info">
+              <div class="stat-label">考试场次</div>
+              <div class="stat-value">86</div>
+              <div class="stat-trend down">↓ 待排 12 场</div>
+            </div>
+            <div class="stat-icon orange">📝</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-info">
+              <div class="stat-label">排考进度</div>
+              <div class="stat-value">86%</div>
+              <div class="stat-trend up">↑ 较上周 +15%</div>
+            </div>
+            <div class="stat-icon purple">📊</div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">排考进度</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px;">
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;">
+                  <span>专业课排考</span><span style="font-weight:600;">72%</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" style="width:72%;background:var(--primary);"></div></div>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;">
+                  <span>公共课排考</span><span style="font-weight:600;">95%</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" style="width:95%;background:var(--success);"></div></div>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;">
+                  <span>教室分配</span><span style="font-weight:600;">58%</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" style="width:58%;background:var(--warning);"></div></div>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;">
+                  <span>教师调度</span><span style="font-weight:600;">81%</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" style="width:81%;background:#722ED1;"></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">最近排考记录</div>
+              <a style="font-size:13px;color:var(--primary);cursor:pointer;">查看全部 →</a>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:0;">
+              <div style="display:flex;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);gap:12px;">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--success);flex-shrink:0;"></div>
+                <div style="flex:1;">
+                  <div style="font-size:14px;font-weight:500;">2025-2026-2 期末考试</div>
+                  <div style="font-size:12px;color:var(--text-tertiary);">张三 · 2小时前</div>
+                </div>
+                <span class="tag tag-green">已完成</span>
+              </div>
+              <div style="display:flex;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);gap:12px;">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--primary);flex-shrink:0;"></div>
+                <div style="flex:1;">
+                  <div style="font-size:14px;font-weight:500;">2025-2026-1 期中考试</div>
+                  <div style="font-size:12px;color:var(--text-tertiary);">李四 · 3天前</div>
+                </div>
+                <span class="tag tag-blue">进行中</span>
+              </div>
+              <div style="display:flex;align-items:center;padding:12px 0;gap:12px;">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--text-tertiary);flex-shrink:0;"></div>
+                <div style="flex:1;">
+                  <div style="font-size:14px;font-weight:500;">2024-2025-2 期末考试</div>
+                  <div style="font-size:12px;color:var(--text-tertiary);">王五 · 6个月前</div>
+                </div>
+                <span class="tag tag-orange">已归档</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== PAGE: Base Data ====== -->
+      <div class="page" id="page-base-data" style="display:none;">
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-header">
+            <div>
+              <div class="card-title">基础数据管理</div>
+              <div class="card-subtitle">管理教师、教室、课程、班级、时段等基础数据</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="table-wrapper">
+          <div style="display:flex;border-bottom:1px solid var(--border);padding:0 20px;">
+            <div style="padding:12px 20px;font-size:14px;font-weight:600;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;">教师</div>
+            <div style="padding:12px 20px;font-size:14px;color:var(--text-tertiary);cursor:pointer;hover:color:var(--text-primary);">教室</div>
+            <div style="padding:12px 20px;font-size:14px;color:var(--text-tertiary);cursor:pointer;">课程</div>
+            <div style="padding:12px 20px;font-size:14px;color:var(--text-tertiary);cursor:pointer;">班级</div>
+            <div style="padding:12px 20px;font-size:14px;color:var(--text-tertiary);cursor:pointer;">时段</div>
+          </div>
+          <div class="table-toolbar">
+            <div class="left">
+              <button class="btn btn-primary">＋ 新增教师</button>
+              <input class="input" placeholder="搜索教师姓名..." style="width:220px;">
+            </div>
+            <div class="right">
+              <button class="btn">📥 导入</button>
+              <button class="btn">📤 导出</button>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width:60px;text-align:center;"><input type="checkbox"></th>
+                <th>ID</th>
+                <th>姓名</th>
+                <th>类型</th>
+                <th>最大场次</th>
+                <th>已排场次</th>
+                <th>状态</th>
+                <th style="width:160px;">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="text-align:center;"><input type="checkbox"></td>
+                <td style="color:var(--text-tertiary);">148</td>
+                <td style="font-weight:500;">张先成</td>
+                <td><span class="tag tag-orange">兼职</span></td>
+                <td>0</td>
+                <td>0</td>
+                <td><span class="tag tag-green">活跃</span></td>
+                <td>
+                  <button class="btn btn-sm">编辑</button>
+                  <button class="btn btn-sm btn-danger">删除</button>
+                </td>
+              </tr>
+              <tr>
+                <td style="text-align:center;"><input type="checkbox"></td>
+                <td style="color:var(--text-tertiary);">1</td>
+                <td style="font-weight:500;">王福洋</td>
+                <td><span class="tag tag-blue">专任</span></td>
+                <td>12</td>
+                <td>8</td>
+                <td><span class="tag tag-green">活跃</span></td>
+                <td>
+                  <button class="btn btn-sm">编辑</button>
+                  <button class="btn btn-sm btn-danger">删除</button>
+                </td>
+              </tr>
+              <tr>
+                <td style="text-align:center;"><input type="checkbox"></td>
+                <td style="color:var(--text-tertiary);">2</td>
+                <td style="font-weight:500;">周建军</td>
+                <td><span class="tag tag-blue">专任</span></td>
+                <td>10</td>
+                <td>6</td>
+                <td><span class="tag tag-green">活跃</span></td>
+                <td>
+                  <button class="btn btn-sm">编辑</button>
+                  <button class="btn btn-sm btn-danger">删除</button>
+                </td>
+              </tr>
+              <tr>
+                <td style="text-align:center;"><input type="checkbox"></td>
+                <td style="color:var(--text-tertiary);">3</td>
+                <td style="font-weight:500;">李秀英</td>
+                <td><span class="tag tag-blue">专任</span></td>
+                <td>14</td>
+                <td>10</td>
+                <td><span class="tag tag-green">活跃</span></td>
+                <td>
+                  <button class="btn btn-sm">编辑</button>
+                  <button class="btn btn-sm btn-danger">删除</button>
+                </td>
+              </tr>
+              <tr>
+                <td style="text-align:center;"><input type="checkbox"></td>
+                <td style="color:var(--text-tertiary);">149</td>
+                <td style="font-weight:500;">主福洋</td>
+                <td><span class="tag tag-orange">兼职</span></td>
+                <td>0</td>
+                <td>0</td>
+                <td><span class="tag tag-red">未激活</span></td>
+                <td>
+                  <button class="btn btn-sm">编辑</button>
+                  <button class="btn btn-sm btn-danger">删除</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="pagination">
+            <span style="font-size:13px;color:var(--text-tertiary);">共 49 条</span>
+            <div class="page-btn">‹</div>
+            <div class="page-btn active">1</div>
+            <div class="page-btn">2</div>
+            <div class="page-btn">3</div>
+            <div class="page-btn">...</div>
+            <div class="page-btn">›</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== PAGE: Scheduler ====== -->
+      <div class="page" id="page-scheduler" style="display:none;">
+        <div class="card" style="margin-bottom:24px;">
+          <div class="card-header">
+            <div>
+              <div class="card-title">排考引擎</div>
+              <div class="card-subtitle">配置参数并启动自动排考</div>
+            </div>
+          </div>
+        </div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-header"><div class="card-title">排考参数</div></div>
+            <div style="display:flex;flex-direction:column;gap:14px;">
+              <div>
+                <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px;font-weight:500;">学期</label>
+                <select class="input" style="width:100%;">
+                  <option>2025-2026 学年 第二学期</option>
+                  <option>2025-2026 学年 第一学期</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px;font-weight:500;">最大求解时间</label>
+                <select class="input" style="width:100%;">
+                  <option>300 秒（推荐）</option>
+                  <option>600 秒（大型排考）</option>
+                  <option>1200 秒（超大型）</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px;font-weight:500;">优化目标</label>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                  <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;">
+                    <input type="checkbox" checked> 教室使用最小化
+                  </label>
+                  <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;">
+                    <input type="checkbox" checked> 教师负荷均衡
+                  </label>
+                  <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;">
+                    <input type="checkbox" checked> 学生时间分布均匀
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">排考状态</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center;padding:40px 0;">
+              <div style="width:120px;height:120px;border-radius:50%;border:8px solid var(--border);display:flex;align-items:center;justify-content:center;flex-direction:column;margin-bottom:20px;">
+                <div style="font-size:32px;font-weight:700;color:var(--text-tertiary);">—</div>
+                <div style="font-size:12px;color:var(--text-tertiary);">就绪</div>
+              </div>
+              <button class="btn btn-primary" style="padding:12px 48px;font-size:16px;">🚀 启动排考</button>
+              <p style="font-size:13px;color:var(--text-tertiary);margin-top:16px;text-align:center;">
+                排考引擎将自动分配教室、教师<br>并优化考场安排
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== PAGE: Results ====== -->
+      <div class="page" id="page-results" style="display:none;">
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-header">
+            <div>
+              <div class="card-title">排考结果</div>
+              <div class="card-subtitle">查看和导出排考结果</div>
+            </div>
+            <button class="btn btn-primary">📊 导出 Excel</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="calendar-grid">
+            <div class="calendar-header">时段</div>
+            <div class="calendar-header">周一 T1<br><span style="font-weight:400;font-size:11px;color:var(--text-tertiary);">08:00-09:40</span></div>
+            <div class="calendar-header">周一 T2<br><span style="font-weight:400;font-size:11px;color:var(--text-tertiary);">10:00-11:40</span></div>
+            <div class="calendar-header">周二 T1<br><span style="font-weight:400;font-size:11px;color:var(--text-tertiary);">08:00-09:40</span></div>
+            <div class="calendar-header">周二 T2<br><span style="font-weight:400;font-size:11px;color:var(--text-tertiary);">10:00-11:40</span></div>
+            <div class="calendar-time">上午第一节</div>
+            <div class="calendar-cell">
+              <div class="calendar-event" style="border-color:var(--primary);background:var(--primary-light);">
+                <div style="font-weight:600;">高等数学</div>
+                <div>5-201 · 王福洋</div>
+              </div>
+            </div>
+            <div class="calendar-cell">
+              <div class="calendar-event" style="border-color:var(--success);background:#F6FFED;">
+                <div style="font-weight:600;color:var(--success);">大学英语</div>
+                <div>5-301 · 李秀英</div>
+              </div>
+            </div>
+            <div class="calendar-cell">
+              <div class="calendar-event" style="border-color:#722ED1;background:#F9F0FF;">
+                <div style="font-weight:600;color:#722ED1;">数据结构</div>
+                <div>4-102 · 周建军</div>
+              </div>
+            </div>
+            <div class="calendar-cell" style="background:#FAFAFA;color:var(--text-tertiary);font-size:12px;text-align:center;">无考试</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Placeholder pages -->
+      <div class="page" id="page-adjust" style="display:none;">
+        <div class="card"><div class="card-header"><div class="card-title">手动微调</div></div><p style="color:var(--text-tertiary);padding:40px;text-align:center;">功能开发中...</p></div>
+      </div>
+      <div class="page" id="page-transfer" style="display:none;">
+        <div class="card"><div class="card-header"><div class="card-title">教师调剂</div></div><p style="color:var(--text-tertiary);padding:40px;text-align:center;">功能开发中...</p></div>
+      </div>
+      <div class="page" id="page-import" style="display:none;">
+        <div class="card"><div class="card-header"><div class="card-title">导入导出</div></div><p style="color:var(--text-tertiary);padding:40px;text-align:center;">功能开发中...</p></div>
+      </div>
+      <div class="page" id="page-audit" style="display:none;">
+        <div class="card"><div class="card-header"><div class="card-title">审计日志</div></div><p style="color:var(--text-tertiary);padding:40px;text-align:center;">功能开发中...</p></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script>
+function switchPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+  document.getElementById('page-' + name).style.display = 'block';
+  document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+  var titles = {
+    'dashboard':'仪表盘','base-data':'基础数据','scheduler':'排考引擎',
+    'results':'排考结果','adjust':'手动微调','transfer':'教师调剂',
+    'import':'导入导出','audit':'审计日志'
+  };
+  document.getElementById('page-title').textContent = titles[name] || '';
+  event.currentTarget.classList.add('active');
+}
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+</script>
+</body>
+</html>
