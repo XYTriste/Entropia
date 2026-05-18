@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>基础数据管理 - 模拟界面</title>
+<style>
+/* ============================================================
+   CSS Variables - 与仪表盘、导航栏统一的设计语言
+   ============================================================ */
+:root {
+  --bg-deep: #0a0e27;
+  --bg-surface: #1a1f3a;
+  --bg-card: rgba(26, 31, 58, 0.85);
+  --border: rgba(100, 140, 255, 0.15);
+  --accent: #4fc3f7;
+  --accent2: #7c4dff;
+  --green: #00e676;
+  --yellow: #ffd740;
+  --red: #ff5252;
+  --orange: #ff9100;
+  --text: #e0e0e0;
+  --text-dim: rgba(224, 224, 224, 0.55);
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { font-size: 16px; }
+
+body {
+  font-family: var(--font);
+  background: linear-gradient(160deg, var(--bg-deep) 0%, var(--bg-surface) 100%);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* 背景网格 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    linear-gradient(rgba(79,195,247,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79,195,247,0.04) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--accent2); border-radius: 3px; }
+
+/* ============================================================
+   页面容器
+   ============================================================ */
+.base-data-view {
+  padding: 20px 28px 28px;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================================
+   页面头部
+   ============================================================ */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.page-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.page-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  box-shadow: 0 0 15px rgba(79, 195, 247, 0.35);
+}
+
+.page-title-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 2px;
+}
+
+.page-desc {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.page-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 快捷统计 */
+.stats-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.8rem;
+}
+
+.stats-badge .num {
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   主内容卡片
+   ============================================================ */
+.main-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* ============================================================
+   Tabs 标签页
+   ============================================================ */
+.tabs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.tabs-nav {
+  display: flex;
+  gap: 4px;
+}
+
+.tab-btn {
+  padding: 10px 18px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.25s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.tab-btn.active {
+  background: rgba(79, 195, 247, 0.12);
+  border-color: rgba(79, 195, 247, 0.3);
+  color: var(--accent);
+  box-shadow: 0 0 10px rgba(79, 195, 247, 0.2);
+}
+
+.tab-btn .tab-icon {
+  font-size: 14px;
+}
+
+.tab-btn .count {
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.tab-btn.active .count {
+  background: rgba(79, 195, 247, 0.25);
+  color: var(--accent);
+}
+
+/* ============================================================
+   工具栏
+   ============================================================ */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar-left {
+  display: flex;
+  gap: 8px;
+}
+
+.toolbar-right {
+  display: flex;
+  gap: 8px;
+}
+
+/* 按钮样式 */
+.btn {
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.25s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 15px rgba(79, 195, 247, 0.45);
+}
+
+.btn-secondary {
+  background: var(--bg-card);
+  color: var(--text);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent);
+}
+
+/* 搜索框 */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 280px;
+  transition: all 0.25s;
+}
+
+.search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.15);
+}
+
+.search-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 9px 0;
+  color: var(--text);
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.search-box input::placeholder {
+  color: var(--text-dim);
+}
+
+.search-icon {
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+/* ============================================================
+   Mock 模式提示
+   ============================================================ */
+.mock-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: linear-gradient(90deg, rgba(255, 82, 82, 0.15), rgba(255, 82, 82, 0.05));
+  border-bottom: 1px solid rgba(255, 82, 82, 0.3);
+}
+
+.mock-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--red);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.mock-text {
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.mock-text strong {
+  color: var(--red);
+}
+
+/* ============================================================
+   表格
+   ============================================================ */
+.table-wrapper {
+  padding: 16px 20px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th {
+  padding: 14px 16px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table td {
+  padding: 14px 16px;
+  font-size: 0.9rem;
+  border-bottom: 1px solid rgba(100, 140, 255, 0.08);
+  vertical-align: middle;
+}
+
+.data-table tr:hover td {
+  background: rgba(79, 195, 247, 0.04);
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* 表格中的标签 */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.tag-blue {
+  background: rgba(79, 195, 247, 0.15);
+  color: var(--accent);
+}
+
+.tag-green {
+  background: rgba(0, 230, 118, 0.15);
+  color: var(--green);
+}
+
+.tag-yellow {
+  background: rgba(255, 215, 64, 0.15);
+  color: var(--yellow);
+}
+
+.tag-purple {
+  background: rgba(124, 77, 255, 0.15);
+  color: var(--accent2);
+}
+
+/* 操作按钮 */
+.action-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--border);
+  background: transparent;
+}
+
+.action-btn.edit {
+  color: var(--accent);
+  border-color: rgba(79, 195, 247, 0.3);
+}
+
+.action-btn.edit:hover {
+  background: rgba(79, 195, 247, 0.15);
+}
+
+.action-btn.delete {
+  color: var(--red);
+  border-color: rgba(255, 82, 82, 0.3);
+}
+
+.action-btn.delete:hover {
+  background: rgba(255, 82, 82, 0.15);
+}
+
+/* ============================================================
+   分页
+   ============================================================ */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  gap: 12px;
+}
+
+.pagination-info {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.pagination-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.page-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.page-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.page-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   空状态
+   ============================================================ */
+.empty-state {
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.empty-text {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+/* ============================================================
+   动画
+   ============================================================ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.table-wrapper {
+  animation: fadeIn 0.3s ease;
+}
+
+/* ============================================================
+   响应式
+   ============================================================ */
+@media (max-width: 1024px) {
+  .tabs-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .toolbar {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .toolbar-left, .toolbar-right {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .search-box {
+    width: 100%;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="base-data-view">
+  <!-- ========== PAGE HEADER ========== -->
+  <header class="page-header">
+    <div class="page-header-left">
+      <div class="page-icon">⚙️</div>
+      <div class="page-title-group">
+        <h1 class="page-title">基础数据管理</h1>
+        <p class="page-desc">管理教师、教室、课程、班级、时段、学生、专业等基础数据</p>
+      </div>
+    </div>
+    <div class="page-header-right">
+      <div class="stats-badge">
+        <span>总记录</span>
+        <span class="num">35</span>
+      </div>
+      <div class="stats-badge">
+        <span>当前Tab</span>
+        <span class="num">5</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========== MAIN CARD ========== -->
+  <div class="main-card">
+    <!-- Tabs Header -->
+    <div class="tabs-header">
+      <div class="tabs-nav">
+        <button class="tab-btn active" data-tab="teachers">
+          <span class="tab-icon">👨‍🏫</span>
+          <span>教师</span>
+          <span class="count">5</span>
+        </button>
+        <button class="tab-btn" data-tab="classrooms">
+          <span class="tab-icon">🏫</span>
+          <span>教室</span>
+          <span class="count">5</span>
+        </button>
+        <button class="tab-btn" data-tab="courses">
+          <span class="tab-icon">📚</span>
+          <span>课程</span>
+          <span class="count">5</span>
+        </button>
+        <button class="tab-btn" data-tab="classes">
+          <span class="tab-icon">👥</span>
+          <span>班级</span>
+          <span class="count">5</span>
+        </button>
+        <button class="tab-btn" data-tab="time-slots">
+          <span class="tab-icon">⏰</span>
+          <span>时段</span>
+          <span class="count">5</span>
+        </button>
+        <button class="tab-btn" data-tab="students">
+          <span class="tab-icon">🎓</span>
+          <span>学生</span>
+          <span class="count">5</span>
+        </button>
+        <button class="tab-btn" data-tab="majors">
+          <span class="tab-icon">🎯</span>
+          <span>专业</span>
+          <span class="count">5</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mock Banner -->
+    <div class="mock-banner">
+      <div class="mock-icon">!</div>
+      <span class="mock-text"><strong>测试模式</strong>：后端服务不可用，以下显示的是示例数据</span>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <button class="btn btn-primary">
+          <span>+</span>
+          <span>新增</span>
+        </button>
+        <button class="btn btn-secondary">
+          <span>🔄</span>
+          <span>刷新</span>
+        </button>
+      </div>
+      <div class="toolbar-right">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" placeholder="搜索..." />
+        </div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>姓名</th>
+            <th>类型</th>
+            <th>最大场次</th>
+            <th>已排场次</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>张伟</td>
+            <td><span class="tag tag-blue">专任</span></td>
+            <td>6</td>
+            <td>4</td>
+            <td>
+              <div class="action-btns">
+                <button class="action-btn edit">编辑</button>
+                <button class="action-btn delete">删除</button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>李娜</td>
+            <td><span class="tag tag-yellow">兼职</span></td>
+            <td>4</td>
+            <td>2</td>
+            <td>
+              <div class="action-btns">
+                <button class="action-btn edit">编辑</button>
+                <button class="action-btn delete">删除</button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>王强</td>
+            <td><span class="tag tag-blue">专任</span></td>
+            <td>8</td>
+            <td>6</td>
+            <td>
+              <div class="action-btns">
+                <button class="action-btn edit">编辑</button>
+                <button class="action-btn delete">删除</button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>刘芳</td>
+            <td><span class="tag tag-blue">专任</span></td>
+            <td>5</td>
+            <td>3</td>
+            <td>
+              <div class="action-btns">
+                <button class="action-btn edit">编辑</button>
+                <button class="action-btn delete">删除</button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>陈明</td>
+            <td><span class="tag tag-yellow">兼职</span></td>
+            <td>3</td>
+            <td>1</td>
+            <td>
+              <div class="action-btns">
+                <button class="action-btn edit">编辑</button>
+                <button class="action-btn delete">删除</button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination">
+      <span class="pagination-info">共 5 条</span>
+      <div class="pagination-controls">
+        <button class="page-btn" disabled>‹</button>
+        <button class="page-btn active">1</button>
+        <button class="page-btn">›</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     JAVASCRIPT
+     ============================================================ -->
+<script>
+(function() {
+  // Tab switching
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+})();
+</script>
+</body>
+</html>
