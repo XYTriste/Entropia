@@ -9,199 +9,191 @@
 
     <el-tabs v-model="activeTab" class="data-tabs">
       <!-- 教师 -->
-      <el-tab-pane label="教师" name="teachers">
-        <CrudTab entity="teachers" :columns="teacherColumns" :formFields="teacherFormFields" :rules="teacherRules" />
+      <el-tab-pane label="教师" name="teachers" :lazy="true">
+        <CrudTab entity="teachers" :columns="TEACHER_COLUMNS" :formFields="TEACHER_FIELDS" :rules="TEACHER_RULES" />
       </el-tab-pane>
 
       <!-- 教室 -->
-      <el-tab-pane label="教室" name="classrooms">
-        <CrudTab entity="classrooms" :columns="classroomColumns" :formFields="classroomFormFields" :rules="classroomRules" />
+      <el-tab-pane label="教室" name="classrooms" :lazy="true">
+        <CrudTab entity="classrooms" :columns="CLASSROOM_COLUMNS" :formFields="CLASSROOM_FIELDS" :rules="CLASSROOM_RULES" />
       </el-tab-pane>
 
       <!-- 课程 -->
-      <el-tab-pane label="课程" name="courses">
-        <CrudTab entity="courses" :columns="courseColumns" :formFields="courseFormFields" :rules="courseRules" />
+      <el-tab-pane label="课程" name="courses" :lazy="true">
+        <CrudTab entity="courses" :columns="COURSE_COLUMNS" :formFields="COURSE_FIELDS" :rules="COURSE_RULES" />
       </el-tab-pane>
 
       <!-- 班级 -->
-      <el-tab-pane label="班级" name="classes">
-        <CrudTab entity="classes" :columns="classColumns" :formFields="classFormFields" :rules="classRules" />
+      <el-tab-pane label="班级" name="classes" :lazy="true">
+        <CrudTab entity="classes" :columns="CLASS_COLUMNS" :formFields="CLASS_FIELDS" :rules="CLASS_RULES" />
       </el-tab-pane>
 
       <!-- 时段 -->
-      <el-tab-pane label="时段" name="time-slots">
-        <CrudTab entity="time-slots" :columns="slotColumns" :formFields="slotFormFields" :rules="slotRules" />
+      <el-tab-pane label="时段" name="time-slots" :lazy="true">
+        <CrudTab entity="time-slots" :columns="SLOT_COLUMNS" :formFields="SLOT_FIELDS" :rules="SLOT_RULES" />
       </el-tab-pane>
 
       <!-- 学生 -->
-      <el-tab-pane label="学生" name="students">
-        <CrudTab entity="students" :columns="studentColumns" :formFields="studentFormFields" />
+      <el-tab-pane label="学生" name="students" :lazy="true">
+        <CrudTab entity="students" :columns="STUDENT_COLUMNS" :formFields="STUDENT_FIELDS" />
       </el-tab-pane>
 
       <!-- 专业 -->
-      <el-tab-pane label="专业" name="majors">
-        <CrudTab entity="majors" :columns="majorColumns" :formFields="majorFormFields" :rules="majorRules" />
+      <el-tab-pane label="专业" name="majors" :lazy="true">
+        <CrudTab entity="majors" :columns="MAJOR_COLUMNS" :formFields="MAJOR_FIELDS" :rules="MAJOR_RULES" />
       </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref } from 'vue'
 import CrudTab from '@/components/common/CrudTab.vue'
 
-export default {
-  name: 'BaseDataView',
-  components: { CrudTab },
-  data() {
-    return {
-      activeTab: 'teachers',
-      
-      // 教师
-      teacherColumns: [
-        { key: 'id', label: 'ID', width: 80 },
-        { key: 'name', label: '姓名' },
-        { key: 'teacher_type', label: '类型', width: 100, slot: 'teacher_type' },
-        { key: 'max_slots', label: '最大场次', width: 110 },
-        { key: 'current_slots', label: '已排场次', width: 110 },
-      ],
-      teacherFormFields: [
-        { key: 'name', label: '姓名', type: 'input', placeholder: '请输入姓名' },
-        {
-          key: 'teacher_type', label: '类型', type: 'select', placeholder: '请选择类型',
-          options: [
-            { label: '专任', value: 'full_time' },
-            { label: '兼职', value: 'part_time' },
-          ],
-        },
-        { key: 'max_slots', label: '最大场次', type: 'number', min: 0, max: 20 },
-      ],
-      teacherRules: {
-        name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
-        max_slots: [{ required: true, message: '请输入最大场次', trigger: 'blur' }],
-      },
+/* ================================================================
+ * 所有配置提取为模块级普通常量 — 不经过 Vue 响应式系统
+ * 这样可以避免 mount 时 Vue 对整个配置对象树做深度 Proxy 包装
+ * ================================================================ */
 
-      // 教室
-      classroomColumns: [
-        { key: 'id', label: 'ID', width: 80 },
-        { key: 'name', label: '名称' },
-        { key: 'type', label: '类型', width: 100, slot: 'classroom_type' },
-        { key: 'capacity', label: '容量', width: 90 },
-        { key: 'building', label: '楼宇', width: 120 },
-        { key: 'floor', label: '楼层', width: 80 },
-      ],
-      classroomFormFields: [
-        { key: 'name', label: '名称', type: 'input', placeholder: '如 5-201' },
-        {
-          key: 'type', label: '类型', type: 'select', placeholder: '请选择类型',
-          options: [
-            { label: 'Lecture', value: 'Lecture' },
-            { label: 'Lab', value: 'Lab' },
-          ],
-        },
-        { key: 'capacity', label: '容量', type: 'number', min: 0 },
-        { key: 'building', label: '楼宇', type: 'input', placeholder: '如 5号楼' },
-        { key: 'floor', label: '楼层', type: 'number', min: 0 },
-      ],
-      classroomRules: {
-        name: [{ required: true, message: '请输入教室名称', trigger: 'blur' }],
-        capacity: [{ required: true, message: '请输入容量', trigger: 'blur' }],
-      },
-
-      // 课程
-      courseColumns: [
-        { key: 'id', label: 'ID', width: 80 },
-        { key: 'name', label: '课程名称' },
-        { key: 'is_public', label: '公共课', width: 90, slot: 'is_public' },
-        { key: 'has_ab_split', label: 'AB卷', width: 90, slot: 'has_ab_split' },
-      ],
-      courseFormFields: [
-        { key: 'name', label: '课程名称', type: 'input', placeholder: '请输入课程名称' },
-        { key: 'is_public', label: '公共课', type: 'checkbox', checkboxLabel: '是公共课' },
-        { key: 'has_ab_split', label: 'AB卷', type: 'checkbox', checkboxLabel: '需要AB卷' },
-      ],
-      courseRules: {
-        name: [{ required: true, message: '请输入课程名称', trigger: 'blur' }],
-      },
-
-      // 班级
-      classColumns: [
-        { key: 'id', label: 'ID', width: 80 },
-        { key: 'name', label: '班级名称' },
-        { key: 'grade', label: '年级', width: 100 },
-        { key: 'student_count', label: '人数', width: 90 },
-        { key: 'major_name', label: '专业', width: 150, slot: 'major_name' },
-      ],
-      classFormFields: [
-        { key: 'name', label: '班级名称', type: 'input', placeholder: '如 25数媒1' },
-        { key: 'grade', label: '年级', type: 'input', placeholder: '如 2025' },
-        { key: 'student_count', label: '人数', type: 'number', min: 0 },
-        { key: 'major_id', label: '专业', type: 'select', placeholder: '请选择专业', options: [] },
-      ],
-      classRules: {
-        name: [{ required: true, message: '请输入班级名称', trigger: 'blur' }],
-        student_count: [{ required: true, message: '请输入人数', trigger: 'blur' }],
-      },
-
-      // 时段
-      slotColumns: [
-        { key: 'id', label: 'ID', width: 80 },
-        { key: 'day_name', label: '星期', width: 100 },
-        { key: 'slot_code', label: '时段代码', width: 120 },
-        { key: 'start_time', label: '开始时间', width: 100 },
-        { key: 'end_time', label: '结束时间', width: 100 },
-      ],
-      slotFormFields: [
-        {
-          key: 'day_of_week', label: '星期', type: 'select', placeholder: '请选择',
-          options: [
-            { label: '星期一', value: 1 },
-            { label: '星期二', value: 2 },
-            { label: '星期三', value: 3 },
-            { label: '星期四', value: 4 },
-            { label: '星期五', value: 5 },
-          ],
-        },
-        {
-          key: 'slot_code', label: '时段代码', type: 'select', placeholder: '请选择',
-          options: [
-            { label: '上午第一节 (T1)', value: 'T1' },
-            { label: '上午第二节 (T2)', value: 'T2' },
-            { label: '下午第一节 (T3)', value: 'T3' },
-            { label: '下午第二节 (T4)', value: 'T4' },
-          ],
-        },
-        { key: 'start_time', label: '开始时间', type: 'input', placeholder: '如 08:00' },
-        { key: 'end_time', label: '结束时间', type: 'input', placeholder: '如 09:40' },
-      ],
-      slotRules: {
-        day_of_week: [{ required: true, message: '请选择星期', trigger: 'change' }],
-        slot_code: [{ required: true, message: '请选择时段代码', trigger: 'change' }],
-        start_time: [{ required: true, message: '请输入开始时间', trigger: 'blur' }],
-        end_time: [{ required: true, message: '请输入结束时间', trigger: 'blur' }],
-      },
-
-      // 学生（只读）
-      studentColumns: [
-        { key: 'id', label: 'ID', width: 80 },
-        { key: 'name', label: '姓名' },
-        { key: 'class_name', label: '班级', width: 150 },
-      ],
-      studentFormFields: [],
-
-      // 专业
-      majorColumns: [
-        { key: 'id', label: 'ID', width: 80 },
-        { key: 'name', label: '专业名称' },
-      ],
-      majorFormFields: [
-        { key: 'name', label: '专业名称', type: 'input', placeholder: '请输入专业名称' },
-      ],
-      majorRules: {
-        name: [{ required: true, message: '请输入专业名称', trigger: 'blur' }],
-      },
-    }
+const TEACHER_COLUMNS = [
+  { key: 'id', label: 'ID', width: 80 },
+  { key: 'name', label: '姓名' },
+  { key: 'teacher_type', label: '类型', width: 100, slot: 'teacher_type' },
+  { key: 'max_slots', label: '最大场次', width: 110 },
+  { key: 'current_slots', label: '已排场次', width: 110 },
+]
+const TEACHER_FIELDS = [
+  { key: 'name', label: '姓名', type: 'input', placeholder: '请输入姓名' },
+  {
+    key: 'teacher_type', label: '类型', type: 'select', placeholder: '请选择类型',
+    options: [
+      { label: '专任', value: 'full_time' },
+      { label: '兼职', value: 'part_time' },
+    ],
   },
+  { key: 'max_slots', label: '最大场次', type: 'number', min: 0, max: 20 },
+]
+const TEACHER_RULES = {
+  name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  max_slots: [{ required: true, message: '请输入最大场次', trigger: 'blur' }],
 }
+
+const CLASSROOM_COLUMNS = [
+  { key: 'id', label: 'ID', width: 80 },
+  { key: 'name', label: '名称' },
+  { key: 'type', label: '类型', width: 100, slot: 'classroom_type' },
+  { key: 'capacity', label: '容量', width: 90 },
+  { key: 'building', label: '楼宇', width: 120 },
+  { key: 'floor', label: '楼层', width: 80 },
+]
+const CLASSROOM_FIELDS = [
+  { key: 'name', label: '名称', type: 'input', placeholder: '如 5-201' },
+  {
+    key: 'type', label: '类型', type: 'select', placeholder: '请选择类型',
+    options: [
+      { label: 'Lecture', value: 'Lecture' },
+      { label: 'Lab', value: 'Lab' },
+    ],
+  },
+  { key: 'capacity', label: '容量', type: 'number', min: 0 },
+  { key: 'building', label: '楼宇', type: 'input', placeholder: '如 5号楼' },
+  { key: 'floor', label: '楼层', type: 'number', min: 0 },
+]
+const CLASSROOM_RULES = {
+  name: [{ required: true, message: '请输入教室名称', trigger: 'blur' }],
+  capacity: [{ required: true, message: '请输入容量', trigger: 'blur' }],
+}
+
+const COURSE_COLUMNS = [
+  { key: 'id', label: 'ID', width: 80 },
+  { key: 'name', label: '课程名称' },
+  { key: 'is_public', label: '公共课', width: 90, slot: 'is_public' },
+  { key: 'has_ab_split', label: 'AB卷', width: 90, slot: 'has_ab_split' },
+]
+const COURSE_FIELDS = [
+  { key: 'name', label: '课程名称', type: 'input', placeholder: '请输入课程名称' },
+  { key: 'is_public', label: '公共课', type: 'checkbox', checkboxLabel: '是公共课' },
+  { key: 'has_ab_split', label: 'AB卷', type: 'checkbox', checkboxLabel: '需要AB卷' },
+]
+const COURSE_RULES = {
+  name: [{ required: true, message: '请输入课程名称', trigger: 'blur' }],
+}
+
+const CLASS_COLUMNS = [
+  { key: 'id', label: 'ID', width: 80 },
+  { key: 'name', label: '班级名称' },
+  { key: 'grade', label: '年级', width: 100 },
+  { key: 'student_count', label: '人数', width: 90 },
+  { key: 'major_name', label: '专业', width: 150, slot: 'major_name' },
+]
+const CLASS_FIELDS = [
+  { key: 'name', label: '班级名称', type: 'input', placeholder: '如 25数媒1' },
+  { key: 'grade', label: '年级', type: 'input', placeholder: '如 2025' },
+  { key: 'student_count', label: '人数', type: 'number', min: 0 },
+  { key: 'major_id', label: '专业', type: 'select', placeholder: '请选择专业', options: [] },
+]
+const CLASS_RULES = {
+  name: [{ required: true, message: '请输入班级名称', trigger: 'blur' }],
+  student_count: [{ required: true, message: '请输入人数', trigger: 'blur' }],
+}
+
+const SLOT_COLUMNS = [
+  { key: 'id', label: 'ID', width: 80 },
+  { key: 'day_name', label: '星期', width: 100 },
+  { key: 'slot_code', label: '时段代码', width: 120 },
+  { key: 'start_time', label: '开始时间', width: 100 },
+  { key: 'end_time', label: '结束时间', width: 100 },
+]
+const SLOT_FIELDS = [
+  {
+    key: 'day_of_week', label: '星期', type: 'select', placeholder: '请选择',
+    options: [
+      { label: '星期一', value: 1 },
+      { label: '星期二', value: 2 },
+      { label: '星期三', value: 3 },
+      { label: '星期四', value: 4 },
+      { label: '星期五', value: 5 },
+    ],
+  },
+  {
+    key: 'slot_code', label: '时段代码', type: 'select', placeholder: '请选择',
+    options: [
+      { label: '上午第一节 (T1)', value: 'T1' },
+      { label: '上午第二节 (T2)', value: 'T2' },
+      { label: '下午第一节 (T3)', value: 'T3' },
+      { label: '下午第二节 (T4)', value: 'T4' },
+    ],
+  },
+  { key: 'start_time', label: '开始时间', type: 'input', placeholder: '如 08:00' },
+  { key: 'end_time', label: '结束时间', type: 'input', placeholder: '如 09:40' },
+]
+const SLOT_RULES = {
+  day_of_week: [{ required: true, message: '请选择星期', trigger: 'change' }],
+  slot_code: [{ required: true, message: '请选择时段代码', trigger: 'change' }],
+  start_time: [{ required: true, message: '请输入开始时间', trigger: 'blur' }],
+  end_time: [{ required: true, message: '请输入结束时间', trigger: 'blur' }],
+}
+
+const STUDENT_COLUMNS = [
+  { key: 'id', label: 'ID', width: 80 },
+  { key: 'name', label: '姓名' },
+  { key: 'class_name', label: '班级', width: 150 },
+]
+const STUDENT_FIELDS = []
+
+const MAJOR_COLUMNS = [
+  { key: 'id', label: 'ID', width: 80 },
+  { key: 'name', label: '专业名称' },
+]
+const MAJOR_FIELDS = [
+  { key: 'name', label: '专业名称', type: 'input', placeholder: '请输入专业名称' },
+]
+const MAJOR_RULES = {
+  name: [{ required: true, message: '请输入专业名称', trigger: 'blur' }],
+}
+
+/* 唯一需要响应式的状态 */
+const activeTab = ref('teachers')
 </script>
 
 <style scoped>
@@ -239,7 +231,6 @@ export default {
   min-height: 500px;
 }
 
-/* 给 el-tabs 内部一点样式覆盖 */
 .data-tabs :deep(.el-tabs__header) {
   margin-bottom: var(--space-lg, 24px);
 }

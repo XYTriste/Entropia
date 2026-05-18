@@ -2,21 +2,19 @@
   <el-container class="app-container">
     <!-- 顶部导航栏 -->
     <el-header class="app-header">
-      <div class="header-Left">
+      <div class="header-left">
         <h1 class="app-title">
           <el-icon><Notebook /></el-icon>
           考试排考系统
         </h1>
       </div>
-      
+
       <div class="header-center">
         <el-menu
           :default-active="activeMenu"
           mode="horizontal"
           router
-          background-color="#3B82F6"
-          text-color="#ffffff"
-          active-text-color="#ffffff"
+          class="dark-nav-menu"
         >
           <el-menu-item index="/dashboard">
             <el-icon><DataAnalysis /></el-icon>
@@ -48,7 +46,7 @@
           </el-menu-item>
         </el-menu>
       </div>
-      
+
       <div class="header-right">
         <span class="user-info">
           <el-icon><User /></el-icon>
@@ -71,6 +69,10 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import {
+  Notebook, DataAnalysis, Setting, VideoPlay,
+  TrendCharts, Edit, Switch, Upload, User
+} from '@element-plus/icons-vue'
 
 const route = useRoute()
 const activeMenu = computed(() => route.path)
@@ -81,16 +83,18 @@ const activeMenu = computed(() => route.path)
   height: 100vh;
   display: flex;
   flex-direction: column;
+  background: #0a0e27;
 }
 
 .app-header {
-  background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
-  color: white;
+  background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+  color: #e2e8f0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+  border-bottom: none;
 }
 
 .app-title {
@@ -100,6 +104,10 @@ const activeMenu = computed(() => route.path)
   display: flex;
   align-items: center;
   gap: 8px;
+  background: linear-gradient(90deg, #4fc3f7, #7c4dff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .header-center {
@@ -110,6 +118,7 @@ const activeMenu = computed(() => route.path)
 
 .header-center .el-menu {
   border-bottom: none;
+  background: transparent;
 }
 
 .header-right {
@@ -122,13 +131,101 @@ const activeMenu = computed(() => route.path)
   align-items: center;
   gap: 6px;
   font-size: 0.9rem;
+  color: #e2e8f0;
+  opacity: 0.8;
 }
 
 .app-main {
   flex: 1;
   overflow-y: auto;
-  background-color: #F3F4F6;
-  padding: 20px;
+  padding: 0;
+  background: #0a0e27;
+}
+
+/* 深色导航菜单样式 */
+.dark-nav-menu {
+  background: transparent !important;
+  border: none !important;
+  --el-menu-text-color: #e2e8f0;
+  --el-menu-hover-text-color: #4fc3f7;
+  --el-menu-bg-color: transparent;
+  --el-menu-hover-bg-color: rgba(255, 255, 255, 0.05);
+  --el-menu-active-color: #4fc3f7;
+  --el-menu-hover-border-color: transparent;
+  --el-menu-border-color: transparent;
+}
+
+/* 菜单项通用样式 */
+.dark-nav-menu .el-menu-item {
+  color: #e2e8f0 !important;
+  background: transparent !important;
+  border: none !important;
+  transition: all 0.3s ease;
+  position: relative;
+  margin: 0 2px;
+}
+
+.dark-nav-menu .el-menu-item::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #4fc3f7, #7c4dff);
+  transition: width 0.3s ease;
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(79, 195, 247, 0.6);
+}
+
+.dark-nav-menu .el-menu-item:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #4fc3f7 !important;
+  transition: all 0.3s ease;
+}
+
+/* 激活状态 */
+.dark-nav-menu .el-menu-item.is-active {
+  color: #4fc3f7 !important;
+  background: rgba(79, 195, 247, 0.1) !important;
+  border: none !important;
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.dark-nav-menu .el-menu-item.is-active::after {
+  width: 70%;
+}
+
+.dark-nav-menu .el-menu-item.is-active .el-icon {
+  color: #4fc3f7;
+  filter: drop-shadow(0 0 4px rgba(79, 195, 247, 0.6));
+}
+
+/* 文字发光脉冲动画 - 与大屏 box-shadow 脉冲风格一致 */
+@keyframes glow-pulse {
+  0%, 100% {
+    text-shadow: 0 0 5px rgba(88, 166, 255, 0.4);
+  }
+  50% {
+    text-shadow: 0 0 10px #58a6ff, 0 0 20px #58a6ff, 0 0 30px rgba(88, 166, 255, 0.5);
+  }
+}
+
+/* 图标样式 */
+.dark-nav-menu .el-menu-item .el-icon {
+  color: #e2e8f0;
+  transition: all 0.3s ease;
+}
+
+.dark-nav-menu .el-menu-item:hover .el-icon {
+  color: #4fc3f7;
+  filter: drop-shadow(0 0 4px rgba(79, 195, 247, 0.4));
+}
+
+/* 移除 Element Plus 默认的下划线 */
+.el-menu--horizontal {
+  border-bottom: none !important;
 }
 
 /* 页面切换动画 */

@@ -1,8 +1,14 @@
 <template>
   <div class="crud-tab">
+    <!-- 后端不可用警告提示 -->
+    <div v-if="isMockMode" class="mock-mode-banner">
+      <el-icon class="mock-icon"><Warning /></el-icon>
+      <span><strong>测试模式</strong>：后端服务不可用，以下显示的是示例数据</span>
+    </div>
+
     <!-- 工具栏 -->
     <div class="crud-toolbar">
-      <el-button type="primary" @click="openDialog()">
+      <el-button type="primary" :disabled="isMockMode" @click="openDialog()">
         <el-icon><Plus /></el-icon>
         新增
       </el-button>
@@ -15,16 +21,17 @@
       />
     </div>
 
-    <!-- 数据表格 -->
+    <!-- 统一表格：数据源根据模式切换，避免 v-if 双表格带来的双倍 vnode / DOM 开销 -->
     <el-table
-      :data="data"
+      :data="tableData"
       stripe
       border
-      v-loading="loading"
+      v-loading="!isMockMode && loading"
       empty-text="暂无数据"
       class="crud-table"
-      :header-cell-style="headerStyle"
-      :cell-style="cellStyle"
+      :class="{ 'mock-table': isMockMode }"
+      :header-cell-style="isMockMode ? () => MOCK_HEADER_STYLE : () => HEADER_STYLE"
+      :cell-style="isMockMode ? () => MOCK_CELL_STYLE : () => CELL_STYLE"
     >
       <el-table-column
         v-for="col in columns"
@@ -35,26 +42,23 @@
         :min-width="col.minWidth"
       >
         <template v-if="col.slot" #default="{ row }">
-          <!-- teacher_type: full_time / part_time -->
           <el-tag
             v-if="col.slot === 'teacher_type'"
-            :type="row.teacher_type === 'full_time' ? '' : 'warning'"
+            :type="row.teacher_type === 'full_time' ? 'primary' : 'warning'"
             size="small"
             effect="light"
           >{{ row.teacher_type === 'full_time' ? '专任' : '兼职' }}</el-tag>
 
-          <!-- classroom type: Lecture / Lab -->
           <el-tag
             v-else-if="col.slot === 'classroom_type'"
-            :type="row.type === 'Lecture' ? '' : 'success'"
+            :type="row.type === 'Lecture' ? 'primary' : 'success'"
             size="small"
             effect="light"
           >{{ row.type === 'Lecture' ? '教室' : '实验室' }}</el-tag>
 
-          <!-- boolean slots -->
           <el-tag
             v-else-if="col.slot === 'is_public'"
-            :type="row.is_public ? '' : 'info'"
+            :type="row.is_public ? 'primary' : 'info'"
             size="small"
             effect="light"
           >{{ row.is_public ? '是' : '否' }}</el-tag>
@@ -66,24 +70,24 @@
             effect="light"
           >{{ row.has_ab_split ? '是' : '否' }}</el-tag>
 
-          <!-- major_name: 直接显示 -->
           <span v-else-if="col.slot === 'major_name'">{{ row.major_name || '-' }}</span>
-
-          <!-- fallback: 直接显示 row[col.slot] 或 row[col.key] -->
           <span v-else>{{ row[col.slot] ?? row[col.key] ?? '-' }}</span>
         </template>
       </el-table-column>
 
       <el-table-column label="操作" :width="180" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="openDialog(row)">编辑</el-button>
-          <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
+          <el-button v-if="!isMockMode" size="small" @click="openDialog(row)">编辑</el-button>
+          <el-button v-if="!isMockMode" size="small" type="danger" @click="handleDelete(row)">删除</el-button>
+          <el-button v-if="isMockMode" size="small" type="info" disabled>编辑</el-button>
+          <el-button v-if="isMockMode" size="small" type="info" disabled>删除</el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <!-- 分页 -->
+    <!-- 分页（正常模式） -->
     <el-pagination
+      v-if="!isMockMode"
       v-model:current-page="pagination.page"
       v-model:page-size="pagination.page_size"
       :total="pagination.total"
@@ -153,36 +157,109 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Warning } from '@element-plus/icons-vue'
 import { useCrud } from '@/composables/useCrud'
+
+/* 静态样式对象 — 避免每次渲染返回新引用触发 diff + 强制回流 */
+const HEADER_STYLE = {
+  background: '#FAFAFA',
+  color: 'rgba(0,0,0,0.65)',
+  fontWeight: '600',
+  fontSize: '13px',
+  borderBottom: '1px solid #F0F0F0',
+}
+const CELL_STYLE = {
+  borderBottom: '1px solid #F0F0F0',
+  fontSize: '14px',
+}
+const MOCK_HEADER_STYLE = {
+  background: 'rgba(88, 166, 255, 0.1)',
+  color: '#58a6ff',
+  fontWeight: '600',
+  fontSize: '13px',
+  borderBottom: '1px solid rgba(88, 166, 255, 0.3)',
+}
+const MOCK_CELL_STYLE = {
+  borderBottom: '1px solid rgba(88, 166, 255, 0.2)',
+  fontSize: '14px',
+  color: '#e2e8f0',
+}
 
 const props = defineProps({
   entity:     { type: String, required: true },
   columns:    { type: Array,  required: true },
   formFields: { type: Array,  required: true },
   rules:      { type: Object,  default: () => ({}) },
+  // 懒加载不再需要 active prop（lazy tab-pane 会自动处理）
 })
 
 const emit = defineEmits(['saved', 'deleted'])
 
-/* 表格样式函数（Ant Design 风格） */
-function headerStyle() {
-  return {
-    background: '#FAFAFA',
-    color: 'rgba(0,0,0,0.65)',
-    fontWeight: '600',
-    fontSize: '13px',
-    borderBottom: '1px solid #F0F0F0',
-  }
+// 测试数据状态
+const isMockMode = ref(false)
+
+// 测试数据映射
+const mockDataMap = {
+  teachers: [
+    { id: 1, name: '张伟', teacher_type: 'full_time', max_slots: 6, current_slots: 4 },
+    { id: 2, name: '李娜', teacher_type: 'part_time', max_slots: 4, current_slots: 2 },
+    { id: 3, name: '王强', teacher_type: 'full_time', max_slots: 8, current_slots: 6 },
+    { id: 4, name: '刘芳', teacher_type: 'full_time', max_slots: 5, current_slots: 3 },
+    { id: 5, name: '陈明', teacher_type: 'part_time', max_slots: 3, current_slots: 1 },
+  ],
+  classrooms: [
+    { id: 1, name: 'A101', type: 'Lecture', capacity: 60, building: '博学楼A', floor: 1 },
+    { id: 2, name: 'A201', type: 'Lecture', capacity: 80, building: '博学楼A', floor: 2 },
+    { id: 3, name: 'B301', type: 'Lab', capacity: 40, building: '博学楼B', floor: 3 },
+    { id: 4, name: 'C102', type: 'Lecture', capacity: 120, building: '明德楼', floor: 1 },
+    { id: 5, name: 'D201', type: 'Lecture', capacity: 50, building: '崇文楼', floor: 2 },
+  ],
+  courses: [
+    { id: 1, name: '高等数学', is_public: true, has_ab_split: true },
+    { id: 2, name: '大学英语', is_public: true, has_ab_split: false },
+    { id: 3, name: '计算机网络', is_public: false, has_ab_split: true },
+    { id: 4, name: '数据结构', is_public: false, has_ab_split: true },
+    { id: 5, name: '线性代数', is_public: true, has_ab_split: false },
+  ],
+  classes: [
+    { id: 1, name: '25软件1', grade: '2025', student_count: 45, major_name: '软件工程' },
+    { id: 2, name: '25数媒1', grade: '2025', student_count: 38, major_name: '数字媒体技术' },
+    { id: 3, name: '25计科1', grade: '2025', student_count: 42, major_name: '计算机科学与技术' },
+    { id: 4, name: '24网络1', grade: '2024', student_count: 36, major_name: '网络工程' },
+    { id: 5, name: '24人工智能1', grade: '2024', student_count: 30, major_name: '人工智能' },
+  ],
+  'time-slots': [
+    { id: 1, day_name: '星期一', slot_code: 'T1', start_time: '08:00', end_time: '09:40' },
+    { id: 2, day_name: '星期一', slot_code: 'T2', start_time: '10:00', end_time: '11:40' },
+    { id: 3, day_name: '星期一', slot_code: 'T3', start_time: '14:00', end_time: '15:40' },
+    { id: 4, day_name: '星期二', slot_code: 'T1', start_time: '08:00', end_time: '09:40' },
+    { id: 5, day_name: '星期二', slot_code: 'T2', start_time: '10:00', end_time: '11:40' },
+  ],
+  students: [
+    { id: 1, name: '王小明', class_name: '25软件1' },
+    { id: 2, name: '李小红', class_name: '25数媒1' },
+    { id: 3, name: '张小华', class_name: '25计科1' },
+    { id: 4, name: '刘小丽', class_name: '24网络1' },
+    { id: 5, name: '陈小军', class_name: '24人工智能1' },
+  ],
+  majors: [
+    { id: 1, name: '软件工程' },
+    { id: 2, name: '数字媒体技术' },
+    { id: 3, name: '计算机科学与技术' },
+    { id: 4, name: '网络工程' },
+    { id: 5, name: '人工智能' },
+  ],
 }
-function cellStyle() {
-  return {
-    borderBottom: '1px solid #F0F0F0',
-    fontSize: '14px',
-  }
-}
+
+// 根据 entity 获取测试数据 — 普通常量，props.entity 在组件生命周期内不变
+const mockData = mockDataMap[props.entity] || []
+
+// 表格显示数据：mock 模式用测试数据，正常模式用接口数据
+const tableData = computed(() => isMockMode.value ? mockData : data.value)
+
+/* 样式已提取为模块顶部静态常量，避免每次渲染返回新引用 */
 
 const {
   data,
@@ -192,11 +269,24 @@ const {
   dialogVisible,
   form,
   isEditing,
-  fetchData,
+  fetchData: originalFetchData,
   openDialog,
   save: originalSave,
   deleteItem,
 } = useCrud(props.entity)
+
+// 覆盖 fetchData，检测后端是否可用
+async function fetchData() {
+  try {
+    await originalFetchData()
+    // 如果请求成功但没有数据，检查是否是后端返回空数据还是真的没有数据
+    // 如果后端确实不可用，originalFetchData 会捕获错误
+    isMockMode.value = false
+  } catch (e) {
+    // 后端不可用，启用测试模式
+    isMockMode.value = true
+  }
+}
 
 const formRef = ref(null)
 const localFilters = ref({ ...filters.value })
@@ -260,6 +350,25 @@ defineExpose({ openDialog })
   padding: var(--space-lg, 24px);
 }
 
+/* 测试模式提示横幅 */
+.mock-mode-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(88, 166, 255, 0.15), rgba(88, 166, 255, 0.05));
+  border: 1px solid rgba(88, 166, 255, 0.4);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  color: #58a6ff;
+  font-size: 14px;
+  /* 移除无限 CSS 动画，避免持续触发合成/布局计算 */
+}
+
+.mock-icon {
+  font-size: 18px;
+}
+
 .crud-toolbar {
   display: flex;
   justify-content: space-between;
@@ -275,6 +384,12 @@ defineExpose({ openDialog })
   border-radius: var(--radius-md, 12px);
   overflow: hidden;
   font-size: 14px;
+}
+
+/* 测试数据表格的样式覆盖 */
+.mock-table {
+  background: rgba(10, 14, 39, 0.8) !important;
+  border: 1px solid rgba(88, 166, 255, 0.3);
 }
 
 .crud-pagination {
