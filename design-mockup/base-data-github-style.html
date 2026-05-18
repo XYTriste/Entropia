@@ -1,0 +1,1613 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>基础数据管理 - GitHub风格</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<style>
+/* ============================================================
+   CSS Variables - Ant Design 暗色主题
+   ============================================================ */
+:root {
+  --bg-base: #000000;
+  --bg-container: #141414;
+  --bg-elevated: #1d1d1d;
+  --bg-layout: #1a1a1a;
+  --bg-spotlight: #262626;
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.65);
+  --text-tertiary: rgba(255, 255, 255, 0.45);
+  --text-quaternary: rgba(255, 255, 255, 0.25);
+  --border: rgba(255, 255, 255, 0.09);
+  --border-secondary: rgba(255, 255, 255, 0.06);
+  --color-primary: #1668dc;
+  --color-primary-hover: #1672dc;
+  --color-primary-bg: rgba(22, 104, 220, 0.15);
+  --color-success: #52c41a;
+  --color-warning: #faad14;
+  --color-error: #ff4d4f;
+  --color-info: #1677ff;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.32);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --glow-color: #4fc3f7;
+  --glow-color-rgb: 79, 195, 247;
+}
+
+/* ============================================================
+   全局样式
+   ============================================================ */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { font-size: 16px; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   顶部导航栏（精简版）
+   ============================================================ */
+.topnav {
+  background: var(--bg-container);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.topnav-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.topnav-logo .logo-icon {
+  width: 28px;
+  height: 28px;
+  background: var(--color-primary);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.topnav-title {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-left: 32px;
+  padding-left: 32px;
+  border-left: 1px solid var(--border);
+}
+
+.topnav-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.topnav-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text-secondary);
+  font-size: 15px;
+  border: none;
+  background: transparent;
+}
+
+.topnav-btn:hover {
+  background: var(--bg-spotlight);
+  color: var(--text-primary);
+}
+
+/* ============================================================
+   主内容区域（GitHub风格三栏布局）
+   ============================================================ */
+.main-container {
+  display: flex;
+  padding: 28px;
+  gap: 28px;
+  max-width: 1680px;
+  margin: 0 auto;
+}
+
+/* 左侧分类导航 */
+.sidebar-nav {
+  width: 240px;
+  flex-shrink: 0;
+}
+
+/* 中间主内容区 */
+.main-content {
+  flex: 1.7;
+  min-width: 0;
+}
+
+/* 右侧边栏 */
+.sidebar {
+  width: 360px;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   分类卡片（左侧边栏）
+   ============================================================ */
+.nav-card {
+  background: var(--bg-container);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.nav-card-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-layout);
+}
+
+.nav-card-title {
+  font-size: 0.857rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-list {
+  padding: 8px;
+}
+
+.nav-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 0.857rem;
+  color: var(--text-secondary);
+}
+
+.nav-list-item:hover {
+  background: var(--bg-spotlight);
+  color: var(--text-primary);
+}
+
+.nav-list-item.active {
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.nav-list-item .nav-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-list-item .nav-count {
+  font-size: 0.714rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--bg-spotlight);
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.nav-list-item.active .nav-count {
+  background: rgba(22, 104, 220, 0.2);
+  color: var(--color-primary);
+}
+
+/* ============================================================
+   GitHub风格卡片
+   ============================================================ */
+.github-card {
+  background: var(--bg-container);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.github-card-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-layout);
+}
+
+.github-card-title {
+  font-size: 0.929rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.github-card-body {
+  padding: 16px;
+}
+
+/* Tab切换样式 */
+.card-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-layout);
+}
+
+.card-tab {
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 0.857rem;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-tab:hover {
+  color: var(--text-primary);
+}
+
+.card-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: 500;
+}
+
+/* ============================================================
+   数据表格（GitHub风格）
+   ============================================================ */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.857rem;
+  table-layout: fixed;
+}
+
+.data-table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-layout);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.786rem;
+  letter-spacing: 0.3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-secondary);
+  vertical-align: middle;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover td {
+  background: var(--bg-spotlight);
+}
+
+/* ============================================================
+   搜索和工具栏
+   ============================================================ */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.search-box {
+  flex: 1;
+  max-width: 400px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-container);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: all 0.2s;
+}
+
+.search-box:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-bg);
+}
+
+.search-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.857rem;
+  font-family: inherit;
+}
+
+.search-box input::placeholder {
+  color: var(--text-quaternary);
+}
+
+.btn {
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  font-size: 0.857rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-weight: 400;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.btn-outline {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.btn-outline:hover {
+  background: var(--bg-spotlight);
+  border-color: var(--color-primary);
+}
+
+/* ============================================================
+   侧边栏信息项
+   ============================================================ */
+.info-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.info-item:last-child {
+  border-bottom: none;
+}
+
+.info-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.info-content {
+  flex: 1;
+}
+
+.info-label {
+  font-size: 0.786rem;
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.info-value {
+  font-size: 0.857rem;
+  color: var(--text-primary);
+}
+
+/* ============================================================
+   统计卡片
+   ============================================================ */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  background: var(--bg-container);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  text-align: center;
+}
+
+.stat-number {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 0.786rem;
+  color: var(--text-tertiary);
+}
+
+/* ============================================================
+   分页
+   ============================================================ */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.pagination-info {
+  font-size: 0.857rem;
+  color: var(--text-secondary);
+}
+
+.page-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.page-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.857rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.page-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.page-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+/* ============================================================
+   响应式设计
+   ============================================================ */
+@media (max-width: 1200px) {
+  .sidebar {
+    width: 240px;
+  }
+}
+
+@media (max-width: 1012px) {
+  .main-container {
+    flex-direction: column;
+  }
+  
+  .sidebar-nav {
+    width: 100%;
+  }
+  
+  .nav-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  
+  .nav-list-item {
+    flex: 0 0 auto;
+  }
+  
+  .sidebar {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .topnav {
+    padding: 0 16px;
+  }
+  
+  .topnav-title {
+    display: none;
+  }
+  
+  .main-container {
+    padding: 16px;
+  }
+}
+
+/* 图标SVG */
+.icon {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* 可点击的图标单元格 */
+.icon-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  color: var(--text-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s;
+  font-size: 0.857rem;
+}
+
+.icon-cell i {
+  color: var(--color-primary);
+  font-size: 0.857rem;
+  transition: color 0.15s;
+}
+
+.icon-cell:hover {
+  background: var(--color-primary-bg);
+}
+
+.icon-cell:hover i {
+  color: var(--text-primary);
+}
+
+/* ============================================================
+   模态窗口 - 监考安排详情
+   ============================================================ */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s;
+}
+
+.modal-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modal-content {
+  background: var(--bg-container);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 860px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow);
+  transform: scale(0.96);
+  transition: transform 0.2s;
+}
+
+.modal-overlay.active .modal-content {
+  transform: scale(1);
+}
+
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-layout);
+  flex-shrink: 0;
+}
+
+.modal-title {
+  font-size: 1.071rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  transition: all 0.15s;
+}
+
+.modal-close:hover {
+  background: var(--bg-spotlight);
+  color: var(--text-primary);
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+/* 教师信息卡片 */
+.modal-info-card {
+  background: var(--bg-layout);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.modal-info-name {
+  font-size: 1.143rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.modal-info-stats {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.modal-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.857rem;
+  color: var(--text-secondary);
+}
+
+.modal-stat-tag {
+  padding: 2px 10px;
+  border-radius: 3px;
+  font-size: 0.786rem;
+  font-weight: 500;
+}
+
+.modal-stat-tag.blue {
+  background: rgba(22, 104, 220, 0.15);
+  color: #4ea6ff;
+}
+
+.modal-stat-tag.yellow {
+  background: rgba(250, 173, 20, 0.15);
+  color: #ffcc4a;
+}
+
+.modal-stat-ratio {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* 分组标签头 */
+.modal-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(22, 104, 220, 0.08);
+  border: 1px solid rgba(22, 104, 220, 0.15);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  font-size: 0.857rem;
+  font-weight: 500;
+  color: var(--color-primary);
+}
+
+.modal-section-header i {
+  font-size: 0.857rem;
+}
+
+/* 模态内表格 */
+.modal-table-wrap {
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.modal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.857rem;
+  table-layout: fixed;
+}
+
+.modal-table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-layout);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.786rem;
+}
+
+.modal-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-secondary);
+  color: var(--text-primary);
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-table tr:last-child td {
+  border-bottom: none;
+}
+
+.modal-table tbody tr:hover td {
+  background: var(--bg-spotlight);
+}
+
+/* 类型标签 */
+.modal-tag-public {
+  padding: 2px 8px;
+  background: rgba(22, 104, 220, 0.12);
+  color: #4ea6ff;
+  border-radius: 3px;
+  font-size: 0.786rem;
+}
+
+.modal-tag-major {
+  padding: 2px 8px;
+  background: rgba(82, 196, 26, 0.12);
+  color: #73d13d;
+  border-radius: 3px;
+  font-size: 0.786rem;
+}
+
+.modal-ab-label {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* 模态底部 */
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  background: var(--bg-layout);
+  flex-shrink: 0;
+}
+</style>
+</head>
+<body>
+
+<!-- ========== 顶部导航栏（精简版） ========== -->
+<nav class="topnav">
+  <div class="topnav-logo" onclick="goHome()">
+    <div class="logo-icon">考</div>
+    <span>排考系统</span>
+  </div>
+  
+  <div class="topnav-title" id="pageTitle">基础数据管理</div>
+  
+  <div class="topnav-actions">
+    <button class="topnav-btn" title="搜索">&#128269;</button>
+    <button class="topnav-btn" title="通知">&#128276;</button>
+    <button class="topnav-btn" title="帮助">&#10067;</button>
+  </div>
+</nav>
+
+<!-- ========== 主内容区域 ========== -->
+<main class="main-container">
+  
+  <!-- ========== 左侧分类导航 ========== -->
+  <aside class="sidebar-nav">
+    <div class="nav-card">
+      <div class="nav-card-header">
+        <div class="nav-card-title">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+          数据分类
+        </div>
+      </div>
+      <div class="nav-list">
+        <div class="nav-list-item active" data-type="teachers" onclick="switchType('teachers')">
+          <span class="nav-label">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+            教师管理
+          </span>
+          <span class="nav-count">5</span>
+        </div>
+        <div class="nav-list-item" data-type="classrooms" onclick="switchType('classrooms')">
+          <span class="nav-label">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3zm5 15h-2v-6H9v6H7v-7.81l5-4.5 5 4.5V18z"/></svg>
+            教室管理
+          </span>
+          <span class="nav-count">8</span>
+        </div>
+        <div class="nav-list-item" data-type="timeslots" onclick="switchType('timeslots')">
+          <span class="nav-label">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+            时段管理
+          </span>
+          <span class="nav-count">6</span>
+        </div>
+        <div class="nav-list-item" data-type="courses" onclick="switchType('courses')">
+          <span class="nav-label">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3L1 9l4 2.18v6L12 21l7-3.82v-6l2-1.09V17h2V9L12 3zm6.82 6L12 12.72 5.18 9 12 5.28 18.82 9zM17 15.99l-5 2.73-5-2.73v-3.72L12 15l5-2.73v3.72z"/></svg>
+            课程管理
+          </span>
+          <span class="nav-count">12</span>
+        </div>
+        <div class="nav-list-item" data-type="majors" onclick="switchType('majors')">
+          <span class="nav-label">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z"/></svg>
+            专业管理
+          </span>
+          <span class="nav-count">8</span>
+        </div>
+        <div class="nav-list-item" data-type="classes" onclick="switchType('classes')">
+          <span class="nav-label">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5.9c1.16 0 2.1.94 2.1 2.1s-.94 2.1-2.1 2.1S9.9 9.16 9.9 8s.94-2.1 2.1-2.1m0 9c2.97 0 6.1 1.46 6.1 2.1v1.1H5.9V17c0-.64 3.13-2.1 6.1-2.1M12 4C9.79 4 8 5.79 8 8s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 9c-2.67 0-8 1.34-8 4v3h16v-3c0-2.66-5.33-4-8-4z"/></svg>
+            班级管理
+          </span>
+          <span class="nav-count">15</span>
+        </div>
+        <div class="nav-list-item" data-type="students" onclick="switchType('students')">
+          <span class="nav-label">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+            学生管理
+          </span>
+          <span class="nav-count">320</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ========== 中间主内容区 ========== -->
+  <div class="main-content">
+    <!-- 工具栏 -->
+    <div class="toolbar">
+      <div class="search-box">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="var(--text-tertiary)"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        <input type="text" placeholder="搜索..." id="searchInput">
+      </div>
+      <button class="btn btn-primary" onclick="showAddPanel()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        新增
+      </button>
+      <button class="btn btn-outline" onclick="importData()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        导入
+      </button>
+      <button class="btn btn-outline" onclick="exportData()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        导出
+      </button>
+    </div>
+    
+    <!-- 数据表格卡片 -->
+    <div class="github-card">
+      <!-- 卡片内Tab切换 -->
+      <div class="card-tabs">
+        <div class="card-tab active" data-tab="data" onclick="switchTab('data')">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+          数据表
+        </div>
+        <div class="card-tab" data-tab="stats" onclick="switchTab('stats')">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
+          统计概览
+        </div>
+      </div>
+      
+      <div class="github-card-header">
+        <div class="github-card-title">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+          <span id="currentTypeLabel">教师数据</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-outline" style="font-size:0.786rem;" disabled id="batchDeleteBtn">
+            批量删除
+          </button>
+        </div>
+      </div>
+      
+      <!-- 数据表视图 -->
+      <div id="dataView">
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="mainTable">
+            <colgroup id="tableColgroup">
+              <!-- 列宽由 col 元素声明，table-layout:fixed 严格遵循 -->
+            </colgroup>
+            <thead id="tableHead">
+              <!-- 表头将通过JS动态生成 -->
+            </thead>
+            <tbody id="tableBody">
+              <!-- 数据行将通过JS动态生成 -->
+            </tbody>
+          </table>
+        </div>
+        
+        <div class="pagination">
+          <div class="pagination-info" id="paginationInfo">共 5 条</div>
+          <div class="page-buttons">
+            <button class="page-btn" disabled>&lt;</button>
+            <button class="page-btn active">1</button>
+            <button class="page-btn">&gt;</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 统计视图 -->
+      <div id="statsView" style="display:none;">
+        <div class="github-card-body">
+          <div class="stat-grid">
+            <div class="stat-card">
+              <div class="stat-number" id="statTotal">5</div>
+              <div class="stat-label">总记录数</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="statAvg">6</div>
+              <div class="stat-label">平均最大场次</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="statScheduled">4</div>
+              <div class="stat-label">已排场次</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="statAvailable">2</div>
+              <div class="stat-label">可用场次</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- ========== 右侧边栏 ========== -->
+  <aside class="sidebar">
+    <!-- 快速操作卡片 -->
+    <div class="github-card">
+      <div class="github-card-header">
+        <div class="github-card-title">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+          快速操作
+        </div>
+      </div>
+      <div class="github-card-body">
+        <div class="info-item" style="cursor:pointer;" onclick="showAddPanel()">
+          <svg class="info-icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="var(--color-primary)"/></svg>
+          <div class="info-content">
+            <div class="info-value">新增记录</div>
+            <div class="info-label">添加一条新数据</div>
+          </div>
+        </div>
+        <div class="info-item" style="cursor:pointer;" onclick="importData()">
+          <svg class="info-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="var(--color-success)"/></svg>
+          <div class="info-content">
+            <div class="info-value">导入数据</div>
+            <div class="info-label">从Excel批量导入</div>
+          </div>
+        </div>
+        <div class="info-item" style="cursor:pointer;" onclick="exportData()">
+          <svg class="info-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="var(--color-warning)"/></svg>
+          <div class="info-content">
+            <div class="info-value">导出数据</div>
+            <div class="info-label">导出为Excel或JSON</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 使用说明卡片 -->
+    <div class="github-card">
+      <div class="github-card-header">
+        <div class="github-card-title">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          使用说明
+        </div>
+      </div>
+      <div class="github-card-body">
+        <div class="info-item">
+          <div class="info-content">
+            <div class="info-label">
+              <p style="margin-bottom:8px;">1. 左侧选择数据类型</p>
+              <p style="margin-bottom:8px;">2. 使用搜索框快速过滤</p>
+              <p>3. 点击操作列编辑或删除</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 最近操作卡片 -->
+    <div class="github-card">
+      <div class="github-card-header">
+        <div class="github-card-title">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+          最近操作
+        </div>
+      </div>
+      <div class="github-card-body">
+        <div class="info-item">
+          <div class="info-content">
+            <div class="info-label" style="color:var(--text-secondary);">
+              张伟 教师信息已更新<br>
+              <span style="color:var(--text-quaternary);font-size:0.714rem;">10分钟前</span>
+            </div>
+          </div>
+        </div>
+        <div class="info-item">
+          <div class="info-content">
+            <div class="info-label" style="color:var(--text-secondary);">
+              新增 李娜 教师<br>
+              <span style="color:var(--text-quaternary);font-size:0.714rem;">1小时前</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<!-- ============================================================
+     JavaScript
+     ============================================================ -->
+<script>
+(function() {
+  'use strict';
+  
+  // ========== 模拟数据 ==========
+  var mockData = {
+    teachers: [
+      {id: 1, name: '张伟', type: '专任', maxExams: 6, scheduled: 4, enabled: true},
+      {id: 2, name: '李娜', type: '兼职', maxExams: 4, scheduled: 2, enabled: true},
+      {id: 3, name: '王强', type: '专任', maxExams: 8, scheduled: 6, enabled: true},
+      {id: 4, name: '刘芳', type: '专任', maxExams: 5, scheduled: 3, enabled: false},
+      {id: 5, name: '陈明', type: '兼职', maxExams: 3, scheduled: 1, enabled: true}
+    ],
+    // 教师排考详情模拟数据
+    teacherSchedules: {
+      1: {
+        fixed: 4,
+        patrol: 0,
+        max: 6,
+        list: [
+          {day: '周一', slot: 'T2 10:20-12:00', course: 'XXX新时代中国特色社会主义思想概论', type: '公共课', ab: 'B', room: '5-206', count: 23},
+          {day: '周一', slot: 'T3 14:00-15:40', course: 'C语言程序设计', type: '专业课', ab: '--', room: '5-307', count: 26},
+          {day: '周一', slot: 'T4 15:50-17:30', course: 'Python程序设计', type: '专业课', ab: '--', room: '5-203', count: 25},
+          {day: '周二', slot: 'T4 15:50-17:30', course: '高等数学1/2', type: '公共课', ab: 'B', room: '5-209', count: 26},
+          {day: '周三', slot: 'T2 10:20-12:00', course: '大学英语读写1/2', type: '公共课', ab: 'B', room: '5-215', count: 23},
+          {day: '周三', slot: 'T4 15:50-17:30', course: '思想道德与法治1/2', type: '公共课', ab: 'B', room: '5-212', count: 25}
+        ]
+      },
+      2: {
+        fixed: 2,
+        patrol: 0,
+        max: 4,
+        list: [
+          {day: '周一', slot: 'T1 08:00-09:40', course: '数据结构', type: '专业课', ab: '--', room: '5-101', count: 30},
+          {day: '周四', slot: 'T3 14:00-15:40', course: '操作系统原理', type: '专业课', ab: '--', room: '5-205', count: 28}
+        ]
+      },
+      3: {
+        fixed: 6,
+        patrol: 0,
+        max: 8,
+        list: [
+          {day: '周一', slot: 'T2 10:20-12:00', course: '计算机网络', type: '专业课', ab: '--', room: '5-301', count: 32},
+          {day: '周二', slot: 'T1 08:00-09:40', course: '数据库原理', type: '专业课', ab: '--', room: '5-302', count: 29},
+          {day: '周二', slot: 'T3 14:00-15:40', course: '软件工程', type: '专业课', ab: '--', room: '5-303', count: 27},
+          {day: '周三', slot: 'T1 08:00-09:40', course: '编译原理', type: '专业课', ab: '--', room: '5-304', count: 24},
+          {day: '周四', slot: 'T2 10:20-12:00', course: '人工智能导论', type: '公共课', ab: 'B', room: '5-401', count: 45},
+          {day: '周五', slot: 'T3 14:00-15:40', course: '算法分析与设计', type: '专业课', ab: '--', room: '5-305', count: 26}
+        ]
+      },
+      4: {
+        fixed: 3,
+        patrol: 0,
+        max: 5,
+        list: [
+          {day: '周一', slot: 'T3 14:00-15:40', course: '线性代数', type: '公共课', ab: 'B', room: '5-201', count: 50},
+          {day: '周三', slot: 'T3 14:00-15:40', course: '概率论与数理统计', type: '公共课', ab: 'B', room: '5-202', count: 48},
+          {day: '周五', slot: 'T1 08:00-09:40', course: '离散数学', type: '专业课', ab: '--', room: '5-306', count: 28}
+        ]
+      },
+      5: {
+        fixed: 1,
+        patrol: 0,
+        max: 3,
+        list: [
+          {day: '周二', slot: 'T2 10:20-12:00', course: '大学物理实验', type: '公共课', ab: 'B', room: '5-208', count: 35}
+        ]
+      }
+    },
+    classrooms: [
+      {id: 1, name: 'A101', building: '博学楼A', floor: 1, capacity: 40, roomType: '普通', enabled: true},
+      {id: 2, name: 'A102', building: '博学楼A', floor: 1, capacity: 60, roomType: '阶梯', enabled: true},
+      {id: 3, name: 'B201', building: '博学楼B', floor: 2, capacity: 80, roomType: '阶梯', enabled: true},
+      {id: 4, name: 'B301', building: '博学楼B', floor: 3, capacity: 120, roomType: '阶梯', enabled: false},
+      {id: 5, name: 'C101', building: '博学楼C', floor: 1, capacity: 50, roomType: '普通', enabled: true}
+    ],
+    courses: [
+      {id: 1, name: '高等数学', code: 'MATH001', type: '公共课', needs_ab: true, dept_assigned_date: 1, dept_assigned_time_slot_id: 2, linked_class_count: 3, enabled: true},
+      {id: 2, name: '大学物理', code: 'PHY001', type: '公共课', needs_ab: true, dept_assigned_date: 2, dept_assigned_time_slot_id: 5, linked_class_count: 2, enabled: true},
+      {id: 3, name: '数据结构', code: 'CS101', type: '专业课', needs_ab: false, dept_assigned_date: null, dept_assigned_time_slot_id: null, linked_class_count: 1, enabled: true}
+    ],
+    classes: [
+      {id: 1, name: '计算机221班', major_name: '计算机科学与技术', grade: 2022, student_count: 32},
+      {id: 2, name: '计算机222班', major_name: '计算机科学与技术', grade: 2022, student_count: 30},
+      {id: 3, name: '软件工程211班', major_name: '软件工程', grade: 2021, student_count: 28},
+      {id: 4, name: '人工智能221班', major_name: '人工智能', grade: 2022, student_count: 25}
+    ],
+    students: [
+      {id: 1, student_no: '2022010101', name: '张三', class_name: '计算机221班', grade: 2022},
+      {id: 2, student_no: '2022010102', name: '李四', class_name: '计算机221班', grade: 2022},
+      {id: 3, student_no: '2022010201', name: '王五', class_name: '计算机222班', grade: 2022},
+      {id: 4, student_no: '2021010101', name: '赵六', class_name: '软件工程211班', grade: 2021},
+      {id: 5, student_no: '2022010301', name: '钱七', class_name: '人工智能221班', grade: 2022}
+    ],
+    majors: [
+      {id: 1, name: '计算机科学与技术'},
+      {id: 2, name: '软件工程'},
+      {id: 3, name: '人工智能'},
+      {id: 4, name: '网络工程'}
+    ],
+    // 时段数据：连续表示与下一时段是否连续（中间休息约10分钟 vs 午休等较长休息）
+    timeslots: [
+      // 周一
+      {id: 1, day_of_week: 1, day_name: '周一', slot_code: 'T1', start_time: '08:00', end_time: '09:40', is_continuous: true},
+      {id: 2, day_of_week: 1, day_name: '周一', slot_code: 'T2', start_time: '10:20', end_time: '12:00', is_continuous: false},
+      {id: 3, day_of_week: 1, day_name: '周一', slot_code: 'T3', start_time: '14:00', end_time: '15:40', is_continuous: true},
+      {id: 4, day_of_week: 1, day_name: '周一', slot_code: 'T4', start_time: '15:50', end_time: '17:30', is_continuous: false},
+      // 周二
+      {id: 5, day_of_week: 2, day_name: '周二', slot_code: 'T1', start_time: '08:00', end_time: '09:40', is_continuous: true},
+      {id: 6, day_of_week: 2, day_name: '周二', slot_code: 'T2', start_time: '10:20', end_time: '12:00', is_continuous: false},
+      {id: 7, day_of_week: 2, day_name: '周二', slot_code: 'T3', start_time: '14:00', end_time: '15:40', is_continuous: true},
+      {id: 8, day_of_week: 2, day_name: '周二', slot_code: 'T4', start_time: '15:50', end_time: '17:30', is_continuous: false}
+    ]
+  };
+  
+  // ========== 表头配置 ==========
+  var tableHeaders = {
+    teachers: [
+      {label: '', width: '40px', align: 'center'},
+      {label: 'ID', width: '60px', align: 'center'},
+      {label: '姓名', width: '100px', align: 'left'},
+      {label: '类型', width: '80px', align: 'center'},
+      {label: '最大场次', width: '90px', align: 'center'},
+      {label: '当前场次', width: '90px', align: 'center'},
+      {label: '启用', width: '60px', align: 'center'},
+      {label: '操作', width: '80px', align: 'center'}
+    ],
+    classrooms: [
+      {label: '', width: '40px', align: 'center'},
+      {label: 'ID', width: '60px', align: 'center'},
+      {label: '名称', width: '100px', align: 'left'},
+      {label: '容量', width: '80px', align: 'center'},
+      {label: '类型', width: '80px', align: 'center'},
+      {label: '楼栋', width: '100px', align: 'left'},
+      {label: '楼层', width: '70px', align: 'center'},
+      {label: '启用', width: '60px', align: 'center'},
+      {label: '操作', width: '80px', align: 'center'}
+    ],
+    courses: [
+      {label: '', width: '40px', align: 'center'},
+      {label: 'ID', width: '60px', align: 'center'},
+      {label: '课程名称', width: '150px', align: 'left'},
+      {label: '类型', width: '80px', align: 'center'},
+      {label: 'AB卷', width: '60px', align: 'center'},
+      {label: '分配日期', width: '80px', align: 'center'},
+      {label: '分配时段', width: '120px', align: 'center'},
+      {label: '关联班级', width: '90px', align: 'center'},
+      {label: '启用', width: '60px', align: 'center'},
+      {label: '操作', width: '80px', align: 'center'}
+    ],
+    classes: [
+      {label: '', width: '40px', align: 'center'},
+      {label: 'ID', width: '60px', align: 'center'},
+      {label: '班级名称', width: '150px', align: 'left'},
+      {label: '专业', width: '150px', align: 'left'},
+      {label: '年级', width: '80px', align: 'center'},
+      {label: '人数', width: '60px', align: 'center'},
+      {label: '操作', width: '80px', align: 'center'}
+    ],
+    students: [
+      {label: '', width: '40px', align: 'center'},
+      {label: 'ID', width: '60px', align: 'center'},
+      {label: '学号', width: '120px', align: 'left'},
+      {label: '姓名', width: '100px', align: 'left'},
+      {label: '班级', width: '150px', align: 'left'},
+      {label: '年级', width: '80px', align: 'center'},
+      {label: '操作', width: '80px', align: 'center'}
+    ],
+    majors: [
+      {label: '', width: '40px', align: 'center'},
+      {label: 'ID', width: '60px', align: 'center'},
+      {label: '专业名称', width: '200px', align: 'left'},
+      {label: '操作', width: '80px', align: 'center'}
+    ],
+    timeslots: [
+      {label: '', width: '40px', align: 'center'},
+      {label: 'ID', width: '60px', align: 'center'},
+      {label: '星期', width: '70px', align: 'center'},
+      {label: '时段', width: '70px', align: 'center'},
+      {label: '开始时间', width: '100px', align: 'center'},
+      {label: '结束时间', width: '100px', align: 'center'},
+      {label: '连续', width: '70px', align: 'center'},
+      {label: '操作', width: '80px', align: 'center'}
+    ]
+  };
+  
+  var typeNames = {
+    'teachers': '教师',
+    'classrooms': '教室',
+    'timeslots': '时段',
+    'courses': '课程',
+    'majors': '专业',
+    'classes': '班级',
+    'students': '学生'
+  };
+  
+  var currentType = 'teachers';
+  var currentTab = 'data';
+  
+  // ========== 类型切换 ==========
+  window.switchType = function(type) {
+    currentType = type;
+    
+    // 更新左侧导航状态
+    document.querySelectorAll('.nav-list-item').forEach(function(item) {
+      item.classList.remove('active');
+    });
+    document.querySelector('.nav-list-item[data-type="' + type + '"]').classList.add('active');
+    
+    // 更新标题
+    document.getElementById('pageTitle').textContent = typeNames[type] + '管理';
+    document.getElementById('currentTypeLabel').textContent = typeNames[type] + '数据';
+    
+    // 重置到数据表视图
+    switchTab('data');
+    
+    // 重新渲染表格
+    renderTable();
+  };
+  
+  // ========== Tab切换 ==========
+  window.switchTab = function(tab) {
+    currentTab = tab;
+    
+    // 更新Tab状态
+    document.querySelectorAll('.card-tab').forEach(function(item) {
+      item.classList.remove('active');
+    });
+    document.querySelector('.card-tab[data-tab="' + tab + '"]').classList.add('active');
+    
+    // 切换视图
+    document.getElementById('dataView').style.display = tab === 'data' ? 'block' : 'none';
+    document.getElementById('statsView').style.display = tab === 'stats' ? 'block' : 'none';
+  };
+  
+  // ========== 渲染表格 ==========
+  function renderTable() {
+    var data = mockData[currentType] || mockData.teachers;
+    var tbody = document.getElementById('tableBody');
+    var thead = document.getElementById('tableHead');
+    var colgroup = document.getElementById('tableColgroup');
+    var headers = tableHeaders[currentType] || tableHeaders.teachers;
+
+    // 渲染 colgroup — 声明列宽，table-layout:fixed 严格遵循此定义
+    var colHtml = '';
+    headers.forEach(function(col) {
+      colHtml += '<col style="width:' + (col.width || '60px') + ';min-width:' + (col.width || '60px') + ';">';
+    });
+    colgroup.innerHTML = colHtml;
+
+    // 渲染表头 — 不再设置 inline width，由 colgroup 统一控制
+    var headerHtml = '<tr>';
+    headers.forEach(function(col) {
+      if (col.label === '') {
+        headerHtml += '<th style="text-align:' + (col.align || 'center') + ';"><input type="checkbox" class="checkbox" id="selectAll"></th>';
+      } else {
+        headerHtml += '<th style="text-align:' + (col.align || 'left') + ';">' + col.label + '</th>';
+      }
+    });
+    headerHtml += '</tr>';
+    thead.innerHTML = headerHtml;
+
+    if (data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="' + headers.length + '" style="text-align:center;padding:40px;color:var(--text-quaternary);">暂无数据</td></tr>';
+      return;
+    }
+
+    var html = '';
+    data.forEach(function(item, rowIndex) {
+      html += '<tr>';
+      html += '<td style="text-align:' + (headers[0].align || 'center') + ';"><input type="checkbox" class="checkbox row-checkbox" data-id="' + item.id + '"></td>';
+      html += '<td style="text-align:' + (headers[1].align || 'center') + ';">' + item.id + '</td>';
+
+      // 根据数据类型渲染不同列
+      if (currentType === 'teachers') {
+        html += '<td style="text-align:' + (headers[2].align || 'left') + ';">' + item.name + '</td>';
+        html += '<td style="text-align:' + (headers[3].align || 'center') + ';"><span style="padding:2px 8px;background:' + (item.type === '专任' ? 'rgba(82,196,26,0.12);color:#52c41a' : 'rgba(250,173,20,0.12);color:#faad14') + ';border-radius:3px;font-size:0.786rem;">' + item.type + '</span></td>';
+        html += '<td style="text-align:' + (headers[4].align || 'center') + ';">' + item.maxExams + '</td>';
+        html += '<td style="text-align:' + (headers[5].align || 'center') + ';"><span class="icon-cell" onclick="showSchedule(' + item.id + ', \'' + item.name + '\', ' + (item.scheduled || 0) + ')"><i class="fa-solid fa-clipboard-list"></i> ' + (item.scheduled || 0) + '</span></td>';
+        html += '<td style="text-align:' + (headers[6].align || 'center') + ';"><span style="padding:2px 8px;background:' + (item.enabled ? 'rgba(82,196,26,0.12);color:#52c41a' : 'rgba(255,77,79,0.12);color:#ff4d4f') + ';border-radius:3px;font-size:0.786rem;">' + (item.enabled ? '是' : '否') + '</span></td>';
+        html += '<td style="text-align:' + (headers[7].align || 'center') + ';"><button class="btn btn-outline" style="font-size:0.786rem;padding:3px 10px;" onclick="editItem(' + item.id + ')">编辑</button></td>';
+      } else if (currentType === 'classrooms') {
+        html += '<td style="text-align:' + (headers[2].align || 'left') + ';">' + item.name + '</td>';
+        html += '<td style="text-align:' + (headers[3].align || 'center') + ';">' + item.capacity + '</td>';
+        html += '<td style="text-align:' + (headers[4].align || 'center') + ';"><span style="padding:2px 8px;background:' + (item.roomType === '阶梯' ? 'rgba(22,104,220,0.12);color:#1668dc' : 'rgba(82,196,26,0.12);color:#52c41a') + ';border-radius:3px;font-size:0.786rem;">' + item.roomType + '</span></td>';
+        html += '<td style="text-align:' + (headers[5].align || 'left') + ';">' + item.building + '</td>';
+        html += '<td style="text-align:' + (headers[6].align || 'center') + ';">' + item.floor + '层</td>';
+        html += '<td style="text-align:' + (headers[7].align || 'center') + ';"><span style="padding:2px 8px;background:' + (item.enabled ? 'rgba(82,196,26,0.12);color:#52c41a' : 'rgba(255,77,79,0.12);color:#ff4d4f') + ';border-radius:3px;font-size:0.786rem;">' + (item.enabled ? '是' : '否') + '</span></td>';
+        html += '<td style="text-align:' + (headers[8].align || 'center') + ';"><button class="btn btn-outline" style="font-size:0.786rem;padding:3px 10px;" onclick="editItem(' + item.id + ')">编辑</button></td>';
+      } else if (currentType === 'courses') {
+        html += '<td style="text-align:' + (headers[2].align || 'left') + ';">' + item.name + '</td>';
+        html += '<td style="text-align:' + (headers[3].align || 'center') + ';"><span style="padding:2px 8px;background:' + (item.type === '公共课' ? 'rgba(22,104,220,0.12);color:#4ea6ff' : 'rgba(82,196,26,0.12);color:#52c41a') + ';border-radius:3px;font-size:0.786rem;">' + item.type + '</span></td>';
+        html += '<td style="text-align:' + (headers[4].align || 'center') + ';"><span style="padding:2px 8px;background:' + (item.needs_ab ? 'rgba(250,173,20,0.12);color:#faad14' : 'rgba(255,255,255,0.06);color:#8c8c8c') + ';border-radius:3px;font-size:0.786rem;">' + (item.needs_ab ? '是' : '否') + '</span></td>';
+        // 分配日期
+        var dayNames = {1:'周一',2:'周二',3:'周三',4:'周四',5:'周五'};
+        html += '<td style="text-align:' + (headers[5].align || 'center') + ';">' + (item.dept_assigned_date ? dayNames[item.dept_assigned_date] : '--') + '</td>';
+        // 分配时段（简化显示）
+        var slotMap = {1:'T1',2:'T2',3:'T3',4:'T4',5:'T1',6:'T2',7:'T3',8:'T4'};
+        html += '<td style="text-align:' + (headers[6].align || 'center') + ';">' + (item.dept_assigned_time_slot_id ? slotMap[item.dept_assigned_time_slot_id] || item.dept_assigned_time_slot_id : '--') + '</td>';
+        // 关联班级
+        html += '<td style="text-align:' + (headers[7].align || 'center') + ';"><span class="icon-cell" style="cursor:default;"><i class="fa-solid fa-users"></i> ' + (item.linked_class_count || 0) + '个班</span></td>';
+        html += '<td style="text-align:' + (headers[8].align || 'center') + ';"><span style="padding:2px 8px;background:' + (item.enabled ? 'rgba(82,196,26,0.12);color:#52c41a' : 'rgba(255,77,79,0.12);color:#ff4d4f') + ';border-radius:3px;font-size:0.786rem;">' + (item.enabled ? '是' : '否') + '</span></td>';
+        html += '<td style="text-align:' + (headers[9].align || 'center') + ';"><button class="btn btn-outline" style="font-size:0.786rem;padding:3px 10px;" onclick="editItem(' + item.id + ')">编辑</button></td>';
+      } else if (currentType === 'classes') {
+        html += '<td style="text-align:' + (headers[2].align || 'left') + ';">' + item.name + '</td>';
+        html += '<td style="text-align:' + (headers[3].align || 'left') + ';">' + (item.major_name || '--') + '</td>';
+        html += '<td style="text-align:' + (headers[4].align || 'center') + ';">' + (item.grade ? item.grade + '级' : '--') + '</td>';
+        html += '<td style="text-align:' + (headers[5].align || 'center') + ';">' + (item.student_count || 0) + '</td>';
+        html += '<td style="text-align:' + (headers[6].align || 'center') + ';"><button class="btn btn-outline" style="font-size:0.786rem;padding:3px 10px;" onclick="editItem(' + item.id + ')">编辑</button></td>';
+      } else if (currentType === 'students') {
+        html += '<td style="text-align:' + (headers[2].align || 'left') + ';">' + item.student_no + '</td>';
+        html += '<td style="text-align:' + (headers[3].align || 'left') + ';">' + item.name + '</td>';
+        html += '<td style="text-align:' + (headers[4].align || 'left') + ';">' + (item.class_name || '--') + '</td>';
+        html += '<td style="text-align:' + (headers[5].align || 'center') + ';">' + (item.grade ? item.grade + '级' : '--') + '</td>';
+        html += '<td style="text-align:' + (headers[6].align || 'center') + ';"><button class="btn btn-outline" style="font-size:0.786rem;padding:3px 10px;" onclick="editItem(' + item.id + ')">编辑</button></td>';
+      } else if (currentType === 'majors') {
+        html += '<td style="text-align:' + (headers[2].align || 'left') + ';">' + item.name + '</td>';
+        html += '<td style="text-align:' + (headers[3].align || 'center') + ';"><button class="btn btn-outline" style="font-size:0.786rem;padding:3px 10px;" onclick="editItem(' + item.id + ')">编辑</button></td>';
+      } else if (currentType === 'timeslots') {
+        html += '<td style="text-align:' + (headers[2].align || 'center') + ';">' + item.day_name + '</td>';
+        html += '<td style="text-align:' + (headers[3].align || 'center') + ';"><span style="padding:2px 8px;background:rgba(22,104,220,0.12);color:#4ea6ff;border-radius:3px;font-size:0.786rem;">' + item.slot_code + '</span></td>';
+        html += '<td style="text-align:' + (headers[4].align || 'center') + ';">' + item.start_time + '</td>';
+        html += '<td style="text-align:' + (headers[5].align || 'center') + ';">' + item.end_time + '</td>';
+        html += '<td style="text-align:' + (headers[6].align || 'center') + ';"><span style="padding:2px 8px;background:' + (item.is_continuous ? 'rgba(82,196,26,0.12);color:#52c41a' : 'rgba(255,77,79,0.12);color:#ff4d4f') + ';border-radius:3px;font-size:0.786rem;">' + (item.is_continuous ? '是' : '否') + '</span></td>';
+        html += '<td style="text-align:' + (headers[7].align || 'center') + ';"><button class="btn btn-outline" style="font-size:0.786rem;padding:3px 10px;" onclick="editItem(' + item.id + ')">编辑</button></td>';
+      } else {
+        html += '<td>' + (item.name || '-') + '</td>';
+        html += '<td>-</td>';
+        html += '<td>-</td>';
+        html += '<td><button class="btn btn-outline" style="font-size:0.786rem;padding:3px 10px;" onclick="editItem(' + item.id + ')">编辑</button></td>';
+      }
+
+      html += '</tr>';
+    });
+
+    tbody.innerHTML = html;
+
+    // 更新统计
+    updateStats(data);
+  }
+  
+  // ========== 更新统计信息 ==========
+  function updateStats(data) {
+    document.getElementById('statTotal').textContent = data.length;
+    
+    if (currentType === 'teachers' && data.length > 0 && data[0].hasOwnProperty('maxExams')) {
+      var avg = Math.round(data.reduce(function(sum, item) { return sum + item.maxExams; }, 0) / data.length);
+      var scheduled = data.reduce(function(sum, item) { return sum + item.scheduled; }, 0);
+      document.getElementById('statAvg').textContent = avg;
+      document.getElementById('statScheduled').textContent = scheduled;
+      document.getElementById('statAvailable').textContent = scheduled > 0 ? Math.round(scheduled / data.length) : 0;
+    } else if (currentType === 'classrooms') {
+      var totalCapacity = data.reduce(function(sum, item) { return sum + (item.capacity || 0); }, 0);
+      document.getElementById('statAvg').textContent = totalCapacity;
+      document.getElementById('statScheduled').textContent = data.length;
+      document.getElementById('statAvailable').textContent = Math.round(totalCapacity / data.length);
+    } else {
+      document.getElementById('statAvg').textContent = '-';
+      document.getElementById('statScheduled').textContent = '-';
+      document.getElementById('statAvailable').textContent = '-';
+    }
+    
+    document.getElementById('paginationInfo').textContent = '共 ' + data.length + ' 条';
+  }
+  
+  // ========== 新增面板 ==========
+  window.showAddPanel = function() {
+    alert('打开新增面板（功能待实现）');
+  };
+  
+  // ========== 显示教师排考详情 ==========
+  window.showSchedule = function(id, name, scheduled) {
+    var info = mockData.teacherSchedules[id] || {fixed: 0, patrol: 0, max: 0, list: []};
+    var teacher = mockData.teachers.find(function(t) { return t.id === id; }) || {};
+
+    // 填充标题和信息
+    document.getElementById('modalTitle').textContent = name + ' - 监考安排';
+    document.getElementById('modalTeacherName').textContent = name;
+    document.getElementById('modalFixedCount').textContent = info.fixed + '场';
+    document.getElementById('modalPatrolCount').textContent = info.patrol + '场';
+    document.getElementById('modalRatio').textContent = info.fixed + ' / ' + (teacher.maxExams || info.max);
+
+    // 填充表格
+    var tbody = document.getElementById('modalTableBody');
+    var html = '';
+    if (info.list.length === 0) {
+      html = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-quaternary);">暂无监考安排</td></tr>';
+    } else {
+      info.list.forEach(function(item) {
+        html += '<tr>';
+        html += '<td>' + item.day + '</td>';
+        html += '<td>' + item.slot + '</td>';
+        html += '<td>' + item.course + '</td>';
+        html += '<td style="text-align:center;"><span class="' + (item.type === '公共课' ? 'modal-tag-public' : 'modal-tag-major') + '">' + item.type + '</span></td>';
+        html += '<td style="text-align:center;"><span class="modal-ab-label">' + item.ab + '</span></td>';
+        html += '<td style="text-align:center;">' + item.room + '</td>';
+        html += '<td style="text-align:center;">' + item.count + '</td>';
+        html += '</tr>';
+      });
+    }
+    tbody.innerHTML = html;
+
+    // 显示模态窗口
+    document.getElementById('scheduleModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+  };
+
+  // ========== 关闭模态窗口 ==========
+  window.closeModal = function() {
+    document.getElementById('scheduleModal').classList.remove('active');
+    document.body.style.overflow = '';
+  };
+
+  // 点击遮罩关闭
+  document.getElementById('scheduleModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  // ESC 键关闭
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  // ========== 编辑项目 ==========
+  window.editItem = function(id) {
+    alert('编辑ID: ' + id + '（功能待实现）');
+  };
+  
+  // ========== 导入数据 ==========
+  window.importData = function() {
+    alert('导入数据（功能待实现）');
+  };
+  
+  // ========== 导出数据 ==========
+  window.exportData = function() {
+    alert('导出数据（功能待实现）');
+  };
+  
+  // ========== 返回首页 ==========
+  window.goHome = function() {
+    alert('返回首页（功能待实现）');
+  };
+  
+  // ========== 初始化 ==========
+  renderTable();
+  
+})();
+</script>
+<!-- ========== 监考安排详情模态窗口 ========== -->
+<div class="modal-overlay" id="scheduleModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">教师 - 监考安排</div>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- 教师信息卡片 -->
+      <div class="modal-info-card">
+        <div class="modal-info-name" id="modalTeacherName">教师姓名</div>
+        <div class="modal-info-stats">
+          <div class="modal-stat-item">
+            固定监考: <span class="modal-stat-tag blue" id="modalFixedCount">0场</span>
+          </div>
+          <div class="modal-stat-item">
+            流动监考: <span class="modal-stat-tag yellow" id="modalPatrolCount">0场</span>
+          </div>
+          <div class="modal-stat-item">
+            场次: <span class="modal-stat-ratio" id="modalRatio">0 / 0</span>
+          </div>
+        </div>
+      </div>
+      <!-- 固定监考分组 -->
+      <div class="modal-section-header">
+        <i class="fa-solid fa-user-check"></i>
+        固定监考
+      </div>
+      <div class="modal-table-wrap">
+        <table class="modal-table">
+          <thead>
+            <tr>
+              <th style="width:60px;">日期</th>
+              <th style="width:120px;">时段</th>
+              <th style="width:200px;">课程</th>
+              <th style="width:80px;text-align:center;">类型</th>
+              <th style="width:50px;text-align:center;">AB卷</th>
+              <th style="width:90px;text-align:center;">分配教室</th>
+              <th style="width:70px;text-align:center;">总人数</th>
+            </tr>
+          </thead>
+          <tbody id="modalTableBody">
+            <!-- 动态填充 -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

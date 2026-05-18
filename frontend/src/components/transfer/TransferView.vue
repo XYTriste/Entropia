@@ -48,21 +48,17 @@
             placeholder="选择教师"
           >
             <el-option
-              v-for="t in allTeachers"
+              v-for="t in (form.transferType === 'batch-transfer' ? allTeachers : teacherBOptions)"
               :key="t.id"
-              :label="`${t.name} (${t.current_slots || 0}/${t.max_slots || 0}场)`"
+              :label="t.name"
               :value="t.id"
             />
           </el-select>
         </el-form-item>
 
-        <template v-if="form.transferType === 'swap' || form.transferType === 'transfer'">
-          <el-form-item :label="form.transferType === 'swap' ? '教师A考试' : '目标考试'" required>
-            <el-select
-              v-model="form.examAId"
-              filterable
-              placeholder="选择考试"
-            >
+        <template v-if="form.transferType === 'transfer' || form.transferType === 'batch-transfer'">
+          <el-form-item label="目标考试">
+            <el-select v-model="form.targetExamId" filterable placeholder="选择考试">
               <el-option
                 v-for="e in teacherAExams"
                 :key="e.exam_id"
@@ -73,30 +69,8 @@
           </el-form-item>
         </template>
 
-        <template v-if="form.transferType === 'swap'">
-          <el-form-item label="教师B考试" required>
-            <el-select
-              v-model="form.examBId"
-              filterable
-              placeholder="选择考试"
-            >
-              <el-option
-                v-for="e in teacherBExams"
-                :key="e.exam_id"
-                :label="`${e.course_name}（${e.day_name} ${e.time_str}）`"
-                :value="e.exam_id"
-              />
-            </el-select>
-          </el-form-item>
-        </template>
-
         <el-form-item label="调剂原因" required>
-          <el-input
-            v-model="form.reason"
-            type="textarea"
-            :rows="2"
-            placeholder="请输入调剂原因（必填）"
-          />
+          <el-input v-model="form.reason" type="textarea" :rows="2" placeholder="请输入调剂原因（必填）" />
         </el-form-item>
 
         <el-form-item>
@@ -153,7 +127,7 @@ import api from '@/api/index.js'
 
 const allTeachers = ref([])
 const teacherAExams = ref([])
-const teacherBExams = ref([])
+const teacherBOptions = ref([])
 const submitting = ref(false)
 const undoing = ref(false)
 const transferHistory = ref([])
@@ -162,8 +136,7 @@ const form = ref({
   transferType: 'swap', // swap | transfer | batch-transfer
   teacherAId: null,
   teacherBId: null,
-  examAId: null,
-  examBId: null,
+  targetExamId: null,
   reason: '',
 })
 
@@ -179,11 +152,9 @@ async function loadTeachers() {
 async function loadTeacherExams(teacherId) {
   if (!teacherId) return []
   try {
-    // 获取教师的监考安排
     const res = await api.get('/exams/', {
       params: { page: 1, page_size: 500 },
     })
-    // 过滤出该教师的考试
     const exams = (res.items || []).filter(e =>
       (e.teachers || []).some(t => t.teacher_id === teacherId)
     )
@@ -200,18 +171,14 @@ async function loadTeacherExams(teacherId) {
 }
 
 async function onTeacherAChange(teacherId) {
-  form.value.examAId = null
+  form.value.targetExamId = null
   teacherAExams.value = await loadTeacherExams(teacherId)
 }
 
-async function onTeacherBChange(teacherId) {
-  form.value.examBId = null
-  teacherBExams.value = await loadTeacherExams(teacherId)
-}
-
 function onTransferTypeChange() {
-  form.value.examAId = null
-  form.value.examBId = null
+  form.value.targetExamId = null
+  form.value.teacherBId = null
+  teacherBOptions.value = []
 }
 
 async function doTransfer() {
@@ -220,12 +187,12 @@ async function doTransfer() {
     return
   }
   if (form.value.transferType === 'swap') {
-    if (!form.value.examAId || !form.value.examBId) {
-      ElMessage.warning('请选择教师A和教师B的考试')
+    if (!form.value.targetExamId) {
+      ElMessage.warning('请选择教师A的考试')
       return
     }
   } else if (form.value.transferType === 'transfer') {
-    if (!form.value.examAId) {
+    if (!form.value.targetExamId) {
       ElMessage.warning('请选择目标考试')
       return
     }
@@ -247,16 +214,15 @@ async function doTransfer() {
       result = await api.post('/adjustments/teacher-swap', {
         teacher_a_id: teacherAId,
         teacher_b_id: teacherBId,
-        exam_a_id: form.value.examAId,
-        exam_b_id: form.value.examBId,
+        exam_a_id: form.value.targetExamId,
+        exam_b_id: form.value.targetExamId,
         reason,
       })
     } else if (type === 'transfer') {
       result = await api.post('/adjustments/teacher-transfer', {
         from_teacher_id: teacherAId,
         to_teacher_id: teacherBId,
-        exam_id: form.value.examAId,
-        role: 'fixed',
+        exam_id: form.value.targetExamId,
         reason,
       })
     } else if (type === 'batch-transfer') {
@@ -275,9 +241,9 @@ async function doTransfer() {
       teacherAName,
       teacherBName,
       examInfo: type === 'swap'
-        ? `考试A: ${form.value.examAId}, 考试B: ${form.value.examBId}`
+        ? `考试A: ${form.value.targetExamId}, 考试B: ${form.value.targetExamId}`
         : type === 'transfer'
-        ? `考试: ${form.value.examAId}`
+        ? `考试: ${form.value.targetExamId}`
         : '全部考试',
       reason,
       time: new Date().toLocaleString(),
@@ -288,12 +254,11 @@ async function doTransfer() {
       transferType: 'swap',
       teacherAId: null,
       teacherBId: null,
-      examAId: null,
-      examBId: null,
+      targetExamId: null,
       reason: '',
     }
     teacherAExams.value = []
-    teacherBExams.value = []
+    teacherBOptions.value = []
   } catch (e) {
     ElMessage.error('调剂失败: ' + (e.response?.data?.message || e.message))
   } finally {
@@ -306,7 +271,6 @@ async function undoLastTransfer() {
   try {
     await api.post('/adjustments/undo-last')
     ElMessage.success('已撤销上次调剂')
-    // 刷新教师场次
     if (form.value.teacherAId) {
       teacherAExams.value = await loadTeacherExams(form.value.teacherAId)
     }
@@ -342,17 +306,136 @@ onMounted(() => {
 
 <style scoped>
 .transfer-view {
+  --bg-start: #0a0e27;
+  --bg-end: #1a1f3a;
+  --card-bg: #111827;
+  --card-border: #1f2937;
+  --accent: #1677ff;
+  --accent-light: rgba(22, 119, 255, 0.15);
+  --text-primary: #ffffff;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --radius: 8px;
+
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+  min-height: calc(100vh - 64px);
+  background: var(--bg-start);
+  position: relative;
+  overflow: hidden;
 }
+
+/* 扫光特效 - 青色 */
+.transfer-view::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -60%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(6, 182, 212, 0.07) 45%,
+    rgba(6, 182, 212, 0.12) 50%,
+    rgba(6, 182, 212, 0.07) 55%,
+    transparent 70%
+  );
+  transform: rotate(25deg);
+  animation: sweepLight 6s infinite linear;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 网格纹理背景 */
+.transfer-view::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(0, 255, 255, 0.03) 0px, rgba(0, 255, 255, 0.03) 1px, transparent 1px, transparent 12px),
+    repeating-linear-gradient(90deg, rgba(0, 255, 255, 0.03) 0px, rgba(0, 255, 255, 0.03) 1px, transparent 1px, transparent 12px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes sweepLight {
+  0% { transform: rotate(25deg) translateX(-30%) translateY(-30%); }
+  100% { transform: rotate(25deg) translateX(30%) translateY(30%); }
+}
+
 .page-title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #1F2937;
+  color: var(--text-primary);
   margin-bottom: 24px;
+  position: relative;
+  z-index: 2;
 }
-.mb-4 {
-  margin-bottom: 16px;
+
+.mb-4 { margin-bottom: 16px; }
+
+/* Element Plus 深色适配 */
+:deep(.el-alert--info) {
+  background: rgba(6, 182, 212, 0.1);
+  border-color: rgba(6, 182, 212, 0.3);
+  color: var(--text-primary);
+}
+:deep(.el-card) {
+  background: var(--card-bg);
+  border-color: var(--card-border);
+  color: var(--text-primary);
+}
+:deep(.el-card__header) {
+  border-bottom-color: var(--card-border);
+}
+:deep(.el-form-item__label) {
+  color: var(--text-secondary);
+}
+:deep(.el-input__wrapper) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--card-border);
+  box-shadow: none;
+}
+:deep(.el-input__inner) {
+  color: var(--text-primary);
+}
+:deep(.el-select .el-input__wrapper) {
+  background: rgba(255, 255, 255, 0.08);
+}
+:deep(.el-radio-button__inner) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--card-border);
+  color: var(--text-primary);
+}
+:deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background: linear-gradient(135deg, #06b6d4, #22d3ee);
+  border-color: transparent;
+  color: #fff;
+}
+:deep(.el-table) {
+  background: transparent;
+  color: var(--text-primary);
+}
+:deep(.el-table__header th) {
+  background: rgba(6, 182, 212, 0.1);
+  color: var(--text-primary);
+  border-bottom-color: var(--card-border);
+}
+:deep(.el-table__body tr) {
+  background: transparent;
+}
+:deep(.el-table__body td) {
+  border-bottom-color: var(--card-border);
+}
+:deep(.el-table--striped .el-table__body tr.el-table__row--striped td) {
+  background: rgba(255, 255, 255, 0.03);
+}
+:deep(.el-tag) {
+  border-color: var(--card-border);
 }
 </style>

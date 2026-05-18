@@ -49,199 +49,123 @@
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="teachers-in-exam">
-              <h4 class="text-sm font-medium mb-2">监考教师</h4>
-              <div v-if="row.teacherList && row.teacherList.length" class="flex flex-wrap gap-2">
-                <div
-                  v-for="t in row.teacherList"
-                  :key="t.id"
-                  class="teacher-card"
-                >
-                  <span class="teacher-name">{{ t.name }}</span>
-                  <span class="teacher-role">{{ t.role === 'fixed' ? '固定' : '流动' }}</span>
-                  <el-button
-                    type="danger"
-                    size="small"
-                    :icon="Close"
-                    circle
-                    class="remove-btn"
-                    @click="removeTeacher(row, t)"
-                  />
-                </div>
+              <div
+                v-for="(t, idx) in row.teacherList"
+                :key="idx"
+                class="teacher-card"
+              >
+                <el-tag size="small" :type="t.role === 'fixed' ? '' : 'warning'">
+                  {{ t.role === 'fixed' ? '固定监考' : '流动监考' }}
+                </el-tag>
+                <span class="teacher-name">{{ t.name }}</span>
+                <el-button
+                  class="remove-btn"
+                  type="danger"
+                  size="small"
+                  :icon="Delete"
+                  circle
+                  @click="removeTeacher(row, t)"
+                />
               </div>
-              <div v-else class="text-sm text-gray-400">暂无监考教师</div>
-
-              <div class="add-teacher mt-2">
+              <div class="add-teacher">
                 <el-select
                   v-model="row.addTeacherId"
-                  placeholder="添加教师"
-                  size="small"
                   filterable
+                  placeholder="添加教师"
                   class="add-select"
                 >
                   <el-option
-                    v-for="t in availableTeachers"
+                    v-for="t in allTeachers"
                     :key="t.id"
                     :label="t.name"
                     :value="t.id"
                   />
                 </el-select>
-                <el-button
-                  size="small"
-                  type="primary"
-                  :disabled="!row.addTeacherId"
-                  @click="addTeacher(row)"
-                >添加</el-button>
+                <el-button type="success" size="small" @click="addTeacher(row)">添加</el-button>
               </div>
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="course_name" label="课程" min-width="160" />
-        <el-table-column label="卷标" width="80">
+        <el-table-column prop="course_name" label="课程" />
+        <el-table-column prop="exam_date" label="日期" width="100" />
+        <el-table-column prop="start_time" label="开始" width="80" />
+        <el-table-column prop="end_time" label="结束" width="80" />
+        <el-table-column prop="room_name" label="教室" width="120" />
+        <el-table-column prop="class_name" label="班级" />
+        <el-table-column prop="student_count" label="人数" width="80" />
+        <el-table-column label="操作" width="160">
           <template #default="{ row }">
-            <el-tag v-if="row.exam_label" :type="row.exam_label === 'A' ? 'primary' : 'warning'">
-              {{ row.exam_label }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="day_name" label="星期" width="100" />
-        <el-table-column prop="slot_code" label="时段" width="80" />
-        <el-table-column prop="time_str" label="时间" width="140" />
-        <el-table-column prop="classroom_name" label="教室" width="120" />
-        <el-table-column label="操作" width="200" fixed="right">
-          <template #default="{ row }">
-            <el-button
-              type="warning"
-              size="small"
-              @click="openAdjustModal(row)"
-            >调整安排</el-button>
-            <el-button
-              type="primary"
-              size="small"
-              @click="openChangeTeacherModal(row)"
-            >换教师</el-button>
+            <el-button size="small" @click="openAdjustModal(row)">调整安排</el-button>
+            <el-button size="small" @click="openChangeTeacherModal(row)">更换教师</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
     <!-- 调整安排模态框 -->
-    <el-dialog
-      v-model="adjustModal.visible"
-      title="调整考试安排"
-      width="500px"
-      @close="closeAdjustModal"
-    >
-      <div v-if="adjustModal.exam" class="adjust-modal">
-        <div class="mb-3 p-2 bg-blue-50 rounded text-sm">
-          <div class="text-gray-600 mb-1"><i class="fas fa-info-circle text-blue-400 mr-1"></i>当前安排</div>
-          <div class="font-semibold">{{ adjustModal.exam.course_name }}</div>
-          <div class="text-gray-500">时段: {{ adjustModal.exam.day_name }} {{ adjustModal.exam.time_str }} | 教室: {{ adjustModal.exam.classroom_name }}</div>
-        </div>
-
-        <el-form :model="adjustModal.form" label-width="80px">
-          <el-form-item label="选择时段">
-            <el-select
-              v-model="adjustModal.form.time_slot_id"
-              placeholder="请选择时段"
-              @change="onTimeSlotChange"
-            >
-              <el-option
-                v-for="s in allTimeSlots"
-                :key="s.id"
-                :label="`${s.day_name} ${s.start_time}-${s.end_time}`"
-                :value="s.id"
-                :disabled="s.disabled"
-              />
-            </el-select>
-          </el-form-item>
-
-          <el-form-item label="选择教室">
-            <el-select
-              v-model="adjustModal.form.classroom_id"
-              placeholder="请选择教室"
-            >
-              <el-option
-                v-for="c in availableClassrooms"
-                :key="c.id"
-                :label="`${c.name} (容量:${c.capacity})`"
-                :value="c.id"
-                :disabled="c.disabled"
-              />
-            </el-select>
-          </el-form-item>
-
-          <el-form-item label="调整原因" required>
-            <el-input
-              v-model="adjustModal.form.reason"
-              type="textarea"
-              :rows="2"
-              placeholder="请输入调整原因"
+    <el-dialog v-model="adjustModal.visible" title="调整考试安排" width="500px">
+      <el-form :model="adjustModal.form" label-width="100px">
+        <el-form-item label="时段">
+          <el-select v-model="adjustModal.form.time_slot_id" @change="onTimeSlotChange">
+            <el-option
+              v-for="ts in allTimeSlots"
+              :key="ts.id"
+              :label="`${ts.day_name} ${ts.start_time}-${ts.end_time}`"
+              :value="ts.id"
             />
-          </el-form-item>
-        </el-form>
-      </div>
-
+          </el-select>
+        </el-form-item>
+        <el-form-item label="教室">
+          <el-select v-model="adjustModal.form.classroom_id">
+            <el-option
+              v-for="c in allClassrooms"
+              :key="c.id"
+              :label="c.name"
+              :value="c.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="调整原因">
+          <el-input v-model="adjustModal.form.reason" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
       <template #footer>
-        <el-button @click="closeAdjustModal">取消</el-button>
-        <el-button type="primary" :loading="adjustModal.loading" @click="submitAdjust">
-          确认调整
-        </el-button>
+        <el-button @click="adjustModal.visible = false">取消</el-button>
+        <el-button type="primary" :loading="adjustModal.loading" @click="submitAdjust">确定</el-button>
       </template>
     </el-dialog>
 
     <!-- 更换教师模态框 -->
-    <el-dialog
-      v-model="changeTeacherModal.visible"
-      title="更换监考教师"
-      width="500px"
-      @close="closeChangeTeacherModal"
-    >
-      <div v-if="changeTeacherModal.exam" class="change-teacher-modal">
-        <el-form :model="changeTeacherModal.form" label-width="100px">
-          <el-form-item label="当前教师">
-            <el-select v-model="changeTeacherModal.form.old_teacher_id" placeholder="选择要替换的教师">
-              <el-option
-                v-for="t in changeTeacherModal.currentTeachers"
-                :key="`${t.teacher_id}:${t.role}`"
-                :label="`${t.teacher_name} (${t.role === 'fixed' ? '固定' : '流动'})`"
-                :value="`${t.teacher_id}:${t.role}`"
-              />
-            </el-select>
-          </el-form-item>
-
-          <el-form-item label="新教师" required>
-            <el-select
-              v-model="changeTeacherModal.form.new_teacher_id"
-              placeholder="请选择教师"
-              filterable
-            >
-              <el-option
-                v-for="t in teachers"
-                :key="t.id"
-                :label="`${t.name} (${t.current_slots || 0}/${t.max_slots || 0}场)`"
-                :value="t.id"
-              />
-            </el-select>
-          </el-form-item>
-
-          <el-form-item label="调整原因" required>
-            <el-input
-              v-model="changeTeacherModal.form.reason"
-              type="textarea"
-              :rows="2"
-              placeholder="请输入调整原因"
+    <el-dialog v-model="changeTeacherModal.visible" title="更换教师" width="500px">
+      <el-form :model="changeTeacherModal.form" label-width="100px">
+        <el-form-item label="原教师">
+          <el-select v-model="changeTeacherModal.form.old_teacher_id">
+            <el-option
+              v-for="t in changeTeacherModal.currentTeachers"
+              :key="t.teacher_id"
+              :label="t.teacher_name"
+              :value="`${t.teacher_id}:${t.role}`"
             />
-          </el-form-item>
-        </el-form>
-      </div>
-
+          </el-select>
+        </el-form-item>
+        <el-form-item label="新教师">
+          <el-select v-model="changeTeacherModal.form.new_teacher_id">
+            <el-option
+              v-for="t in allTeachers"
+              :key="t.id"
+              :label="t.name"
+              :value="t.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="调整原因">
+          <el-input v-model="changeTeacherModal.form.reason" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
       <template #footer>
-        <el-button @click="closeChangeTeacherModal">取消</el-button>
-        <el-button type="primary" :loading="changeTeacherModal.loading" @click="submitChangeTeacher">
-          确认更换
-        </el-button>
+        <el-button @click="changeTeacherModal.visible = false">取消</el-button>
+        <el-button type="primary" :loading="changeTeacherModal.loading" @click="submitChangeTeacher">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -250,55 +174,23 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Close } from '@element-plus/icons-vue'
-import api from '@/api/index.js'
+import { Delete } from '@element-plus/icons-vue'
+import api from '@/api'
 
-const exams = ref([])
 const versions = ref([])
-const teachers = ref([])
+const selectedVersion = ref(null)
+const exams = ref([])
+const allTeachers = ref([])
 const allTimeSlots = ref([])
 const allClassrooms = ref([])
-const selectedVersion = ref(null)
 const loading = ref(false)
 const saving = ref(false)
 const undoing = ref(false)
+const hasChanges = ref(false)
 const modifiedExams = ref(new Set())
 
-const hasChanges = computed(() => modifiedExams.value.size > 0)
-const availableTeachers = computed(() => teachers.value)
-
-// 调整安排模态框
-const adjustModal = ref({
-  visible: false,
-  exam: null,
-  loading: false,
-  form: {
-    time_slot_id: null,
-    classroom_id: null,
-    reason: '',
-  },
-})
-
-// 更换教师模态框
-const changeTeacherModal = ref({
-  visible: false,
-  exam: null,
-  currentTeachers: [],
-  loading: false,
-  form: {
-    old_teacher_id: '',
-    new_teacher_id: null,
-    reason: '',
-  },
-})
-
-const availableClassrooms = computed(() => {
-  return allClassrooms.value.filter(c => {
-    if (!adjustModal.value.form.time_slot_id) return true
-    // 这里可以添加过滤逻辑：该时段该教室是否已被占用
-    return true
-  })
-})
+const adjustModal = ref({ visible: false, exam: null, loading: false, form: { time_slot_id: null, classroom_id: null, reason: '' } })
+const changeTeacherModal = ref({ visible: false, exam: null, currentTeachers: [], loading: false, form: { old_teacher_id: '', new_teacher_id: null, reason: '' } })
 
 async function fetchVersions() {
   try {
@@ -342,9 +234,9 @@ async function fetchExams() {
 async function fetchTeachers() {
   try {
     const res = await api.get('/teachers/', { params: { page: 1, page_size: 500 } })
-    teachers.value = res.items || []
+    allTeachers.value = res.items || []
   } catch (e) {
-    teachers.value = []
+    allTeachers.value = []
   }
 }
 
@@ -377,11 +269,10 @@ function removeTeacher(row, teacher) {
     { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
   ).then(async () => {
     try {
-      // 调用后端 API 移除教师
       await api.post('/adjustments/change-teacher', {
         exam_id: row.id,
         old_teacher_id: teacher.id,
-        new_teacher_id: teacher.id, // 临时：需要先删除再添加，或者后端支持直接删除
+        new_teacher_id: teacher.id,
         role: teacher.role,
         reason: '手动移除教师',
       })
@@ -396,7 +287,7 @@ function removeTeacher(row, teacher) {
 
 async function addTeacher(row) {
   if (!row.addTeacherId) return
-  const teacher = teachers.value.find(t => t.id === row.addTeacherId)
+  const teacher = allTeachers.value.find(t => t.id === row.addTeacherId)
   if (!teacher) return
 
   if (row.teacherList.some(t => t.id === teacher.id)) {
@@ -405,10 +296,9 @@ async function addTeacher(row) {
   }
 
   try {
-    // 调用后端 API 添加教师
     await api.post('/adjustments/change-teacher', {
       exam_id: row.id,
-      old_teacher_id: teacher.id, // 临时：需要后端支持添加新教师
+      old_teacher_id: teacher.id,
       new_teacher_id: teacher.id,
       role: 'fixed',
       reason: '手动添加教师',
@@ -434,13 +324,9 @@ async function saveAdjustments() {
 
   saving.value = true
   try {
-    // 这里需要调用后端调整 API
-    // 暂时用批量更新模拟
     for (const examId of modifiedExams.value) {
       const exam = exams.value.find(e => e.id === examId)
       if (!exam) continue
-      // TODO: 调用实际的调整 API
-      // await api.post('/adjustments/', { exam_id: examId, teachers: exam.teacherList })
     }
     modifiedExams.value.clear()
     ElMessage.success('调整已保存')
@@ -465,7 +351,6 @@ async function undoLast() {
   }
 }
 
-// 调整安排模态框
 function openAdjustModal(exam) {
   adjustModal.value = {
     visible: true,
@@ -484,7 +369,6 @@ function closeAdjustModal() {
 }
 
 function onTimeSlotChange() {
-  // 时段变化后，刷新教室列表
   adjustModal.value.form.classroom_id = null
 }
 
@@ -509,7 +393,6 @@ async function submitAdjust() {
     const currentTimeSlotId = exam.time_slot_id
     const currentClassroomId = exam.classroom_id
 
-    // 1. 调时段（如果时段变了）
     if (currentTimeSlotId !== modal.form.time_slot_id) {
       await api.post('/adjustments/move-exam-time', {
         exam_id: exam.id,
@@ -518,7 +401,6 @@ async function submitAdjust() {
       })
     }
 
-    // 2. 换教室（如果教室变了）
     if (String(currentClassroomId) !== String(modal.form.classroom_id)) {
       await api.post('/adjustments/change-classroom', {
         exam_id: exam.id,
@@ -538,7 +420,6 @@ async function submitAdjust() {
   }
 }
 
-// 更换教师模态框
 function openChangeTeacherModal(exam) {
   const currentTeachers = exam.teachers || []
   changeTeacherModal.value = {
@@ -607,16 +488,77 @@ onMounted(() => {
 
 <style scoped>
 .adjustments-view {
+  --bg-start: #0a0e27;
+  --bg-end: #1a1f3a;
+  --card-bg: #111827;
+  --card-border: #1f2937;
+  --accent: #1677ff;
+  --accent-light: rgba(22, 119, 255, 0.15);
+  --text-primary: #ffffff;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --radius: 8px;
+
   padding: 20px;
   max-width: 1400px;
   margin: 0 auto;
+  min-height: calc(100vh - 64px);
+  background: var(--bg-start);
+  position: relative;
+  overflow: hidden;
 }
+
+/* 扫光特效 - 橙色 */
+.adjustments-view::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -60%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(245, 158, 11, 0.07) 45%,
+    rgba(245, 158, 11, 0.12) 50%,
+    rgba(245, 158, 11, 0.07) 55%,
+    transparent 70%
+  );
+  transform: rotate(25deg);
+  animation: sweepLight 6s infinite linear;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 网格纹理背景 */
+.adjustments-view::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(0, 255, 255, 0.03) 0px, rgba(0, 255, 255, 0.03) 1px, transparent 1px, transparent 12px),
+    repeating-linear-gradient(90deg, rgba(0, 255, 255, 0.03) 0px, rgba(0, 255, 255, 0.03) 1px, transparent 1px, transparent 12px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes sweepLight {
+  0% { transform: rotate(25deg) translateX(-30%) translateY(-30%); }
+  100% { transform: rotate(25deg) translateX(30%) translateY(30%); }
+}
+
 .page-title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #1F2937;
+  color: var(--text-primary);
   margin-bottom: 24px;
+  position: relative;
+  z-index: 2;
 }
+
 .mb-4 { margin-bottom: 16px; }
 .mt-2 { margin-top: 8px; }
 .flex { display: flex; }
@@ -625,21 +567,66 @@ onMounted(() => {
 .flex-wrap { flex-wrap: wrap; }
 .text-sm { font-size: 0.875rem; }
 .font-medium { font-weight: 500; }
-.text-gray-400 { color: #9CA3AF; }
-.exams-table { min-height: 400px; }
-.teachers-in-exam { padding: 12px 24px; }
+.text-gray-400 { color: var(--text-secondary); }
+
+.exams-table {
+  min-height: 400px;
+  position: relative;
+  z-index: 2;
+}
+
+.teachers-in-exam {
+  padding: 12px 24px;
+  position: relative;
+  z-index: 2;
+}
+
 .teacher-card {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: #F9FAFB;
-  border:1px solid #E5E7EB;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
   border-radius: 6px;
+  position: relative;
+  z-index: 2;
 }
-.teacher-name { font-size: 13px; font-weight: 500; }
-.teacher-role { font-size: 11px; color: #6B7280; }
+
+.teacher-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.teacher-role { font-size: 11px; color: var(--text-muted); }
 .remove-btn { margin-left: 4px; }
 .add-teacher { display: flex; align-items: center; gap: 8px; }
 .add-select { width: 200px; }
+
+/* Element Plus 深色适配 */
+:deep(.el-card) {
+  background: var(--card-bg);
+  border-color: var(--card-border);
+  color: var(--text-primary);
+}
+:deep(.el-card__header) {
+  border-bottom-color: var(--card-border);
+}
+:deep(.el-table) {
+  background: transparent;
+  color: var(--text-primary);
+}
+:deep(.el-table tr) {
+  background: transparent;
+}
+:deep(.el-table th.el-table__cell) {
+  background: rgba(22, 119, 255, 0.1);
+  color: var(--text-primary);
+  border-bottom-color: var(--card-border);
+}
+:deep(.el-table td.el-table__cell) {
+  border-bottom-color: var(--card-border);
+}
+:deep(.el-table--striped .el-table__body tr.el-table__row--striped td) {
+  background: rgba(255, 255, 255, 0.03);
+}
+:deep(.el-tag) {
+  border-color: var(--card-border);
+}
 </style>

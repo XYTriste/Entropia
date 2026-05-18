@@ -290,8 +290,9 @@ async def run_scheduler(
         return {"code": 0, "message": "success", "data": _scheduler_jobs[job_id]}
 
     except Exception as e:
+        import traceback
         _scheduler_jobs[job_id]["status"] = "failed"
-        _scheduler_jobs[job_id]["error"] = str(e)
+        _scheduler_jobs[job_id]["error"] = f"{str(e)}\n{traceback.format_exc()}"
         return {"code": 0, "message": "排考失败", "data": _scheduler_jobs[job_id]}
 
 

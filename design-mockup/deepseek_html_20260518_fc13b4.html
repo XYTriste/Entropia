@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>教师监考负荷 · 科技感卡片演示</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: radial-gradient(circle at 10% 20%, #0a0f1f, #02060c);
+            font-family: 'Segoe UI', 'Poppins', 'Inter', system-ui, sans-serif;
+            padding: 2rem 1.5rem;
+            min-height: 100vh;
+        }
+
+        /* 整体容器 */
+        .demo-container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* 头部说明 */
+        .demo-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .demo-header h1 {
+            font-size: 2rem;
+            background: linear-gradient(135deg, #aaffff, #2a9df4);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            letter-spacing: 1px;
+        }
+        .demo-header p {
+            color: #8aaee0;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        /* 教师网格布局 */
+        .teachers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.8rem;
+        }
+
+        /* 卡片基础样式 (玻璃质感 + 悬浮效果) */
+        .teacher-card {
+            background: rgba(12, 22, 35, 0.65);
+            backdrop-filter: blur(8px);
+            border-radius: 1.8rem;
+            border: 1px solid rgba(0, 255, 255, 0.25);
+            padding: 1.2rem 1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+        }
+        .teacher-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(0, 255, 255, 0.6);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), 0 0 12px rgba(0, 255, 255, 0.2);
+        }
+
+        /* 卡片内顶部区域 */
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .teacher-avatar {
+            width: 52px;
+            height: 52px;
+            border-radius: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 600;
+            background: #1e2a3a;
+            color: white;
+            box-shadow: 0 0 8px cyan;
+        }
+        .teacher-avatar.fulltime {
+            background: linear-gradient(135deg, #0a5f7a, #0c3b4f);
+            border: 1px solid cyan;
+        }
+        .teacher-avatar.parttime {
+            background: linear-gradient(135deg, #3a5a6e, #1c3a48);
+            border: 1px solid #aaaaff;
+        }
+        .teacher-info {
+            flex: 1;
+        }
+        .teacher-name {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #eef5ff;
+            letter-spacing: 0.5px;
+        }
+        .teacher-type {
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-top: 4px;
+            background: rgba(0,0,0,0.4);
+        }
+        .teacher-type.fulltime { color: #0ff; border: 1px solid #0ff; }
+        .teacher-type.parttime { color: #ffb86c; border: 1px solid #ffb86c; }
+        
+        .teacher-stats {
+            text-align: center;
+            background: rgba(0,20,40,0.5);
+            border-radius: 28px;
+            padding: 0.3rem 0;
+            margin-top: 0.5rem;
+        }
+        .stat-item {
+            display: flex;
+            justify-content: center;
+            align-items: baseline;
+            gap: 0.3rem;
+        }
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 800;
+            font-family: monospace;
+            color: #ffd966;
+            text-shadow: 0 0 4px orange;
+        }
+        .stat-label {
+            font-size: 0.7rem;
+            color: #ccddee;
+        }
+
+        /* ========== 科技感详情卡片 (展开区域) ========== */
+        .teacher-detail {
+            margin-top: 1rem;
+            position: relative;
+            animation: cardGlowIn 0.5s cubic-bezier(0.2, 0.9, 0.4, 1.1) forwards;
+            border-radius: 1.2rem;
+            background: linear-gradient(135deg, rgba(10, 20, 35, 0.95), rgba(5, 12, 22, 0.98));
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            overflow: hidden;
+            transition: box-shadow 0.2s;
+        }
+        .teacher-detail:hover {
+            box-shadow: 0 12px 28px rgba(0,0,0,0.4), 0 0 0 1px cyan;
+        }
+
+        /* 扫光特效 */
+        .teacher-detail::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -60%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(
+                115deg,
+                transparent 30%,
+                rgba(0, 255, 255, 0.07) 45%,
+                rgba(0, 255, 255, 0.12) 50%,
+                rgba(0, 255, 255, 0.07) 55%,
+                transparent 70%
+            );
+            transform: rotate(25deg);
+            animation: sweepLight 6s infinite linear;
+            pointer-events: none;
+            z-index: 0;
+        }
+        /* 网格纹理背景 */
+        .teacher-detail::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                repeating-linear-gradient(0deg, rgba(0, 255, 255, 0.03) 0px, rgba(0, 255, 255, 0.03) 1px, transparent 1px, transparent 12px),
+                repeating-linear-gradient(90deg, rgba(0, 255, 255, 0.03) 0px, rgba(0, 255, 255, 0.03) 1px, transparent 1px, transparent 12px);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .detail-header {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.9rem 1rem 0.6rem;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.4);
+            animation: headerPulse 0.9s ease-out;
+        }
+        .teacher-name-large {
+            font-size: 1.3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff, #88ffff);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            text-shadow: 0 0 6px rgba(0,255,255,0.4);
+        }
+        .detail-count {
+            background: rgba(0,20,40,0.7);
+            padding: 0.2rem 0.8rem;
+            border-radius: 40px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            border: 1px solid cyan;
+            box-shadow: 0 0 6px cyan;
+            animation: countGlow 2s infinite alternate;
+        }
+
+        .detail-list {
+            position: relative;
+            z-index: 2;
+            padding: 0.6rem 0.8rem 1rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        /* 每个考试条目 */
+        .detail-item {
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 1rem;
+            margin-bottom: 1rem;
+            padding: 0.8rem 1rem;
+            opacity: 0;
+            transform: translateY(15px);
+            animation: itemSlideIn 0.4s forwards;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+        .detail-item:hover {
+            border-left-color: #0ff;
+            background: rgba(0, 255, 255, 0.08);
+            transform: translateX(3px);
+        }
+
+        /* 使用nth-child 设置延时 */
+        .detail-item:nth-child(1) { animation-delay: 0.05s; }
+        .detail-item:nth-child(2) { animation-delay: 0.1s; }
+        .detail-item:nth-child(3) { animation-delay: 0.15s; }
+        .detail-item:nth-child(4) { animation-delay: 0.2s; }
+        .detail-item:nth-child(5) { animation-delay: 0.25s; }
+        .detail-item:nth-child(6) { animation-delay: 0.3s; }
+
+        /* 每一行样式 - 解决“固定”对齐问题：使用grid */
+        .detail-row {
+            display: grid;
+            grid-template-columns: 80px 1fr;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.8rem;
+        }
+        .detail-label {
+            color: #8ba3cf;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .detail-value {
+            color: #eef5ff;
+            font-weight: 500;
+            text-align: left;
+            word-break: break-word;
+        }
+
+        /* “固定”特殊样式 */
+        .type-value.is-fixed {
+            background: linear-gradient(120deg, #0af, #0fa);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            font-weight: bold;
+            text-shadow: 0 0 5px cyan;
+            animation: fixedPulse 1.5s infinite alternate;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .type-value.is-fixed::before {
+            content: "⚡";
+            font-size: 0.8rem;
+            color: cyan;
+            animation: flicker 0.8s infinite;
+        }
+
+        /* 悬浮行文字发光 */
+        .detail-row:hover .detail-value {
+            text-shadow: 0 0 3px #0af;
+        }
+
+        /* 滚动条美化 */
+        .detail-list::-webkit-scrollbar {
+            width: 5px;
+        }
+        .detail-list::-webkit-scrollbar-track {
+            background: #0a1428;
+            border-radius: 10px;
+        }
+        .detail-list::-webkit-scrollbar-thumb {
+            background: cyan;
+            border-radius: 10px;
+        }
+
+        /* 动画定义 */
+        @keyframes cardGlowIn {
+            0% { opacity: 0; transform: scale(0.96) translateY(-8px); box-shadow: 0 0 0 0 rgba(0,255,255,0); }
+            100% { opacity: 1; transform: scale(1) translateY(0); box-shadow: 0 8px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(0,255,255,0.3); }
+        }
+        @keyframes sweepLight {
+            0% { transform: rotate(25deg) translateX(-30%) translateY(-30%); }
+            100% { transform: rotate(25deg) translateX(30%) translateY(30%); }
+        }
+        @keyframes headerPulse {
+            0% { opacity: 0; transform: scale(0.98); letter-spacing: -0.5px; }
+            60% { opacity: 1; transform: scale(1.02); letter-spacing: 1px; }
+            100% { transform: scale(1); letter-spacing: normal; }
+        }
+        @keyframes countGlow {
+            0% { box-shadow: 0 0 2px cyan; border-color: rgba(0,255,255,0.5); }
+            100% { box-shadow: 0 0 12px cyan; border-color: #0ff; }
+        }
+        @keyframes itemSlideIn {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fixedPulse {
+            0% { text-shadow: 0 0 1px #0ff; opacity: 0.8; }
+            100% { text-shadow: 0 0 8px #0ff, 0 0 2px #0fa; opacity: 1; }
+        }
+        @keyframes flicker {
+            0% { opacity: 0.3; transform: scale(0.9); }
+            100% { opacity: 1; transform: scale(1.1); }
+        }
+
+        /* 其他非展开卡片样式 */
+        .card-expanded .teacher-detail {
+            display: block;
+        }
+
+        /* 底部脚注 */
+        .demo-footer {
+            margin-top: 3rem;
+            text-align: center;
+            font-size: 0.7rem;
+            color: #5f7f9f;
+            border-top: 1px solid rgba(0,255,255,0.2);
+            padding-top: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+<div class="demo-container">
+    <div class="demo-header">
+        <h1>⚡ 监考负荷 · 科技感卡片 ⚡</h1>
+        <p>教师监考场次分布 | 动态扫光 + 霓虹呼吸 | 展开卡片炫酷动效</p>
+    </div>
+
+    <div class="teachers-grid">
+        <!-- 卡片1：梅鹏飞（专任，6场，已展开详情，展示所有动画效果） -->
+        <div class="teacher-card card-expanded">
+            <div class="card-header">
+                <div class="teacher-avatar fulltime">梅</div>
+                <div class="teacher-info">
+                    <div class="teacher-name">梅鹏飞</div>
+                    <div class="teacher-type fulltime">专任教师</div>
+                </div>
+            </div>
+            <div class="teacher-stats">
+                <div class="stat-item">
+                    <span class="stat-value">6</span>
+                    <span class="stat-label">监考场次</span>
+                </div>
+            </div>
+            <!-- 详情区域（展开） 包含所有科技感动画 -->
+            <div class="teacher-detail">
+                <div class="detail-header">
+                    <span class="teacher-name-large">梅鹏飞 · 监考明细</span>
+                    <span class="detail-count">6 场考试</span>
+                </div>
+                <div class="detail-list">
+                    <!-- 考试1 -->
+                    <div class="detail-item">
+                        <div class="detail-row"><span class="detail-label">时间</span><span class="detail-value">周三 10:20-12:00</span></div>
+                        <div class="detail-row"><span class="detail-label">科目</span><span class="detail-value">大学英语读写1/2</span></div>
+                        <div class="detail-row"><span class="detail-label">类型</span><span class="detail-value type-value is-fixed">固定</span></div>
+                        <div class="detail-row"><span class="detail-label">AB卷</span><span class="detail-value">B</span></div>
+                        <div class="detail-row"><span class="detail-label">教室</span><span class="detail-value">5-215</span></div>
+                        <div class="detail-row"><span class="detail-label">班级</span><span class="detail-value">25电信2</span></div>
+                        <div class="detail-row"><span class="detail-label">人数</span><span class="detail-value">23 人</span></div>
+                    </div>
+                    <!-- 考试2 -->
+                    <div class="detail-item">
+                        <div class="detail-row"><span class="detail-label">时间</span><span class="detail-value">周三 15:50-17:30</span></div>
+                        <div class="detail-row"><span class="detail-label">科目</span><span class="detail-value">思想道德与法治1/2</span></div>
+                        <div class="detail-row"><span class="detail-label">类型</span><span class="detail-value type-value is-fixed">固定</span></div>
+                        <div class="detail-row"><span class="detail-label">AB卷</span><span class="detail-value">B</span></div>
+                        <div class="detail-row"><span class="detail-label">教室</span><span class="detail-value">5-212</span></div>
+                        <div class="detail-row"><span class="detail-label">班级</span><span class="detail-value">25工互技术1</span></div>
+                        <div class="detail-row"><span class="detail-label">人数</span><span class="detail-value">25 人</span></div>
+                    </div>
+                    <!-- 考试3 -->
+                    <div class="detail-item">
+                        <div class="detail-row"><span class="detail-label">时间</span><span class="detail-value">周二 15:50-17:30</span></div>
+                        <div class="detail-row"><span class="detail-label">科目</span><span class="detail-value">高等数学1/2</span></div>
+                        <div class="detail-row"><span class="detail-label">类型</span><span class="detail-value type-value is-fixed">固定</span></div>
+                        <div class="detail-row"><span class="detail-label">AB卷</span><span class="detail-value">B</span></div>
+                        <div class="detail-row"><span class="detail-label">教室</span><span class="detail-value">5-209</span></div>
+                        <div class="detail-row"><span class="detail-label">班级</span><span class="detail-value">25工互技术2</span></div>
+                        <div class="detail-row"><span class="detail-label">人数</span><span class="detail-value">26 人</span></div>
+                    </div>
+                    <!-- 考试4 展示长科目名 -->
+                    <div class="detail-item">
+                        <div class="detail-row"><span class="detail-label">时间</span><span class="detail-value">周一 10:20-12:00</span></div>
+                        <div class="detail-row"><span class="detail-label">科目</span><span class="detail-value">XXX新时代中国特色社会主义思想概论</span></div>
+                        <div class="detail-row"><span class="detail-label">类型</span><span class="detail-value type-value is-fixed">固定</span></div>
+                        <div class="detail-row"><span class="detail-label">AB卷</span><span class="detail-value">B</span></div>
+                        <div class="detail-row"><span class="detail-label">教室</span><span class="detail-value">5-206</span></div>
+                        <div class="detail-row"><span class="detail-label">班级</span><span class="detail-value">24数媒3</span></div>
+                        <div class="detail-row"><span class="detail-label">人数</span><span class="detail-value">23 人</span></div>
+                    </div>
+                    <!-- 考试5 -->
+                    <div class="detail-item">
+                        <div class="detail-row"><span class="detail-label">时间</span><span class="detail-value">周一 15:50-17:30</span></div>
+                        <div class="detail-row"><span class="detail-label">科目</span><span class="detail-value">Python程序设计</span></div>
+                        <div class="detail-row"><span class="detail-label">类型</span><span class="detail-value type-value is-fixed">固定</span></div>
+                        <div class="detail-row"><span class="detail-label">AB卷</span><span class="detail-value">未指定</span></div>
+                        <div class="detail-row"><span class="detail-label">教室</span><span class="detail-value">5-203</span></div>
+                        <div class="detail-row"><span class="detail-label">班级</span><span class="detail-value">25智应1</span></div>
+                        <div class="detail-row"><span class="detail-label">人数</span><span class="detail-value">25 人</span></div>
+                    </div>
+                    <!-- 考试6 -->
+                    <div class="detail-item">
+                        <div class="detail-row"><span class="detail-label">时间</span><span class="detail-value">周一 14:00-15:40</span></div>
+                        <div class="detail-row"><span class="detail-label">科目</span><span class="detail-value">C语言程序设计</span></div>
+                        <div class="detail-row"><span class="detail-label">类型</span><span class="detail-value type-value is-fixed">固定</span></div>
+                        <div class="detail-row"><span class="detail-label">AB卷</span><span class="detail-value">未指定</span></div>
+                        <div class="detail-row"><span class="detail-label">教室</span><span class="detail-value">5-307</span></div>
+                        <div class="detail-row"><span class="detail-label">班级</span><span class="detail-value">25工互技术1</span></div>
+                        <div class="detail-row"><span class="detail-label">人数</span><span class="detail-value">26 人</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 卡片2：李微（专任，6场，未展开，展示简约样式） -->
+        <div class="teacher-card">
+            <div class="card-header">
+                <div class="teacher-avatar fulltime">李</div>
+                <div class="teacher-info">
+                    <div class="teacher-name">李微</div>
+                    <div class="teacher-type fulltime">专任教师</div>
+                </div>
+            </div>
+            <div class="teacher-stats">
+                <div class="stat-item"><span class="stat-value">6</span><span class="stat-label">监考场次</span></div>
+            </div>
+        </div>
+
+        <!-- 卡片3：聂犇（专任，6场） -->
+        <div class="teacher-card">
+            <div class="card-header">
+                <div class="teacher-avatar fulltime">聂</div>
+                <div class="teacher-info">
+                    <div class="teacher-name">聂犇</div>
+                    <div class="teacher-type fulltime">专任教师</div>
+                </div>
+            </div>
+            <div class="teacher-stats">
+                <div class="stat-item"><span class="stat-value">6</span><span class="stat-label">监考场次</span></div>
+            </div>
+        </div>
+
+        <!-- 卡片4：张先成（兼任，0场） -->
+        <div class="teacher-card">
+            <div class="card-header">
+                <div class="teacher-avatar parttime">张</div>
+                <div class="teacher-info">
+                    <div class="teacher-name">张先成</div>
+                    <div class="teacher-type parttime">兼任教师</div>
+                </div>
+            </div>
+            <div class="teacher-stats">
+                <div class="stat-item"><span class="stat-value">0</span><span class="stat-label">监考场次</span></div>
+            </div>
+        </div>
+    </div>
+    <div class="demo-footer">
+        <span>⚡ 科技感卡片动画 | 扫光特效 + 霓虹标签 + 卡片依次淡入 | 右侧详情对齐修复（grid固定标签宽）⚡</span>
+    </div>
+</div>
+
+<!-- 可选简单脚本模拟点击展开折叠（若点击其他卡片可展开详情，但不是必须，为演示完整可无）-->
+<script>
+    // 为了让其他卡片也可以有类似展开效果（可选功能），仅为丰富演示，但原要求不强制。
+    // 用户可点击卡片展开详情，但为了保持整洁示例，不添加过多js。
+    // 此部分仅用于控制台输出测试
+    console.log('教师负荷科技感卡片已加载，详情卡片动画流畅展示');
+</script>
+</body>
+</html>

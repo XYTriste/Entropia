@@ -18,6 +18,7 @@ from app.database import get_db
 from app.models.class_ import Class
 from app.models.course import Course
 from app.models.course_class import CourseClass
+from app.models.exam import Exam
 from app.schemas.course import CourseClassLink, CourseCreate, CourseResponse, CourseUpdate
 
 router = APIRouter()
@@ -32,7 +33,10 @@ async def list_courses(
     search: str | None = Query(None, description="按名称搜索"),
 ) -> dict:
     """获取课程列表"""
-    query = select(Course).options(selectinload(Course.class_links).selectinload(CourseClass.class_))
+    query = select(Course).options(
+        selectinload(Course.class_links).selectinload(CourseClass.class_),
+        selectinload(Course.exams).selectinload(Exam.time_slot)
+    )
 
     if course_type:
         query = query.where(Course.course_type == course_type)
@@ -98,6 +102,20 @@ async def list_courses(
         item["student_count"] = total_students
         item["a_student_count"] = a_student_count
         item["b_student_count"] = b_student_count
+
+        # 添加实际排考的时段信息（来自 exams 表）
+        day_names = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五"}
+        scheduled_time_slots = []
+        for exam in c.exams:
+            if exam.time_slot:
+                scheduled_time_slots.append({
+                    "time_slot_id": exam.time_slot_id,
+                    "day_of_week": exam.time_slot.day_of_week,
+                    "day_name": day_names.get(exam.time_slot.day_of_week, f"周{exam.time_slot.day_of_week}"),
+                    "start_time": exam.time_slot.start_time,
+                    "end_time": exam.time_slot.end_time,
+                })
+        item["scheduled_time_slots"] = scheduled_time_slots
 
         data_items.append(item)
 

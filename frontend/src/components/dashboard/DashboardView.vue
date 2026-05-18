@@ -471,8 +471,8 @@ onUnmounted(() => {
 .dashboard {
   --bg-deep: #0a0e27;
   --bg-surface: #1a1f3a;
-  --bg-card: rgba(26, 31, 58, 0.85);
-  --border: rgba(100, 140, 255, 0.15);
+  --bg-card: #111827;
+  --border: rgba(79, 195, 247, 0.25);
   --accent: #4fc3f7;
   --accent2: #7c4dff;
   --green: #00e676;
@@ -492,18 +492,46 @@ onUnmounted(() => {
   z-index: 1;
   background: linear-gradient(160deg, #0a0e27 0%, #1a1f3a 100%);
   color: #e0e0e0;
+  overflow: hidden;
 }
 
+/* 网格纹理背景 */
 .dashboard::before {
   content: '';
   position: fixed;
   inset: 0;
   background:
-    linear-gradient(rgba(79,195,247,0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(79,195,247,0.04) 1px, transparent 1px);
-  background-size: 60px 60px;
+    repeating-linear-gradient(0deg, rgba(79, 195, 247, 0.03) 0px, rgba(79, 195, 247, 0.03) 1px, transparent 1px, transparent 12px),
+    repeating-linear-gradient(90deg, rgba(79, 195, 247, 0.03) 0px, rgba(79, 195, 247, 0.03) 1px, transparent 1px, transparent 12px);
   pointer-events: none;
   z-index: 0;
+}
+
+/* 扫光特效 */
+.dashboard::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -60%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(79, 195, 247, 0.07) 45%,
+    rgba(79, 195, 247, 0.12) 50%,
+    rgba(79, 195, 247, 0.07) 55%,
+    transparent 70%
+  );
+  transform: rotate(25deg);
+  animation: sweepLight 6s infinite linear;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes sweepLight {
+  0% { transform: rotate(25deg) translateX(-30%) translateY(-30%); }
+  100% { transform: rotate(25deg) translateX(30%) translateY(30%); }
 }
 
 /* Header */
@@ -552,8 +580,8 @@ onUnmounted(() => {
 @media (max-width: 640px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 
 .kpi-card {
-  background: rgba(26, 31, 58, 0.85);
-  border: 1px solid rgba(100, 140, 255, 0.15);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px 16px 14px;
   display: flex;
@@ -562,10 +590,11 @@ onUnmounted(() => {
   position: relative;
   overflow: hidden;
   transition: transform 0.25s, box-shadow 0.25s;
+  box-shadow: 0 0 10px rgba(79, 195, 247, 0.08), inset 0 0 15px rgba(79, 195, 247, 0.04);
 }
 .kpi-card:hover {
   transform: translateY(-3px) scale(1.02);
-  box-shadow: 0 0 15px rgba(79, 195, 247, 0.35), 0 0 40px rgba(79, 195, 247, 0.12);
+  box-shadow: 0 0 20px rgba(79, 195, 247, 0.4), 0 0 50px rgba(79, 195, 247, 0.15);
 }
 .kpi-card::before {
   content: '';
@@ -635,13 +664,14 @@ onUnmounted(() => {
 
 /* Chat Assistant Wrap */
 .chart-3d-wrap {
-  background: rgba(26, 31, 58, 0.85);
-  border: 1px solid rgba(100, 140, 255, 0.15);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 14px;
   padding: 24px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 0 10px rgba(79, 195, 247, 0.08), inset 0 0 15px rgba(79, 195, 247, 0.04);
 }
 .chart-3d-title {
   font-size: 0.85rem;
@@ -801,8 +831,8 @@ onUnmounted(() => {
 }
 .gauge-card {
   flex: 1;
-  background: rgba(26, 31, 58, 0.85);
-  border: 1px solid rgba(100, 140, 255, 0.15);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px;
   display: flex;
@@ -811,6 +841,7 @@ onUnmounted(() => {
   justify-content: center;
   position: relative;
   overflow: hidden;
+  box-shadow: 0 0 10px rgba(79, 195, 247, 0.08), inset 0 0 15px rgba(79, 195, 247, 0.04);
 }
 .gauge-card h4 {
   font-size: 0.75rem;
@@ -877,13 +908,14 @@ onUnmounted(() => {
 
 /* Bottom - Quick Actions */
 .trend-wrap {
-  background: rgba(26, 31, 58, 0.85);
-  border: 1px solid rgba(100, 140, 255, 0.15);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 14px;
   padding: 20px 24px;
   overflow: hidden;
   position: relative;
   z-index: 1;
+  box-shadow: 0 0 10px rgba(79, 195, 247, 0.08), inset 0 0 15px rgba(79, 195, 247, 0.04);
 }
 .trend-title {
   font-size: 0.8rem;

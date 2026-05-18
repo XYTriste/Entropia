@@ -32,6 +32,12 @@ apiClient.interceptors.response.use(
 
 export default apiClient
 
+/* 通用请求函数 */
+export function get(url, params) { return apiClient.get(url, { params }) }
+export function post(url, data) { return apiClient.post(url, data) }
+export function put(url, data) { return apiClient.put(url, data) }
+export function del(url) { return apiClient.delete(url) }
+
 /* ================================================================
  * 具名 API 函数 — 基础数据 CRUD
  * 由 useCrud 统一调用，便于后续在此处加缓存/重试/日志等逻辑
@@ -42,6 +48,7 @@ export function getTeachers(params) { return apiClient.get('/teachers/', { param
 export function createTeacher(data) { return apiClient.post('/teachers/', data) }
 export function updateTeacher(id, data) { return apiClient.put(`/teachers/${id}`, data) }
 export function deleteTeacher(id) { return apiClient.delete(`/teachers/${id}`) }
+export function getTeacherExams(teacherId) { return apiClient.get(`/teachers/${teacherId}/exams`) }
 
 /* ---------- 教室 ---------- */
 export function getClassrooms(params) { return apiClient.get('/classrooms/', { params }) }

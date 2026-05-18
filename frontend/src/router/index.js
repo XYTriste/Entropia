@@ -14,7 +14,7 @@ const routes = [
   {
     path: '/base-data',
     name: 'BaseData',
-    component: () => import('@/components/baseData/BaseDataView.vue'),
+    component: () => import('@/components/baseData/BaseDataGithubView.vue'),
     meta: { title: '基础数据' }
   },
   {

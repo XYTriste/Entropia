@@ -249,6 +249,7 @@ class SchedulingEngine:
                 used_time_slots=used_time_slots,
                 room_slot_usage=room_slot_usage,
                 violations=violations,
+                max_days=max_days,
             )
             if result:
                 all_exams.extend(result["exams"])
@@ -330,6 +331,7 @@ class SchedulingEngine:
                         id_gen=id_gen,
                         excluded_room_ids=excluded_a,
                         violations=violations,
+                        max_days=max_days,
                     )
                     if exam_a:
                         for ec in exam_a.classroom_assignments:
@@ -347,6 +349,7 @@ class SchedulingEngine:
                         id_gen=id_gen,
                         excluded_room_ids=excluded_b,
                         violations=violations,
+                        max_days=max_days,
                     )
                     if exam_b:
                         for ec in exam_b.classroom_assignments:
@@ -424,6 +427,7 @@ class SchedulingEngine:
                         id_gen=id_gen,
                         excluded_room_ids=excluded,
                         violations=violations,
+                        max_days=max_days,
                     )
                     if exam:
                         for ec in exam.classroom_assignments:
@@ -497,6 +501,7 @@ class SchedulingEngine:
         used_time_slots: set[int],
         room_slot_usage: dict[int, set[int]],
         violations: list[str],
+        max_days: int = 1,
     ) -> dict[str, Any] | None:
         """
         为公共课安排考试。
@@ -534,6 +539,7 @@ class SchedulingEngine:
                 id_gen=id_gen,
                 excluded_room_ids=excluded_a,
                 violations=violations,
+                max_days=max_days,
             )
             if exam_a:
                 for ec in exam_a.classroom_assignments:
@@ -559,6 +565,7 @@ class SchedulingEngine:
                 id_gen=id_gen,
                 excluded_room_ids=excluded_b,
                 violations=violations,
+                max_days=max_days,
             )
             if exam_b:
                 for ec in exam_b.classroom_assignments:
@@ -621,6 +628,7 @@ class SchedulingEngine:
                 id_gen=id_gen,
                 excluded_room_ids=excluded,
                 violations=violations,
+                max_days=max_days,
             )
             if exam:
                 for ec in exam.classroom_assignments:
@@ -695,6 +703,7 @@ class SchedulingEngine:
                 id_gen=id_gen,
                 excluded_room_ids=excluded_a,
                 violations=violations,
+                max_days=max_days,
             )
             if exam_a:
                 for ec in exam_a.classroom_assignments:
@@ -713,6 +722,7 @@ class SchedulingEngine:
                 id_gen=id_gen,
                 excluded_room_ids=excluded_b,
                 violations=violations,
+                max_days=max_days,
             )
             if exam_b:
                 for ec in exam_b.classroom_assignments:
@@ -779,6 +789,7 @@ class SchedulingEngine:
                 id_gen=id_gen,
                 excluded_room_ids=excluded,
                 violations=violations,
+                max_days=max_days,
             )
             if exam:
                 for ec in exam.classroom_assignments:
@@ -812,6 +823,7 @@ class SchedulingEngine:
         id_gen: _IdGenerator,
         excluded_room_ids: set[int],
         violations: list[str],
+        max_days: int = 1,
     ) -> Exam | None:
         """
         创建单场考试，包含教室分配、固定监考分配。

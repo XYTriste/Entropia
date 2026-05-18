@@ -251,6 +251,16 @@ async def get_teacher_gantt(
                         if ca.class_ and ca.class_.name and ca.class_.name not in class_names:
                             class_names.append(ca.class_.name)
 
+            # 计算该教师在此考试中的学生人数
+            if et.role.value == "fixed" and et.classroom_id:
+                student_count = 0
+                for ec in exam.classroom_assignments:
+                    if ec.classroom_id == et.classroom_id:
+                        student_count = ec.total_students or 0
+                        break
+            else:
+                student_count = sum(ec.total_students or 0 for ec in exam.classroom_assignments)
+
             teacher_events[tid]["events"].append({
                 "exam_id": exam.id,
                 "course_name": exam.course.name if exam.course else "",
@@ -262,7 +272,8 @@ async def get_teacher_gantt(
                 "role": et.role.value,
                 "classrooms": classrooms,
                 "assigned_classroom": assigned_classroom,
-                "class_names": class_names[:4],  # 最多显示4个班级避免过长
+                "class_names": class_names[:4],
+                "student_count": student_count,
             })
 
     return {
