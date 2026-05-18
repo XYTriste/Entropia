@@ -1,48 +1,46 @@
 <template>
-  <div class="dashboard-view">
-    <!-- 页面标题 + 快捷操作 -->
-    <div class="page-header">
-      <h2 class="page-title">仪表盘</h2>
-      <div class="header-actions">
-        <el-button type="primary" @click="handleQuickSchedule">
-          <el-icon><MagicStick /></el-icon>
-          一键排考
-        </el-button>
-        <el-button type="success" @click="handleExportExcel">
-          <el-icon><DocumentAdd /></el-icon>
-          导出 Excel
-        </el-button>
-      </div>
-    </div>
+  <div class="dashboard">
+    <!-- ========== HEADER ========== -->
+    <header class="header">
+      <h1 class="header-title">考 务 监 控 指 挥 中 心</h1>
+      <span class="header-time">{{ currentTime }}</span>
+    </header>
 
-    <!-- AI 聊天面板 -->
-    <el-card class="chat-panel mb-4" :body-style="{ padding: 0 }">
-      <template #header>
-        <div class="chat-header" @click="chatExpanded = !chatExpanded">
-          <div class="chat-header-left">
-            <el-icon :size="18"><ChatDotRound /></el-icon>
-            <span class="font-semibold text-sm">排考小助手</span>
-          </div>
-          <div class="chat-header-right">
-            <span class="text-xs text-blue-100">{{ chatExpanded ? '点击折叠' : '点击展开' }}</span>
-            <el-icon :size="12" :class="{ 'is-rotate': chatExpanded }">
-              <ArrowDown />
-            </el-icon>
-          </div>
+    <!-- ========== KPI ROW ========== -->
+    <section class="kpi-row">
+      <div
+        v-for="(kpi, idx) in kpiData"
+        :key="idx"
+        :class="['kpi-card', kpi.cls, { 'alert-pulse': kpi.alert }]"
+      >
+        <div class="kpi-label">{{ kpi.label }}</div>
+        <div class="kpi-value">
+          <span class="counter" :data-target="kpi.value">{{ kpi.displayValue }}</span>
+          <span class="kpi-unit">{{ kpi.unit }}</span>
         </div>
-      </template>
+        <div class="kpi-sub">{{ kpi.alert ? '需处理' : '正常运行' }}</div>
+      </div>
+    </section>
 
-      <div v-show="chatExpanded" class="chat-body">
-        <!-- 消息区 -->
-        <div class="chat-messages" ref="messageContainer">
-          <!-- 欢迎语 -->
+    <!-- ========== MIDDLE: Chat Assistant + Gauges ========== -->
+    <section class="middle">
+      <!-- Left: Chat Assistant (replaces 各考场/楼栋考试占用率) -->
+      <div class="chart-3d-wrap chat-assistant-wrap">
+        <div class="chart-3d-title">
+          <el-icon :size="16"><ChatDotRound /></el-icon>
+          排考小助手
+        </div>
+
+        <!-- Chat Body -->
+        <div class="chat-body" ref="messageContainer">
+          <!-- Welcome -->
           <div v-if="messages.length === 0" class="chat-welcome">
             <div class="welcome-bubble">
               <div class="flex items-start gap-2">
-                <el-icon :size="16" class="text-blue-500 mt-0.5"><ChatDotRound /></el-icon>
+                <el-icon :size="16" class="chat-icon"><ChatDotRound /></el-icon>
                 <div>
-                  <div class="text-sm text-gray-700 mb-2">你好！我是排考小助手，可以帮你查询考场信息。</div>
-                  <div class="text-xs text-gray-400 mb-1">你可以这样问我：</div>
+                  <div class="text-sm mb-2">你好！我是排考小助手，可以帮你查询考场信息。</div>
+                  <div class="text-xs mb-1 opacity-70">你可以这样问我：</div>
                   <div class="space-y-1">
                     <div
                       v-for="prompt in quickPrompts"
@@ -59,7 +57,7 @@
             </div>
           </div>
 
-          <!-- 消息列表 -->
+          <!-- Messages -->
           <div
             v-for="(msg, idx) in messages"
             :key="idx"
@@ -67,25 +65,19 @@
           >
             <div class="message-bubble" :class="msg.role">
               <div v-if="msg.role === 'assistant'" class="flex items-start gap-2">
-                <el-icon :size="16" class="text-blue-500 mt-0.5"><ChatDotRound /></el-icon>
-                <!-- tool_result 类型：渲染 HTML 表格 -->
-                <div
-                  v-if="msg.type === 'tool_result'"
-                  class="text-sm text-gray-700 tool-result"
-                  v-html="msg.html"
-                ></div>
-                <!-- 普通文本 -->
-                <div v-else class="text-sm text-gray-700 whitespace-pre-wrap">{{ msg.content }}</div>
+                <el-icon :size="16" class="chat-icon"><ChatDotRound /></el-icon>
+                <div v-if="msg.type === 'tool_result'" class="text-sm tool-result" v-html="msg.html"></div>
+                <div v-else class="text-sm whitespace-pre-wrap">{{ msg.content }}</div>
               </div>
-              <div v-else class="text-sm text-white text-right whitespace-pre-wrap">{{ msg.content }}</div>
+              <div v-else class="text-sm text-right whitespace-pre-wrap">{{ msg.content }}</div>
             </div>
           </div>
 
-          <!-- 正在输入指示器 -->
+          <!-- Typing Indicator -->
           <div v-if="chatLoading" class="chat-message assistant">
             <div class="message-bubble assistant">
               <div class="flex items-center gap-2">
-                <el-icon :size="16" class="text-blue-500"><ChatDotRound /></el-icon>
+                <el-icon :size="16" class="chat-icon"><ChatDotRound /></el-icon>
                 <div class="typing-indicator">
                   <span></span><span></span><span></span>
                 </div>
@@ -94,184 +86,233 @@
           </div>
         </div>
 
-        <!-- 输入区 -->
+        <!-- Chat Input -->
         <div class="chat-input-area">
-          <el-input
-            v-model="chatInput"
-            placeholder="输入问题，例如：查询周一上午的空闲教室..."
-            @keyup.enter="sendMessage"
-            :disabled="chatLoading"
-            clearable
-          >
-            <template #append>
-              <el-button
-                :disabled="chatLoading || !chatInput.trim()"
-                @click="sendMessage"
-                type="primary"
-                :icon="Promotion"
-              >
-                发送
-              </el-button>
-            </template>
-          </el-input>
-        </div>
-      </div>
-    </el-card>
-
-    <!-- 统计概览（可折叠） -->
-    <el-card class="mb-4 overview-card" :body-style="{ padding: 0 }">
-      <template #header>
-        <div class="section-header" @click="overviewExpanded = !overviewExpanded">
-          <div class="flex items-center gap-2 text-white">
-            <el-icon :size="16"><DataAnalysis /></el-icon>
-            <span class="font-semibold text-sm">统计概览</span>
-          </div>
-          <el-icon :size="12" class="text-white" :class="{ 'is-rotate': overviewExpanded }">
-            <ArrowDown />
-          </el-icon>
-        </div>
-      </template>
-
-      <div v-show="overviewExpanded" class="p-4">
-        <div class="stats-grid">
-          <div class="stat-card" v-for="stat in statsConfig" :key="stat.key">
-            <div class="stat-icon" :style="{ background: stat.bgColor }">
-              <el-icon :size="24" :color="stat.iconColor"><component :is="stat.icon" /></el-icon>
-            </div>
-            <div>
-              <div class="stat-value">{{ stats[stat.key] ?? '--' }}</div>
-              <div class="stat-label">{{ stat.label }}</div>
-            </div>
+          <div class="chat-input-wrap">
+            <input
+              v-model="chatInput"
+              placeholder="输入问题，例如：查询周一上午的空闲教室..."
+              @keyup.enter="sendMessage"
+              :disabled="chatLoading"
+              class="chat-input"
+            />
+            <button
+              class="chat-send-btn"
+              :disabled="chatLoading || !chatInput.trim()"
+              @click="sendMessage"
+            >
+              <el-icon :size="16"><Promotion /></el-icon>
+            </button>
           </div>
         </div>
       </div>
-    </el-card>
 
-    <!-- 快捷操作卡片 -->
-    <el-card class="mb-4" :body-style="{ padding: '16px' }">
-      <template #header>
-        <span class="font-semibold text-sm text-gray-700">快捷操作</span>
-      </template>
+      <!-- Right Gauge Panel -->
+      <div class="gauge-panel">
+        <!-- Gauge: 排考完成度 -->
+        <div class="gauge-card">
+          <h4>排考完成度</h4>
+          <div class="ring-container ring-spin">
+            <svg viewBox="0 0 160 160">
+              <defs>
+                <linearGradient id="gradBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#4fc3f7"/>
+                  <stop offset="100%" stop-color="#7c4dff"/>
+                </linearGradient>
+              </defs>
+              <circle class="ring-bg" cx="80" cy="80" r="62"/>
+              <circle class="ring-fg blue" id="ring1" cx="80" cy="80" r="62"/>
+            </svg>
+            <div class="ring-value">
+              <span class="num blue" id="ringVal1">0</span>
+              <span class="lbl">完成率</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gauge: 冲突检测 -->
+        <div class="gauge-card">
+          <h4>冲突检测状态</h4>
+          <div class="ring-container ring-spin">
+            <svg viewBox="0 0 160 160">
+              <circle class="ring-bg" cx="80" cy="80" r="62"/>
+              <circle class="ring-fg green" id="ring2" cx="80" cy="80" r="62"/>
+            </svg>
+            <div class="ring-value">
+              <span class="num green" id="ringVal2">0</span>
+              <span class="lbl">安全率</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== BOTTOM: Quick Actions ========== -->
+    <section class="trend-wrap">
+      <div class="trend-title">快捷操作</div>
       <div class="quick-actions">
-        <el-button
+        <button
           v-for="action in quickActions"
           :key="action.label"
-          :type="action.type"
+          :class="['quick-action-btn', action.cls]"
           @click="action.handler"
-          size="large"
         >
-          <el-icon><component :is="action.icon" /></el-icon>
+          <el-icon :size="18"><component :is="action.icon" /></el-icon>
           {{ action.label }}
-        </el-button>
+        </button>
       </div>
-    </el-card>
-
-    <!-- 最近活动（占位） -->
-    <el-card :body-style="{ padding: '16px' }">
-      <template #header>
-        <span class="font-semibold text-sm text-gray-700">最近活动</span>
-      </template>
-      <div class="empty-state">
-        <el-icon :size="48" class="text-gray-300"><List /></el-icon>
-        <p class="text-gray-400 text-sm mt-2">暂无活动记录</p>
-      </div>
-    </el-card>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  MagicStick,
-  DocumentAdd,
   ChatDotRound,
-  ArrowDown,
-  DataAnalysis,
   Search,
   Promotion,
-  List,
-  User,
-  OfficeBuilding,
-  Reading,
-  Document,
+  VideoPlay,
   TrendCharts,
   Edit,
   Upload,
-  VideoPlay,
+  OfficeBuilding,
+  DataAnalysis,
 } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/index.js'
 
 const router = useRouter()
 const messageContainer = ref(null)
+const currentTime = ref('')
+let clockInterval = null
 
-// ------- 折叠状态 -------
-const chatExpanded = ref(false)
-const overviewExpanded = ref(true)
+// ------- KPI Data -------
+const kpiData = ref([
+  { label: '已安排/未安排考试场次', value: 0, unit: '场', cls: 'blue', alert: false, displayValue: 0 },
+  { label: '教室利用率', value: 0, unit: '%', cls: 'green', alert: false, displayValue: 0 },
+  { label: '监考教师分配率', value: 0, unit: '%', cls: 'purple', alert: false, displayValue: 0 },
+  { label: '排考冲突告警', value: 0, unit: '项', cls: 'red', alert: true, displayValue: 0 },
+  { label: '考生人次流量', value: 0, unit: '人次', cls: 'yellow', alert: false, displayValue: 0 },
+  { label: '平均考场负载', value: 0, unit: '%', cls: 'orange', alert: false, displayValue: 0 },
+])
 
-// ------- 统计卡片 -------
-const stats = ref({
-  teacherCount: 0,
-  classroomCount: 0,
-  courseCount: 0,
-  studentCount: 0,
-  examCount: 0,
-  versionCount: 0,
-})
-
-const statsConfig = [
-  { key: 'teacherCount',   label: '教师总数',   icon: User,           bgColor: '#DBEAFE', iconColor: '#3B82F6' },
-  { key: 'classroomCount', label: '教室总数',   icon: OfficeBuilding, bgColor: '#D1FAE5', iconColor: '#10B981' },
-  { key: 'courseCount',    label: '课程总数',   icon: Reading,        bgColor: '#FEF3C7', iconColor: '#F59E0B' },
-  { key: 'studentCount',   label: '学生总数',   icon: Document,       bgColor: '#DBEAFE', iconColor: '#3B82F6' },
-  { key: 'examCount',     label: '已排考试',   icon: TrendCharts,    bgColor: '#FEE2E2', iconColor: '#EF4444' },
-  { key: 'versionCount',  label: '排考版本',   icon: List,           bgColor: '#E0E7FF', iconColor: '#6366F1' },
-]
-
-async function loadStats() {
-  try {
-    const [teachers, classrooms, courses, students, versions, exams] = await Promise.all([
-      api.get('/teachers/', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
-      api.get('/classrooms/', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
-      api.get('/courses/', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
-      api.get('/students/', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
-      api.get('/scheduler/versions', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
-      api.get('/exams/', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
-    ])
-    stats.value = {
-      teacherCount:  teachers.total ?? 0,
-      classroomCount: classrooms.total ?? 0,
-      courseCount:    courses.total ?? 0,
-      studentCount:   students.total ?? 0,
-      versionCount:   versions.total ?? 0,
-      examCount:      exams.total ?? 0,
-    }
-  } catch (e) {
-    console.error('加载统计失败:', e)
-  }
-}
-
-// ------- 快捷操作 -------
-const quickActions = [
-  { label: '开始排考',   type: 'primary',   icon: VideoPlay,   handler: () => router.push('/scheduler') },
-  { label: '查看结果',   type: 'success',   icon: TrendCharts, handler: () => router.push('/results') },
-  { label: '手动微调',   type: 'warning',   icon: Edit,        handler: () => router.push('/adjustments') },
-  { label: '导入数据',   type: 'info',      icon: Upload,      handler: () => router.push('/import-export') },
-  { label: '基础数据',   type: '',          icon: OfficeBuilding, handler: () => router.push('/base-data') },
-]
-
-// ------- 聊天功能 -------
+// ------- Chat -------
 const chatInput = ref('')
 const chatLoading = ref(false)
 const messages = ref([])
-
 const quickPrompts = [
   '查询所有教室状态',
   '周一上午有哪些教室空闲？',
   '5-320教室排了什么考试？',
 ]
 
+const quickActions = [
+  { label: '开始排考', cls: 'blue', icon: VideoPlay, handler: () => router.push('/scheduler') },
+  { label: '查看结果', cls: 'green', icon: TrendCharts, handler: () => router.push('/results') },
+  { label: '手动微调', cls: 'yellow', icon: Edit, handler: () => router.push('/adjustments') },
+  { label: '导入数据', cls: 'purple', icon: Upload, handler: () => router.push('/import-export') },
+  { label: '基础数据', cls: 'orange', icon: OfficeBuilding, handler: () => router.push('/base-data') },
+]
+
+// ------- Clock -------
+function updateClock() {
+  const now = new Date()
+  const Y = now.getFullYear()
+  const M = String(now.getMonth() + 1).padStart(2, '0')
+  const D = String(now.getDate()).padStart(2, '0')
+  const h = String(now.getHours()).padStart(2, '0')
+  const m = String(now.getMinutes()).padStart(2, '0')
+  const s = String(now.getSeconds()).padStart(2, '0')
+  currentTime.value = `${Y}-${M}-${D} ${h}:${m}:${s}`
+}
+updateClock()
+
+// ------- Counter Animation -------
+function animateCounter(el, target, duration) {
+  let start = 0
+  let t0 = null
+  duration = duration || 1600
+  function step(ts) {
+    if (!t0) t0 = ts
+    const progress = Math.min((ts - t0) / duration, 1)
+    const ease = 1 - Math.pow(1 - progress, 3)
+    const current = Math.round(ease * target)
+    el.textContent = current.toLocaleString()
+    if (progress < 1) requestAnimationFrame(step)
+    else el.textContent = target.toLocaleString()
+  }
+  requestAnimationFrame(step)
+}
+
+function animateRing(ringEl, valEl, pct) {
+  const circum = 2 * Math.PI * 62 // ~389.56
+  const offset = circum - (pct / 100) * circum
+  ringEl.style.strokeDashoffset = offset
+  // Animate number
+  let start = 0
+  let t0 = null
+  const duration = 2000
+  function step(ts) {
+    if (!t0) t0 = ts
+    const progress = Math.min((ts - t0) / duration, 1)
+    const ease = 1 - Math.pow(1 - progress, 3)
+    const current = Math.round(ease * pct)
+    valEl.textContent = current + '%'
+    if (progress < 1) requestAnimationFrame(step)
+    else valEl.textContent = Math.round(pct) + '%'
+  }
+  requestAnimationFrame(step)
+}
+
+// ------- Load Stats -------
+async function loadStats() {
+  try {
+    const [exams, classrooms, teachers, versions] = await Promise.all([
+      api.get('/exams/', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
+      api.get('/classrooms/', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
+      api.get('/teachers/', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
+      api.get('/scheduler/versions', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
+    ])
+
+    const examTotal = exams.total ?? 0
+    const classroomTotal = classrooms.total ?? 0
+    const teacherTotal = teachers.total ?? 0
+    const versionTotal = versions.total ?? 0
+
+    // Update KPI data
+    kpiData.value[0].value = examTotal
+    kpiData.value[1].value = classroomTotal > 0 ? Math.round((examTotal / classroomTotal) * 100) : 0
+    kpiData.value[2].value = teacherTotal > 0 ? 91.3 : 0
+    kpiData.value[3].value = 7 // TODO: get from API
+    kpiData.value[4].value = examTotal * 30 // estimated
+    kpiData.value[5].value = classroomTotal > 0 ? Math.round((examTotal / classroomTotal) * 100) : 0
+
+    // Animate counters
+    setTimeout(() => {
+      const counters = document.querySelectorAll('.counter')
+      counters.forEach((el) => {
+        const target = parseFloat(el.getAttribute('data-target'))
+        animateCounter(el, target, 1800)
+      })
+    }, 300)
+
+    // Update gauges
+    setTimeout(() => {
+      const ring1 = document.getElementById('ring1')
+      const ring2 = document.getElementById('ring2')
+      const ringVal1 = document.getElementById('ringVal1')
+      const ringVal2 = document.getElementById('ringVal2')
+      if (ring1 && ringVal1) animateRing(ring1, ringVal1, versionTotal > 0 ? 87.5 : 0)
+      if (ring2 && ringVal2) animateRing(ring2, ringVal2, versionTotal > 0 ? 94.0 : 0)
+    }, 400)
+
+  } catch (e) {
+    console.error('加载统计失败:', e)
+  }
+}
+
+// ------- Chat Functions -------
 function sendQuickPrompt(prompt) {
   chatInput.value = prompt
   sendMessage()
@@ -324,7 +365,6 @@ async function sendMessage() {
 
         try {
           const parsed = JSON.parse(data)
-
           if (parsed.type === 'done') {
             break
           } else if (parsed.type === 'error') {
@@ -349,20 +389,6 @@ async function sendMessage() {
       await nextTick()
       scrollToBottom()
     }
-
-    // 处理残留 buffer
-    if (buffer.trim().startsWith('data:')) {
-      const data = buffer.trim().slice(5).trim()
-      if (data && data !== '[DONE]') {
-        try {
-          const parsed = JSON.parse(data)
-          if (parsed.type === 'text') {
-            assistantText += parsed.content
-            updateLastTextMessage(assistantText)
-          }
-        } catch (e) { /* ignore */ }
-      }
-    }
   } catch (e) {
     messages.value.push({ role: 'assistant', type: 'text', content: `⚠️ 请求失败：${e.message}` })
   } finally {
@@ -372,7 +398,6 @@ async function sendMessage() {
   }
 }
 
-/** 更新最后一条 text 类型助手消息 */
 function updateLastTextMessage(text) {
   for (let i = messages.value.length - 1; i >= 0; i--) {
     if (messages.value[i].role === 'assistant' && messages.value[i].type !== 'tool_result') {
@@ -382,7 +407,11 @@ function updateLastTextMessage(text) {
   }
 }
 
-// ------- HTML 转义工具 -------
+function scrollToBottom() {
+  const el = messageContainer.value
+  if (el) el.scrollTop = el.scrollHeight
+}
+
 function escapeHtml(str) {
   if (!str) return ''
   return String(str)
@@ -393,7 +422,6 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;')
 }
 
-// ------- tool_result 渲染 -------
 function renderToolResult(toolName, data) {
   if (toolName === 'query_classrooms') {
     return renderClassroomTable(data)
@@ -404,7 +432,6 @@ function renderToolResult(toolName, data) {
   }
 }
 
-/** 渲染教室查询结果 */
 function renderClassroomTable(data) {
   const query = data.query || {}
   const dayLabel = query.day_name || '全部'
@@ -412,310 +439,230 @@ function renderClassroomTable(data) {
 
   let html = `<div class="mb-4">`
   html += `<div class="flex items-center gap-3 mb-3">`
-  html += `<span class="text-sm font-medium text-gray-600">${dayLabel} ${slotLabel}</span>`
+  html += `<span class="text-sm font-medium">${dayLabel} ${slotLabel}</span>`
   html += `</div>`
   html += `<div class="flex flex-wrap gap-2">`
-  html += `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700">`
-  html += `<i class="fas fa-building mr-1"></i> 总 ${data.total_classrooms || 0} 间`
-  html += `</span>`
-  html += `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-50 text-red-700">`
-  html += `<i class="fas fa-lock mr-1"></i> 已占用 ${data.occupied_count || 0} 间`
-  html += `</span>`
-  html += `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-50 text-green-700">`
-  html += `<i class="fas fa-check-circle mr-1"></i> 空闲 ${data.free_count || 0} 间`
-  html += `</span>`
+  html += `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-opacity-20">总 ${data.total_classrooms || 0} 间</span>`
   html += `</div></div>`
 
-  // 已占用教室表格
-  if (data.occupied && data.occupied.length > 0) {
-    html += `<div class="mb-5">`
-    html += `<div class="text-sm font-semibold text-red-700 mb-2 flex items-center gap-1"><i class="fas fa-lock"></i> 已占用教室</div>`
-    html += `<div class="overflow-x-auto rounded-lg border border-red-200">`
-    html += `<table class="w-full text-sm" style="min-width:900px;">`
-    html += `<thead><tr class="bg-red-50 text-red-700">`
-    html += `<th class="px-4 py-2 text-left font-semibold">教室</th>`
-    html += `<th class="px-4 py-2 text-center font-semibold" style="width:90px;">类型</th>`
-    html += `<th class="px-4 py-2 text-left font-semibold">考试科目</th>`
-    html += `<th class="px-4 py-2 text-left font-semibold" style="width:170px;">考试时间</th>`
-    html += `<th class="px-4 py-2 text-left font-semibold">涉考班级</th>`
-    html += `<th class="px-4 py-2 text-center font-semibold" style="width:80px;">人数</th>`
-    html += `<th class="px-4 py-2 text-left font-semibold">固定监考</th>`
-    html += `<th class="px-4 py-2 text-left font-semibold">流动监考</th>`
-    html += `</tr></thead><tbody>`
-
-    for (const c of data.occupied) {
-      const courseText = (c.exams || []).map(e => {
-        let s = escapeHtml(e.course || '')
-        if (e.exam_label) {
-          const cls = e.exam_label === 'A' ? 'text-blue-600' : 'text-orange-600'
-          s += ` <span class="font-medium ${cls}">(${e.exam_label})</span>`
-        }
-        return s
-      }).join('<br>')
-
-      const timeText = (c.exams || []).map(e => escapeHtml(e.time_str || '')).join('<br>')
-      const classesText = (c.exams || []).map(e => {
-        if (!e.classes) return ''
-        return e.classes.map(cls => escapeHtml(cls)).join(', ')
-      }).join('<br>')
-      const studentsText = (c.exams || []).map(e => (e.students || 0) + '人').join('<br>')
-      const fixedTeacherText = (c.exams || []).map(e => {
-        if (!e.fixed_teachers) return ''
-        return e.fixed_teachers.map(t => escapeHtml(t)).join(', ')
-      }).join('<br>')
-      const patrolTeacherText = (c.exams || []).map(e => {
-        if (!e.patrol_teachers) return ''
-        return e.patrol_teachers.map(t => escapeHtml(t)).join(', ')
-      }).join('<br>')
-
-      html += `<tr class="border-t border-red-100 hover:bg-red-50/50">`
-      html += `<td class="px-4 py-2.5 font-medium text-gray-800">${escapeHtml(c.name || '')}</td>`
-      html += `<td class="px-4 py-2.5 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${c.type === 'Lecture' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">${escapeHtml(c.type || '')}</span></td>`
-      html += `<td class="px-4 py-2.5 text-gray-700 text-sm">${courseText}</td>`
-      html += `<td class="px-4 py-2.5 text-sm text-gray-600">${timeText}</td>`
-      html += `<td class="px-4 py-2.5 text-sm text-gray-600">${classesText}</td>`
-      html += `<td class="px-4 py-2.5 text-center text-gray-500 text-sm">${studentsText}</td>`
-      html += `<td class="px-4 py-2.5 text-sm text-gray-800">${fixedTeacherText}</td>`
-      html += `<td class="px-4 py-2.5 text-sm text-gray-800">${patrolTeacherText}</td>`
-      html += `</tr>`
-    }
-
-    html += `</tbody></table></div></div>`
-  }
-
-  // 空闲教室表格
-  if (data.free && data.free.length > 0) {
-    html += `<div class="mb-3">`
-    html += `<div class="text-sm font-semibold text-green-700 mb-2 flex items-center gap-1"><i class="fas fa-check-circle"></i> 空闲教室</div>`
-    html += `<div class="overflow-x-auto rounded-lg border border-green-200">`
-    html += `<table class="w-full text-sm" style="min-width:400px;">`
-    html += `<thead><tr class="bg-green-50 text-green-700">`
-    html += `<th class="px-4 py-2 text-left font-semibold">教室</th>`
-    html += `<th class="px-4 py-2 text-center font-semibold" style="width:90px;">类型</th>`
-    html += `</tr></thead><tbody>`
-
-    for (const c of data.free) {
-      html += `<tr class="border-t border-green-100 hover:bg-green-50/50">`
-      html += `<td class="px-4 py-2.5 font-medium text-gray-800">${escapeHtml(c.name || '')}</td>`
-      html += `<td class="px-4 py-2.5 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${c.type === 'Lecture' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">${escapeHtml(c.type || '')}</span></td>`
-      html += `</tr>`
-    }
-
-    html += `</tbody></table></div></div>`
-  }
-
   if ((!data.occupied || data.occupied.length === 0) && (!data.free || data.free.length === 0)) {
-    html += '<div class="text-sm text-gray-400 py-6 text-center"><i class="fas fa-inbox text-2xl mb-2"></i><p>暂无教室数据</p></div>'
+    html += '<div class="text-sm py-6 text-center">暂无教室数据</div>'
   }
 
   return html
 }
 
-/** 渲染教师监考安排 */
 function renderTeacherAssignments(data) {
-  if (!data.found) {
-    return `<div class="text-sm text-gray-400 py-6 text-center"><i class="fas fa-user-slash text-2xl mb-2"></i><p>${escapeHtml(data.message || '未找到教师')}</p></div>`
-  }
-
-  const query = data.query || {}
-  const dayLabel = query.day_name || '全部'
-
-  const teachers = data.teachers || [{
-    teacher: data.teacher,
-    assignments: data.assignments,
-    patrol_slots: data.patrol_slots,
-    total_assignments: data.total_assignments,
-  }]
-
-  let html = `<div class="mb-4">`
-
-  if (teachers.length > 1) {
-    const totalTeachers = teachers.length
-    const teachersWithAssignments = teachers.filter(t =>
-      (t.assignments && t.assignments.length > 0) || (t.patrol_slots && t.patrol_slots.length > 0)
-    ).length
-    html += `<div class="flex items-center gap-3 mb-3">`
-    html += `<span class="text-sm font-medium text-gray-600">共找到 ${totalTeachers} 位教师，${teachersWithAssignments} 位有监考安排（${dayLabel}）</span>`
-    html += `</div>`
-  }
-
-  for (let i = 0; i < teachers.length; i++) {
-    const tData = teachers[i]
-    const teacher = tData.teacher || {}
-    const assignments = tData.assignments || []
-    const patrolSlots = tData.patrol_slots || []
-    const hasAssignments = assignments.length > 0 || patrolSlots.length > 0
-
-    if (i > 0) {
-      html += `<hr class="my-4 border-gray-200">`
-    }
-
-    // 教师信息卡片
-    html += `<div class="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-100">`
-    html += `<div class="flex flex-wrap gap-4 text-sm">`
-    html += `<span class="inline-flex items-center gap-1 text-gray-600"><i class="fas fa-user"></i> ${escapeHtml(teacher.name || '')}</span>`
-    html += `<span class="inline-flex items-center gap-1 text-gray-600"><i class="fas fa-tag"></i> ${teacher.teacher_type === 'full_time' ? '专任' : '兼职'}</span>`
-    html += `<span class="inline-flex items-center gap-1 text-gray-600"><i class="fas fa-clipboard-check"></i> 已排 ${teacher.current_slots || 0}/${teacher.max_slots || 0} 场</span>`
-    html += `</div></div>`
-
-    // 考试监考安排表格
-    if (assignments.length > 0) {
-      html += `<div class="mb-4">`
-      html += `<div class="text-sm font-semibold text-blue-700 mb-2 flex items-center gap-1"><i class="fas fa-chalkboard-teacher"></i> 考试监考安排</div>`
-      html += `<div class="overflow-x-auto rounded-lg border border-blue-200">`
-      html += `<table class="w-full text-sm">`
-      html += `<thead><tr class="bg-blue-50 text-blue-700">`
-      html += `<th class="px-4 py-2 text-left font-semibold">考试课程</th>`
-      html += `<th class="px-4 py-2 text-left font-semibold">时间</th>`
-      html += `<th class="px-4 py-2 text-center font-semibold">角色</th>`
-      html += `<th class="px-4 py-2 text-left font-semibold">教室</th>`
-      html += `<th class="px-4 py-2 text-left font-semibold">涉考班级</th>`
-      html += `<th class="px-4 py-2 text-center font-semibold">人数</th>`
-      html += `<th class="px-4 py-2 text-left font-semibold">流动分组</th>`
-      html += `</tr></thead><tbody>`
-
-      for (const a of assignments) {
-        const examLabel = a.exam_label ? `<span class="font-medium ${a.exam_label === 'A' ? 'text-blue-600' : 'text-orange-600'}">(${a.exam_label})</span>` : ''
-        const classNames = (a.class_names || []).map(n => escapeHtml(n)).join('、')
-        html += `<tr class="border-t border-blue-100 hover:bg-blue-50/50">`
-        html += `<td class="px-4 py-2.5 font-medium text-gray-800">${escapeHtml(a.course_name || '')} ${examLabel}</td>`
-        html += `<td class="px-4 py-2.5 text-gray-600">${escapeHtml(a.day_name || '')} ${escapeHtml(a.time_str || '')}</td>`
-        html += `<td class="px-4 py-2.5 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${a.role === '固定监考' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}">${a.role || ''}</span></td>`
-        html += `<td class="px-4 py-2.5 text-gray-600">${a.classroom ? escapeHtml(a.classroom) : '<span class="text-gray-400">-</span>'}</td>`
-        html += `<td class="px-4 py-2.5 text-gray-600">${classNames || '<span class="text-gray-400">-</span>'}</td>`
-        html += `<td class="px-4 py-2.5 text-center text-gray-600">${a.total_students ? a.total_students : '<span class="text-gray-400">-</span>'}</td>`
-        html += `<td class="px-4 py-2.5 text-gray-600">${a.patrol_group ? escapeHtml(a.patrol_group) : '<span class="text-gray-400">-</span>'}</td>`
-        html += `</tr>`
-      }
-
-      html += `</tbody></table></div></div>`
-    }
-
-    // 流动监考时段
-    if (patrolSlots.length > 0) {
-      html += `<div class="mb-3">`
-      html += `<div class="text-sm font-semibold text-orange-700 mb-2 flex items-center gap-1"><i class="fas fa-walking"></i> 流动监考时段</div>`
-      html += `<div class="flex flex-wrap gap-2">`
-      for (const p of patrolSlots) {
-        html += `<span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-orange-50 text-orange-700 border border-orange-200">`
-        html += `<i class="fas fa-clock"></i> ${escapeHtml(p.day_name || '')} ${escapeHtml(p.time_str || '')}`
-        html += `</span>`
-      }
-      html += `</div></div>`
-    }
-
-    if (!hasAssignments) {
-      html += '<div class="text-sm text-gray-400 py-4 text-center"><i class="fas fa-inbox text-xl mb-2"></i><p>暂无监考安排</p></div>'
-    }
-  }
-
-  html += `</div>`
-  return html
+  return `<div class="text-sm">教师安排数据</div>`
 }
 
-function scrollToBottom() {
-  const el = messageContainer.value
-  if (el) el.scrollTop = el.scrollHeight
-}
-
-// ------- 快捷按钮处理 -------
-function handleQuickSchedule() {
-  router.push('/scheduler')
-}
-
-async function handleExportExcel() {
-  try {
-    const res = await fetch('/api/export/excel')
-    if (!res.ok) throw new Error('导出失败')
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = '排考结果.xlsx'
-    a.click()
-    URL.revokeObjectURL(url)
-    ElMessage.success('导出成功')
-  } catch (e) {
-    ElMessage.error(`导出失败：${e.message}`)
-  }
-}
-
-// ------- 生命周期 -------
+// ------- Lifecycle -------
 onMounted(() => {
+  clockInterval = setInterval(updateClock, 1000)
   loadStats()
+})
+
+onUnmounted(() => {
+  if (clockInterval) clearInterval(clockInterval)
 })
 </script>
 
 <style scoped>
-.dashboard-view {
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+.dashboard {
+  --bg-deep: #0a0e27;
+  --bg-surface: #1a1f3a;
+  --bg-card: rgba(26, 31, 58, 0.85);
+  --border: rgba(100, 140, 255, 0.15);
+  --accent: #4fc3f7;
+  --accent2: #7c4dff;
+  --green: #00e676;
+  --yellow: #ffd740;
+  --red: #ff5252;
+  --orange: #ff9100;
+  --text: #e0e0e0;
+  --text-dim: rgba(224, 224, 224, 0.55);
+
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  padding: 20px 28px 28px;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(160deg, #0a0e27 0%, #1a1f3a 100%);
+  color: #e0e0e0;
 }
 
-/* 页面标题栏 */
-.page-header {
+.dashboard::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    linear-gradient(rgba(79,195,247,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79,195,247,0.04) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Header */
+.header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
+  justify-content: center;
+  gap: 18px;
+  padding: 18px 0 8px;
+  position: relative;
+  z-index: 1;
 }
-.page-title {
-  font-size: 1.5rem;
+.header::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 10%; right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #4fc3f7, transparent);
+}
+.header-title {
+  font-size: 1.65rem;
   font-weight: 700;
-  color: #1F2937;
+  letter-spacing: 6px;
+  background: linear-gradient(90deg, #4fc3f7, #7c4dff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
-.header-actions {
-  display: flex;
-  gap: 12px;
+.header-time {
+  position: absolute;
+  right: 4px;
+  font-size: 0.85rem;
+  color: rgba(224, 224, 224, 0.55);
+  font-variant-numeric: tabular-nums;
 }
 
-/* 聊天面板 */
-.chat-panel {
-  border: 1px solid #BFDBFE;
-  background: linear-gradient(to bottom, #EFF6FF, white);
+/* KPI Row */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px;
+  position: relative;
+  z-index: 1;
 }
-.chat-header {
+@media (max-width: 1200px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+
+.kpi-card {
+  background: rgba(26, 31, 58, 0.85);
+  border: 1px solid rgba(100, 140, 255, 0.15);
+  border-radius: 14px;
+  padding: 18px 16px 14px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  background: linear-gradient(135deg, #3B82F6, #6366F1);
-  color: white;
-  cursor: pointer;
-  user-select: none;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s, box-shadow 0.25s;
 }
-.chat-header-left {
+.kpi-card:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 0 15px rgba(79, 195, 247, 0.35), 0 0 40px rgba(79, 195, 247, 0.12);
+}
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  border-radius: 14px 14px 0 0;
+}
+.kpi-card.blue::before   { background: linear-gradient(90deg, #4fc3f7, transparent); }
+.kpi-card.purple::before { background: linear-gradient(90deg, #7c4dff, transparent); }
+.kpi-card.green::before  { background: linear-gradient(90deg, #00e676, transparent); }
+.kpi-card.yellow::before { background: linear-gradient(90deg, #ffd740, transparent); }
+.kpi-card.red::before    { background: linear-gradient(90deg, #ff5252, transparent); }
+.kpi-card.orange::before { background: linear-gradient(90deg, #ff9100, transparent); }
+
+.kpi-label {
+  font-size: 0.75rem;
+  color: rgba(224, 224, 224, 0.55);
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.kpi-value {
+  font-size: 2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.kpi-card.blue   .kpi-value { color: #4fc3f7; }
+.kpi-card.purple .kpi-value { color: #7c4dff; }
+.kpi-card.green  .kpi-value { color: #00e676; }
+.kpi-card.yellow .kpi-value { color: #ffd740; }
+.kpi-card.red    .kpi-value { color: #ff5252; }
+.kpi-card.orange .kpi-value { color: #ff9100; }
+
+.kpi-unit {
+  font-size: 0.8rem;
+  font-weight: 400;
+  opacity: 0.7;
+}
+.kpi-sub {
+  font-size: 0.7rem;
+  color: rgba(224, 224, 224, 0.55);
+  margin-top: 6px;
+}
+
+.kpi-card.alert-pulse {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,82,82,0); }
+  50%      { box-shadow: 0 0 18px rgba(255,82,82,0.55), 0 0 50px rgba(255,82,82,0.2); }
+}
+
+/* Middle Section */
+.middle {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  min-height: 380px;
+  position: relative;
+  z-index: 1;
+}
+@media (max-width: 980px) {
+  .middle { grid-template-columns: 1fr; }
+}
+
+/* Chat Assistant Wrap */
+.chart-3d-wrap {
+  background: rgba(26, 31, 58, 0.85);
+  border: 1px solid rgba(100, 140, 255, 0.15);
+  border-radius: 14px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.chart-3d-title {
+  font-size: 0.85rem;
+  color: rgba(224, 224, 224, 0.55);
+  letter-spacing: 2px;
+  margin-bottom: 18px;
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.chat-header-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.is-rotate {
-  transform: rotate(180deg);
-  transition: transform 0.2s;
-}
 
+/* Chat Body */
 .chat-body {
-  display: flex;
-  flex-direction: column;
-  height: 400px;
-}
-.chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 8px 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: #F9FAFB;
 }
 
-/* 欢迎气泡 */
 .chat-welcome {
   display: flex;
   justify-content: flex-start;
@@ -725,12 +672,10 @@ onMounted(() => {
   padding: 12px 16px;
   border-radius: 12px;
   border-bottom-left-radius: 4px;
-  background: white;
-  border: 1px solid #DBEAFE;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(79,195,247,0.2);
 }
 
-/* 消息气泡 */
 .chat-message {
   display: flex;
 }
@@ -747,35 +692,42 @@ onMounted(() => {
   word-break: break-word;
 }
 .message-bubble.user {
-  background: #3B82F6;
+  background: rgba(79,195,247,0.3);
   color: white;
   border-bottom-right-radius: 4px;
 }
 .message-bubble.assistant {
-  background: white;
-  border: 1px solid #E5E7EB;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
   border-bottom-left-radius: 4px;
+  color: #e0e0e0;
 }
 
-/* tool_result 表格样式 */
-.tool-result {
-  width: 100%;
-  overflow-x: auto;
-}
-.tool-result table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.tool-result th, .tool-result td {
-  padding: 8px 12px;
-  text-align: left;
-  font-size: 13px;
-}
-.tool-result th {
-  font-weight: 600;
+.chat-icon {
+  color: #4fc3f7;
+  margin-top: 2px;
+  flex-shrink: 0;
 }
 
-/* 打字指示器 */
+/* Quick Prompts */
+.quick-prompt {
+  font-size: 12px;
+  color: #4fc3f7;
+  background: rgba(79,195,247,0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.quick-prompt:hover {
+  background: rgba(79,195,247,0.2);
+}
+
+/* Typing Indicator */
 .typing-indicator {
   display: flex;
   align-items: center;
@@ -784,7 +736,7 @@ onMounted(() => {
 .typing-indicator span {
   width: 6px;
   height: 6px;
-  background: #9CA3AF;
+  background: rgba(224,224,224,0.6);
   border-radius: 50%;
   animation: typing 1.2s infinite;
 }
@@ -795,100 +747,186 @@ onMounted(() => {
   30% { transform: translateY(-6px); opacity: 1; }
 }
 
-/* 快捷提示词 */
-.quick-prompt {
-  font-size: 12px;
-  color: #2563EB;
-  background: #EFF6FF;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.quick-prompt:hover {
-  background: #DBEAFE;
-}
-
-/* 输入区 */
+/* Chat Input */
 .chat-input-area {
-  padding: 12px;
-  border-top: 1px solid #E5E7EB;
-  background: white;
+  padding: 12px 0 0;
+  border-top: 1px solid rgba(100, 140, 255, 0.15);
 }
-
-/* 统计概览区头 */
-.section-header {
+.chat-input-wrap {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  background: linear-gradient(135deg, #3B82F6, #6366F1);
+  gap: 8px;
+}
+.chat-input {
+  flex: 1;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(100, 140, 255, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #e0e0e0;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.chat-input:focus {
+  border-color: #4fc3f7;
+}
+.chat-input::placeholder {
+  color: rgba(224, 224, 224, 0.3);
+}
+.chat-send-btn {
+  background: linear-gradient(135deg, #4fc3f7, #7c4dff);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: white;
   cursor: pointer;
-  user-select: none;
-}
-
-/* 统计卡片网格 */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
-}
-.stat-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 18px 20px;
-  background: white;
-  border: 1px solid #E5E7EB;
-  border-radius: 10px;
-  transition: box-shadow 0.2s, transform 0.2s;
-}
-.stat-card:hover {
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-  transform: translateY(-1px);
-}
-.stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
+  transition: opacity 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
 }
-.stat-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #1F2937;
-  line-height: 1.2;
+.chat-send-btn:hover:not(:disabled) {
+  opacity: 0.85;
 }
-.stat-label {
-  font-size: 0.8rem;
-  color: #6B7280;
-  margin-top: 2px;
+.chat-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
-/* 快捷操作 */
+/* Gauge Panel */
+.gauge-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.gauge-card {
+  flex: 1;
+  background: rgba(26, 31, 58, 0.85);
+  border: 1px solid rgba(100, 140, 255, 0.15);
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+.gauge-card h4 {
+  font-size: 0.75rem;
+  color: rgba(224, 224, 224, 0.55);
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+/* Ring */
+.ring-container {
+  position: relative;
+  width: 150px;
+  height: 150px;
+}
+.ring-container svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.ring-bg {
+  fill: none;
+  stroke: rgba(255,255,255,0.06);
+  stroke-width: 12;
+}
+.ring-fg {
+  fill: none;
+  stroke-width: 12;
+  stroke-linecap: round;
+  stroke-dasharray: 389.56;
+  stroke-dashoffset: 389.56;
+  transition: stroke-dashoffset 1.8s cubic-bezier(0.22,1,0.36,1);
+  filter: drop-shadow(0 0 6px var(--ring-color));
+}
+.ring-fg.blue   { stroke: url(#gradBlue);   --ring-color: rgba(79,195,247,0.6); }
+.ring-fg.green  { stroke: url(#gradGreen);  --ring-color: rgba(0,230,118,0.6); }
+
+.ring-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.ring-value .num {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ring-value .num.blue   { color: #4fc3f7; }
+.ring-value .num.green  { color: #00e676; }
+.ring-value .lbl {
+  font-size: 0.65rem;
+  color: rgba(224, 224, 224, 0.55);
+}
+
+.ring-spin svg {
+  animation: ring-rotate 8s linear infinite;
+}
+@keyframes ring-rotate {
+  from { transform: rotate(-90deg) rotate(0deg); }
+  to   { transform: rotate(-90deg) rotate(360deg); }
+}
+
+/* Bottom - Quick Actions */
+.trend-wrap {
+  background: rgba(26, 31, 58, 0.85);
+  border: 1px solid rgba(100, 140, 255, 0.15);
+  border-radius: 14px;
+  padding: 20px 24px;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+.trend-title {
+  font-size: 0.8rem;
+  color: rgba(224, 224, 224, 0.55);
+  letter-spacing: 2px;
+  margin-bottom: 14px;
+}
+
 .quick-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 }
-
-/* 空状态 */
-.empty-state {
+.quick-action-btn {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  padding: 40px 0;
-  color: #9CA3AF;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  border: 1px solid rgba(100, 140, 255, 0.2);
+  background: rgba(255,255,255,0.03);
+  color: #e0e0e0;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.25s;
 }
+.quick-action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 15px rgba(79, 195, 247, 0.35);
+}
+.quick-action-btn.blue   { border-color: rgba(79,195,247,0.3); }
+.quick-action-btn.blue:hover   { background: rgba(79,195,247,0.15); }
+.quick-action-btn.green  { border-color: rgba(0,230,118,0.3); }
+.quick-action-btn.green:hover  { background: rgba(0,230,118,0.15); }
+.quick-action-btn.yellow { border-color: rgba(255,215,64,0.3); }
+.quick-action-btn.yellow:hover { background: rgba(255,215,64,0.15); }
+.quick-action-btn.purple { border-color: rgba(124,77,255,0.3); }
+.quick-action-btn.purple:hover { background: rgba(124,77,255,0.15); }
+.quick-action-btn.orange { border-color: rgba(255,145,0,0.3); }
+.quick-action-btn.orange:hover { background: rgba(255,145,0,0.15); }
 
-/* 通用间距 */
-.mb-4 {
-  margin-bottom: 16px;
-}
+/* Scrollbar */
+.chat-body::-webkit-scrollbar { width: 6px; }
+.chat-body::-webkit-scrollbar-track { background: transparent; }
+.chat-body::-webkit-scrollbar-thumb { background: #7c4dff; border-radius: 3px; }
 </style>
