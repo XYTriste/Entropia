@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>考务监控指挥中心</title>
+<style>
+/* ============================================================
+   CSS Reset & Base
+   ============================================================ */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-deep:    #0a0e27;
+  --bg-surface:  #1a1f3a;
+  --bg-card:     rgba(26, 31, 58, 0.85);
+  --border:      rgba(100, 140, 255, 0.15);
+  --accent:      #4fc3f7;
+  --accent2:     #7c4dff;
+  --green:       #00e676;
+  --yellow:      #ffd740;
+  --red:         #ff5252;
+  --orange:      #ff9100;
+  --text:        #e0e0e0;
+  --text-dim:    rgba(224, 224, 224, 0.55);
+  --font:        system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+  --perspective: 900px;
+  --glow-accent: 0 0 15px rgba(79, 195, 247, 0.35), 0 0 40px rgba(79, 195, 247, 0.12);
+  --glow-red:    0 0 18px rgba(255, 82, 82, 0.55), 0 0 50px rgba(255, 82, 82, 0.2);
+  --glow-green:  0 0 15px rgba(0, 230, 118, 0.4), 0 0 40px rgba(0, 230, 118, 0.15);
+}
+
+html { font-size: 16px; }
+
+body {
+  font-family: var(--font);
+  background: linear-gradient(160deg, var(--bg-deep) 0%, var(--bg-surface) 100%);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* ============================================================
+   Background Grid (subtle isometric feel)
+   ============================================================ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    linear-gradient(rgba(79,195,247,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79,195,247,0.04) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--accent2); border-radius: 3px; }
+
+/* ============================================================
+   Layout – CSS Grid
+   ============================================================ */
+.dashboard {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  padding: 20px 28px 28px;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- Header ---------- */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 18px 0 8px;
+  position: relative;
+}
+.header::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 10%; right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+.header-title {
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: 6px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+}
+.header-time {
+  position: absolute;
+  right: 4px;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- KPI Row ---------- */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px;
+}
+@media (max-width: 1200px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px)  { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+
+.kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s, box-shadow 0.25s;
+}
+.kpi-card:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: var(--glow-accent);
+}
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  border-radius: 14px 14px 0 0;
+}
+.kpi-card.blue::before   { background: linear-gradient(90deg, var(--accent), transparent); }
+.kpi-card.purple::before { background: linear-gradient(90deg, var(--accent2), transparent); }
+.kpi-card.green::before  { background: linear-gradient(90deg, var(--green), transparent); }
+.kpi-card.yellow::before { background: linear-gradient(90deg, var(--yellow), transparent); }
+.kpi-card.red::before    { background: linear-gradient(90deg, var(--red), transparent); }
+.kpi-card.orange::before { background: linear-gradient(90deg, var(--orange), transparent); }
+
+.kpi-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.kpi-value {
+  font-size: 2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.kpi-card.blue   .kpi-value { color: var(--accent); }
+.kpi-card.purple .kpi-value { color: var(--accent2); }
+.kpi-card.green  .kpi-value { color: var(--green); }
+.kpi-card.yellow .kpi-value { color: var(--yellow); }
+.kpi-card.red    .kpi-value { color: var(--red); }
+.kpi-card.orange .kpi-value { color: var(--orange); }
+
+.kpi-unit {
+  font-size: 0.8rem;
+  font-weight: 400;
+  opacity: 0.7;
+}
+.kpi-sub {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-top: 6px;
+}
+
+/* Pulse glow for alert KPI */
+.kpi-card.alert-pulse {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,82,82,0); }
+  50%      { box-shadow: var(--glow-red); }
+}
+
+/* ============================================================
+   Middle Section – Chat Assistant + Gauges
+   ============================================================ */
+.middle {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  min-height: 420px;
+}
+@media (max-width: 980px) {
+  .middle { grid-template-columns: 1fr; }
+}
+
+/* ---------- Chat Assistant Card ---------- */
+.chat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Accent top stripe */
+.chat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2), transparent);
+  border-radius: 14px 14px 0 0;
+  z-index: 2;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ai-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+}
+/* CSS-only "brain circuit" icon */
+.ai-avatar::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.9);
+  position: absolute;
+}
+.ai-avatar::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: rgba(255,255,255,0.9);
+  border-radius: 50%;
+  top: 6px;
+  left: 6px;
+  box-shadow: 12px 0 0 rgba(255,255,255,0.9),
+              6px 12px 0 rgba(255,255,255,0.9);
+}
+
+.ai-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: dot-pulse 2s ease-in-out infinite;
+}
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--green); }
+  50%      { opacity: 0.5; box-shadow: 0 0 12px var(--green); }
+}
+
+.chat-header-info {
+  display: flex;
+  flex-direction: column;
+}
+.chat-header-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 1px;
+}
+.chat-header-desc {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  scroll-behavior: smooth;
+}
+
+/* Scrollbar inside chat */
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-track { background: transparent; }
+.chat-messages::-webkit-scrollbar-thumb { background: rgba(124,77,255,0.4); border-radius: 2px; }
+
+/* Message bubbles */
+.msg {
+  display: flex;
+  gap: 9px;
+  max-width: 88%;
+  animation: msg-in 0.4s cubic-bezier(0.22,1,0.36,1) both;
+}
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.msg.ai    { align-self: flex-start; }
+.msg.user  { align-self: flex-end; flex-direction: row-reverse; }
+
+.msg-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #fff;
+  margin-top: 2px;
+}
+.msg.ai .msg-avatar {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  box-shadow: 0 0 8px rgba(79,195,247,0.3);
+}
+.msg.user .msg-avatar {
+  background: linear-gradient(135deg, var(--orange), #d84315);
+}
+
+.msg-bubble {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  line-height: 1.65;
+  position: relative;
+  color: var(--text);
+}
+.msg.ai .msg-bubble {
+  background: rgba(79,195,247,0.08);
+  border: 1px solid rgba(79,195,247,0.15);
+  border-bottom-left-radius: 4px;
+}
+.msg.user .msg-bubble {
+  background: rgba(124,77,255,0.12);
+  border: 1px solid rgba(124,77,255,0.2);
+  border-bottom-right-radius: 4px;
+  color: var(--text);
+}
+
+/* Typing indicator */
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+  padding: 6px 4px;
+}
+.typing-indicator span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: typing-bounce 1.4s infinite ease-in-out;
+}
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30%            { transform: translateY(-6px); opacity: 1; }
+}
+
+/* Quick action chips */
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 14px 12px;
+  flex-shrink: 0;
+}
+.quick-chip {
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: rgba(79,195,247,0.06);
+  color: var(--accent);
+  font-size: 0.68rem;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  white-space: nowrap;
+  user-select: none;
+}
+.quick-chip:hover {
+  background: rgba(79,195,247,0.15);
+  border-color: rgba(79,195,247,0.4);
+}
+
+/* Chat input area */
+.chat-input-area {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  align-items: center;
+}
+.chat-input {
+  flex: 1;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 14px;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-family: var(--font);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.chat-input::placeholder { color: var(--text-dim); }
+.chat-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(79,195,247,0.15);
+}
+.chat-send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.chat-send-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 0 14px rgba(79,195,247,0.45);
+}
+/* Plane icon via CSS */
+.chat-send-btn::before {
+  content: '';
+  width: 0; height: 0;
+  border-left: 7px solid #fff;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  margin-left: 2px;
+}
+
+/* ============================================================
+   Right Panel – Ring Gauges
+   ============================================================ */
+.gauge-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.gauge-card {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+.gauge-card h4 {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+/* ---- SVG Ring ---- */
+.ring-container {
+  position: relative;
+  width: 150px;
+  height: 150px;
+}
+.ring-container svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.ring-bg {
+  fill: none;
+  stroke: rgba(255,255,255,0.06);
+  stroke-width: 12;
+}
+.ring-fg {
+  fill: none;
+  stroke-width: 12;
+  stroke-linecap: round;
+  stroke-dasharray: var(--circumference);
+  stroke-dashoffset: var(--circumference);
+  transition: stroke-dashoffset 1.8s cubic-bezier(0.22,1,0.36,1);
+  filter: drop-shadow(0 0 6px var(--ring-color));
+}
+.ring-fg.blue   { stroke: url(#gradBlue);   --ring-color: rgba(79,195,247,0.6); }
+.ring-fg.green  { stroke: url(#gradGreen);  --ring-color: rgba(0,230,118,0.6); }
+.ring-fg.yellow { stroke: url(#gradYellow); --ring-color: rgba(255,215,64,0.6); }
+
+.ring-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.ring-value .num {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ring-value .num.blue   { color: var(--accent); }
+.ring-value .num.green  { color: var(--green); }
+.ring-value .num.yellow { color: var(--yellow); }
+.ring-value .lbl {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+}
+
+/* Rotate animation for ring */
+@keyframes ring-rotate {
+  from { transform: rotate(-90deg) rotate(0deg); }
+  to   { transform: rotate(-90deg) rotate(360deg); }
+}
+.ring-spin svg { animation: ring-rotate 8s linear infinite; }
+
+/* ============================================================
+   SVG Path Connection Animation (full-width strip)
+   ============================================================ */
+.svg-connector-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 24px;
+  overflow: hidden;
+}
+.svg-connector-title {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  margin-bottom: 12px;
+}
+.svg-canvas {
+  width: 100%;
+  height: 120px;
+}
+
+.svg-canvas .connect-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 8 6;
+  opacity: 0.6;
+  stroke-dashoffset: 0;
+  animation: dash-flow 1.8s linear infinite;
+}
+@keyframes dash-flow {
+  to { stroke-dashoffset: -28; }
+}
+
+.svg-canvas .node-circle {
+  filter: drop-shadow(0 0 6px var(--accent));
+}
+.svg-canvas .node-label {
+  fill: var(--text-dim);
+  font-size: 11px;
+  font-family: var(--font);
+}
+
+/* ============================================================
+   Bottom – Trend Line Chart
+   ============================================================ */
+.trend-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 24px;
+  overflow: hidden;
+}
+.trend-title {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  margin-bottom: 14px;
+}
+.trend-canvas {
+  width: 100%;
+  height: 160px;
+}
+
+/* ============================================================
+   Glow Pulse (generic)
+   ============================================================ */
+@keyframes glow-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.glow-pulse { animation: glow-pulse 1.6s ease-in-out infinite; }
+
+/* ============================================================
+   Utility
+   ============================================================ */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); border: 0;
+}
+</style>
+</head>
+<body>
+
+<div class="dashboard">
+
+  <!-- ========== HEADER ========== -->
+  <header class="header">
+    <h1 class="header-title">考 务 监 控 指 挥 中 心</h1>
+    <span class="header-time" id="headerTime"></span>
+  </header>
+
+  <!-- ========== KPI ROW ========== -->
+  <section class="kpi-row" id="kpiRow">
+    <!-- Filled by JS -->
+  </section>
+
+  <!-- ========== MIDDLE: 3D Chart + Gauges ========== -->
+  <section class="middle">
+
+    <!-- AI Chat Assistant -->
+    <div class="chat-card" id="chatCard">
+      <div class="chat-header">
+        <div class="ai-avatar"></div>
+        <div class="ai-status-dot"></div>
+        <div class="chat-header-info">
+          <span class="chat-header-name">AI 考务助手</span>
+          <span class="chat-header-desc">在线 · 可询问排考、冲突、教室使用情况</span>
+        </div>
+      </div>
+
+      <div class="chat-messages" id="chatMessages">
+        <!-- Messages injected by JS -->
+      </div>
+
+      <div class="quick-actions" id="quickActions">
+        <span class="quick-chip" data-msg="今日有哪些时间冲突？">时间冲突</span>
+        <span class="quick-chip" data-msg="博学楼A的教室利用率是多少？">教室利用率</span>
+        <span class="quick-chip" data-msg="未分配监考教师的考场有哪些？">监考分配</span>
+        <span class="quick-chip" data-msg="生成一个本周排考汇总报告">排考汇总</span>
+      </div>
+
+      <div class="chat-input-area">
+        <input type="text" class="chat-input" id="chatInput" placeholder="输入考务问题，按 Enter 发送…" />
+        <button class="chat-send-btn" id="chatSendBtn" aria-label="发送"></button>
+      </div>
+    </div>
+
+    <!-- Right Gauge Panel -->
+    <div class="gauge-panel">
+
+      <!-- Gauge: 排考完成度 -->
+      <div class="gauge-card">
+        <h4>排考完成度</h4>
+        <div class="ring-container ring-spin">
+          <svg viewBox="0 0 160 160">
+            <defs>
+              <linearGradient id="gradBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%"   stop-color="#4fc3f7"/>
+                <stop offset="100%" stop-color="#7c4dff"/>
+              </linearGradient>
+              <linearGradient id="gradGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%"   stop-color="#00e676"/>
+                <stop offset="100%" stop-color="#4fc3f7"/>
+              </linearGradient>
+              <linearGradient id="gradYellow" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%"   stop-color="#ffd740"/>
+                <stop offset="100%" stop-color="#ff9100"/>
+              </linearGradient>
+            </defs>
+            <circle class="ring-bg" cx="80" cy="80" r="62"/>
+            <circle class="ring-fg blue" id="ring1" cx="80" cy="80" r="62"
+              style="--circumference:389.56"/>
+          </svg>
+          <div class="ring-value">
+            <span class="num blue" id="ringVal1">0</span>
+            <span class="lbl">完成率</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gauge: 冲突检测 -->
+      <div class="gauge-card">
+        <h4>冲突检测状态</h4>
+        <div class="ring-container ring-spin">
+          <svg viewBox="0 0 160 160">
+            <circle class="ring-bg" cx="80" cy="80" r="62"/>
+            <circle class="ring-fg green" id="ring2" cx="80" cy="80" r="62"
+              style="--circumference:389.56"/>
+          </svg>
+          <div class="ring-value">
+            <span class="num green" id="ringVal2">0</span>
+            <span class="lbl">安全率</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ========== SVG PATH CONNECTOR ========== -->
+  <section class="svg-connector-wrap">
+    <div class="svg-connector-title">考场 — 监考教师 分配关联</div>
+    <svg class="svg-canvas" id="svgConnector" viewBox="0 0 1000 120" preserveAspectRatio="xMidYMid meet"></svg>
+  </section>
+
+  <!-- ========== BOTTOM: TREND ========== -->
+  <section class="trend-wrap">
+    <div class="trend-title">考生流量趋势（近 12 场次）</div>
+    <canvas class="trend-canvas" id="trendCanvas"></canvas>
+  </section>
+
+</div><!-- .dashboard -->
+
+<!-- ============================================================
+     JAVASCRIPT (all inline)
+     ============================================================ -->
+<script>
+(function () {
+  'use strict';
+
+  /* ----------------------------------------------------------
+     Helpers
+     ---------------------------------------------------------- */
+  var PI2 = Math.PI * 2;
+  var circum = 2 * Math.PI * 62; // ~389.56
+
+  function $(sel) { return document.querySelector(sel); }
+
+  function animateCounter(el, target, duration) {
+    var start = 0;
+    var t0 = null;
+    duration = duration || 1600;
+    function step(ts) {
+      if (!t0) t0 = ts;
+      var progress = Math.min((ts - t0) / duration, 1);
+      // ease-out cubic
+      var ease = 1 - Math.pow(1 - progress, 3);
+      var current = Math.round(ease * target);
+      el.textContent = current.toLocaleString();
+      if (progress < 1) requestAnimationFrame(step);
+      else el.textContent = target.toLocaleString();
+    }
+    requestAnimationFrame(step);
+  }
+
+  function animateRing(ringEl, valEl, pct, duration) {
+    var offset = circum - (pct / 100) * circum;
+    // Ring transition is CSS-driven; just set the final value
+    ringEl.style.strokeDashoffset = offset;
+    // Animate the number
+    var target = Math.round(pct);
+    animateCounter(valEl, target, duration);
+  }
+
+  /* ----------------------------------------------------------
+     Header Clock
+     ---------------------------------------------------------- */
+  function updateClock() {
+    var now = new Date();
+    var Y = now.getFullYear();
+    var M = String(now.getMonth() + 1).padStart(2, '0');
+    var D = String(now.getDate()).padStart(2, '0');
+    var h = String(now.getHours()).padStart(2, '0');
+    var m = String(now.getMinutes()).padStart(2, '0');
+    var s = String(now.getSeconds()).padStart(2, '0');
+    $('#headerTime').textContent = Y + '-' + M + '-' + D + ' ' + h + ':' + m + ':' + s;
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  /* ----------------------------------------------------------
+     KPI Data
+     ---------------------------------------------------------- */
+  var kpiData = [
+    { label: '今日考试场次',   value: 48,   unit: '场',  cls: 'blue',   alert: false },
+    { label: '教室利用率',     value: 82.6, unit: '%',   cls: 'green',  alert: false },
+    { label: '监考教师分配率', value: 91.3, unit: '%',   cls: 'purple', alert: false },
+    { label: '排考冲突告警',   value: 7,    unit: '项',  cls: 'red',    alert: true  },
+    { label: '考生人次流量',   value: 6240, unit: '人次', cls: 'yellow', alert: false },
+    { label: '平均考场负载',   value: 76.8, unit: '%',   cls: 'orange', alert: false },
+  ];
+
+  var kpiRow = $('#kpiRow');
+  kpiData.forEach(function (d) {
+    var card = document.createElement('div');
+    card.className = 'kpi-card ' + d.cls + (d.alert ? ' alert-pulse' : '');
+    card.innerHTML =
+      '<div class="kpi-label">' + d.label + '</div>' +
+      '<div class="kpi-value"><span class="counter" data-target="' + d.value + '">0</span><span class="kpi-unit">' + d.unit + '</span></div>' +
+      '<div class="kpi-sub">' + (d.alert ? '需处理' : '正常运行') + '</div>';
+    kpiRow.appendChild(card);
+  });
+
+  // Animate KPI counters
+  var counters = document.querySelectorAll('.counter');
+  counters.forEach(function (el) {
+    var target = parseFloat(el.getAttribute('data-target'));
+    animateCounter(el, target, 1800);
+  });
+
+  /* ----------------------------------------------------------
+     Chat Assistant
+     ---------------------------------------------------------- */
+  var chatMessages = $('#chatMessages');
+  var chatInput    = $('#chatInput');
+  var chatSendBtn  = $('#chatSendBtn');
+
+  function appendMsg(who, text) {
+    var div = document.createElement('div');
+    div.className = 'msg ' + who;
+    div.innerHTML =
+      '<div class="msg-avatar">' + (who === 'ai' ? 'AI' : '我') + '</div>' +
+      '<div class="msg-bubble">' + text + '</div>';
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return div;
+  }
+
+  function showTyping() {
+    var div = document.createElement('div');
+    div.className = 'msg ai typing-msg';
+    div.innerHTML =
+      '<div class="msg-avatar">AI</div>' +
+      '<div class="msg-bubble">' +
+        '<div class="typing-indicator">' +
+          '<span></span><span></span><span></span>' +
+        '</div>' +
+      '</div>';
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return div;
+  }
+
+  function removeTyping(el) {
+    if (el) el.remove();
+  }
+
+  var aiReplies = {
+    'default':     '收到您的提问。当前系统已接入排考数据库，可在正式环境中为您实时查询。',
+    '冲突':        '正在扫描今日排考数据…<br>检测到 <strong>3 处时间冲突</strong>（博学楼A 第3场、明德楼 第5场），<span style="color:#ff5252">建议优先处理</span>。',
+    '教室利用率':  '博学楼A：92% ▓▓▓<br>博学楼B：78% ▓▓▓<br>明德楼：  85% ▓▓▓<br>整体利用率 82.6%，处于合理区间。',
+    '监考':        '未分配监考教师的考场：<br>• 格物楼 301（第4场）<br>• 崇文楼 205（第6场）<br>已自动推送通知给备用教师池。',
+    '汇总':        '本周排考汇总（截至今日）：<br>• 总场次：48 场<br>• 参与考生：6,240 人次<br>• 使用教室：31 / 42 间<br>• 冲突待处理：3 项<br>整体排考进度 87.5%。',
+    '你好':        '您好！我是您的 AI 考务助手。可以问我关于排考、冲突检测、教室利用率等问题。'
+  };
+
+  function getAIReply(msg) {
+    var key = 'default';
+    if (msg.indexOf('冲突') !== -1) key = '冲突';
+    else if (msg.indexOf('教室') !== -1 || msg.indexOf('利用率') !== -1) key = '教室利用率';
+    else if (msg.indexOf('监考') !== -1 || msg.indexOf('教师') !== -1) key = '监考';
+    else if (msg.indexOf('汇总') !== -1 || msg.indexOf('报告') !== -1) key = '汇总';
+    else if (msg.indexOf('你好') !== -1 || msg.indexOf('hello') !== -1) key = '你好';
+    return aiReplies[key];
+  }
+
+  function sendMessage() {
+    var text = chatInput.value.trim();
+    if (!text) return;
+    chatInput.value = '';
+    appendMsg('user', text);
+    var typing = showTyping();
+    // Simulate AI thinking delay
+    setTimeout(function () {
+      removeTyping(typing);
+      var reply = getAIReply(text);
+      appendMsg('ai', reply);
+    }, 1200 + Math.random() * 800);
+  }
+
+  chatSendBtn.addEventListener('click', sendMessage);
+  chatInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') sendMessage();
+  });
+
+  // Quick action chips
+  var chips = document.querySelectorAll('.quick-chip');
+  chips.forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      chatInput.value = this.getAttribute('data-msg');
+      sendMessage();
+    });
+  });
+
+  // Initial AI greeting
+  setTimeout(function () {
+    appendMsg('ai', '您好！我是您的 <strong>AI 考务助手</strong>。<br>可以问我排考冲突、教室利用率、监考分配等问题，也可以点击下方快捷标签快速查询。');
+  }, 600);
+
+  /* ----------------------------------------------------------
+     Ring Gauges
+     ---------------------------------------------------------- */
+  setTimeout(function () {
+    animateRing($('#ring1'), $('#ringVal1'), 87.5, 2000);
+    animateRing($('#ring2'), $('#ringVal2'), 94.0, 2000);
+  }, 400);
+
+  /* ----------------------------------------------------------
+     SVG Path Connector  – 考场 ↔ 监考教师
+     ---------------------------------------------------------- */
+  var svgNS = 'http://www.w3.org/2000/svg';
+  var svgC = $('#svgConnector');
+
+  var nodes = [
+    { x: 80,  y: 60, label: '博学楼A', cls: 'blue'   },
+    { x: 240, y: 60, label: '博学楼B', cls: 'blue'   },
+    { x: 420, y: 60, label: '明德楼',   cls: 'blue'   },
+    { x: 600, y: 60, label: '格物楼',   cls: 'blue'   },
+    { x: 780, y: 60, label: '致知楼',   cls: 'blue'   },
+    { x: 920, y: 60, label: '崇文楼',   cls: 'blue'   },
+    { x: 160, y: 105, label: '张老师',  cls: 'green'  },
+    { x: 340, y: 105, label: '李老师',  cls: 'green'  },
+    { x: 500, y: 105, label: '王老师',  cls: 'green'  },
+    { x: 680, y: 105, label: '赵老师',  cls: 'green'  },
+    { x: 860, y: 105, label: '刘老师',  cls: 'green'  },
+  ];
+
+  // Draw connecting paths
+  var connections = [
+    [0, 6], [0, 7],
+    [1, 7], [1, 8],
+    [2, 6], [2, 9],
+    [3, 8], [3, 10],
+    [4, 9],
+    [5, 10],
+  ];
+
+  connections.forEach(function (pair) {
+    var a = nodes[pair[0]];
+    var b = nodes[pair[1]];
+    var cpX1 = a.x + (b.x - a.x) * 0.4;
+    var cpY1 = a.y + 20;
+    var cpX2 = a.x + (b.x - a.x) * 0.6;
+    var cpY2 = b.y - 20;
+    var d = 'M' + a.x + ',' + a.y +
+            ' C' + cpX1 + ',' + cpY1 +
+            ' ' + cpX2 + ',' + cpY2 +
+            ' ' + b.x + ',' + b.y;
+    var path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('class', 'connect-line');
+    svgC.appendChild(path);
+  });
+
+  // Draw nodes
+  nodes.forEach(function (n) {
+    var circle = document.createElementNS(svgNS, 'circle');
+    circle.setAttribute('cx', n.x);
+    circle.setAttribute('cy', n.y);
+    circle.setAttribute('r', 6);
+    circle.setAttribute('class', 'node-circle');
+    circle.setAttribute('fill', n.cls === 'blue' ? '#4fc3f7' : '#00e676');
+    svgC.appendChild(circle);
+
+    var text = document.createElementNS(svgNS, 'text');
+    text.setAttribute('x', n.x);
+    text.setAttribute('y', n.y + 18);
+    text.setAttribute('class', 'node-label');
+    text.setAttribute('text-anchor', 'middle');
+    text.textContent = n.label;
+    svgC.appendChild(text);
+  });
+
+  /* ----------------------------------------------------------
+     Trend Line Chart  –  pure Canvas, no library
+     ---------------------------------------------------------- */
+  var trendData = [420, 580, 510, 720, 690, 850, 780, 920, 870, 1050, 980, 1120];
+
+  var canvas = $('#trendCanvas');
+  var ctx    = canvas.getContext('2d');
+
+  function drawTrend() {
+    var W = canvas.width  = canvas.offsetWidth;
+    var H = canvas.height = canvas.offsetHeight;
+    var padL = 50, padR = 20, padT = 20, padB = 30;
+    var chartW = W - padL - padR;
+    var chartH = H - padT - padB;
+
+    ctx.clearRect(0, 0, W, H);
+
+    var max = Math.max.apply(null, trendData) * 1.15;
+    var min = 0;
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (var i = 0; i <= 4; i++) {
+      var gy = padT + (chartH / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(padL, gy);
+      ctx.lineTo(padL + chartW, gy);
+      ctx.stroke();
+      // Y-axis labels
+      var yVal = Math.round(max - (max - min) * (i / 4));
+      ctx.fillStyle = 'rgba(224,224,224,0.45)';
+      ctx.font = '11px system-ui, -apple-system, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(yVal, padL - 8, gy + 4);
+    }
+
+    // X-axis labels
+    var labels = ['第1场','第2场','第3场','第4场','第5场','第6场','第7场','第8场','第9场','第10场','第11场','第12场'];
+    for (var j = 0; j < trendData.length; j++) {
+      var gx = padL + (chartW / (trendData.length - 1)) * j;
+      ctx.fillStyle = 'rgba(224,224,224,0.45)';
+      ctx.font = '11px system-ui, -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(labels[j], gx, H - 8);
+    }
+
+    // Area gradient
+    var grad = ctx.createLinearGradient(0, padT, 0, padT + chartH);
+    grad.addColorStop(0, 'rgba(79,195,247,0.25)');
+    grad.addColorStop(1, 'rgba(79,195,247,0.0)');
+
+    // Build path points
+    var pts = trendData.map(function (v, i) {
+      return {
+        x: padL + (chartW / (trendData.length - 1)) * i,
+        y: padT + chartH - ((v - min) / (max - min)) * chartH
+      };
+    });
+
+    // Area fill
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, padT + chartH);
+    pts.forEach(function (p) { ctx.lineTo(p.x, p.y); });
+    ctx.lineTo(pts[pts.length - 1].x, padT + chartH);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    pts.forEach(function (p, i) {
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.strokeStyle = '#4fc3f7';
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = 'rgba(79,195,247,0.5)';
+    ctx.shadowBlur = 8;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Dots
+    pts.forEach(function (p) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4, 0, PI2);
+      ctx.fillStyle = '#0a0e27';
+      ctx.fill();
+      ctx.strokeStyle = '#4fc3f7';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+  }
+
+  drawTrend();
+  window.addEventListener('resize', drawTrend);
+
+})();
+</script>
+</body>
+</html>
