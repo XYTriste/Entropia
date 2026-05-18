@@ -25,68 +25,85 @@
     <!-- ========== MIDDLE: Chat Assistant + Gauges ========== -->
     <section class="middle">
       <!-- Left: Chat Assistant (replaces 各考场/楼栋考试占用率) -->
-      <div class="chat-card" ref="chatCardRef">
-        <!-- Accent top stripe -->
-        <div class="chat-card-stripe"></div>
-
-        <!-- Chat Header -->
-        <div class="chat-header">
-          <div class="ai-avatar"></div>
-          <div class="ai-status-dot"></div>
-          <div class="chat-header-info">
-            <span class="chat-header-name">AI 考务助手</span>
-            <span class="chat-header-desc">在线 · 可询问排考、冲突、教室使用情况</span>
-          </div>
+      <div class="chart-3d-wrap chat-assistant-wrap">
+        <div class="chart-3d-title">
+          <el-icon :size="16"><ChatDotRound /></el-icon>
+          排考小助手
         </div>
 
         <!-- Chat Body -->
-        <div class="chat-messages" ref="messageContainer">
+        <div class="chat-body" ref="messageContainer">
+          <!-- Welcome -->
+          <div v-if="messages.length === 0" class="chat-welcome">
+            <div class="welcome-bubble">
+              <div class="flex items-start gap-2">
+                <el-icon :size="16" class="chat-icon"><ChatDotRound /></el-icon>
+                <div>
+                  <div class="text-sm mb-2">你好！我是排考小助手，可以帮你查询考场信息。</div>
+                  <div class="text-xs mb-1 opacity-70">你可以这样问我：</div>
+                  <div class="space-y-1">
+                    <div
+                      v-for="prompt in quickPrompts"
+                      :key="prompt"
+                      class="quick-prompt"
+                      @click="sendQuickPrompt(prompt)"
+                    >
+                      <el-icon :size="12"><Search /></el-icon>
+                      {{ prompt }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Messages -->
           <div
             v-for="(msg, idx) in messages"
             :key="idx"
-            :class="['msg', msg.role]"
+            :class="['chat-message', msg.role]"
           >
-            <div class="msg-avatar">{{ msg.role === 'assistant' ? 'AI' : '我' }}</div>
-            <div class="msg-bubble" :class="msg.role">
-              <div v-if="msg.type === 'tool_result'" class="text-sm tool-result" v-html="msg.html"></div>
-              <div v-else class="text-sm whitespace-pre-wrap" v-html="msg.content"></div>
+            <div class="message-bubble" :class="msg.role">
+              <div v-if="msg.role === 'assistant'" class="flex items-start gap-2">
+                <el-icon :size="16" class="chat-icon"><ChatDotRound /></el-icon>
+                <div v-if="msg.type === 'tool_result'" class="text-sm tool-result" v-html="msg.html"></div>
+                <div v-else class="text-sm whitespace-pre-wrap">{{ msg.content }}</div>
+              </div>
+              <div v-else class="text-sm text-right whitespace-pre-wrap">{{ msg.content }}</div>
             </div>
           </div>
 
           <!-- Typing Indicator -->
-          <div v-if="chatLoading" class="msg ai typing-msg">
-            <div class="msg-avatar">AI</div>
-            <div class="msg-bubble ai">
-              <div class="typing-indicator">
-                <span></span><span></span><span></span>
+          <div v-if="chatLoading" class="chat-message assistant">
+            <div class="message-bubble assistant">
+              <div class="flex items-center gap-2">
+                <el-icon :size="16" class="chat-icon"><ChatDotRound /></el-icon>
+                <div class="typing-indicator">
+                  <span></span><span></span><span></span>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Quick Action Chips -->
-        <div class="quick-actions" id="quickActions">
-          <span class="quick-chip" v-for="prompt in quickPrompts" :key="prompt" @click="sendQuickPrompt(prompt)">{{ prompt }}</span>
-        </div>
-
         <!-- Chat Input -->
         <div class="chat-input-area">
-          <input
-            v-model="chatInput"
-            placeholder="输入考务问题，按 Enter 发送…"
-            @keyup.enter="sendMessage"
-            :disabled="chatLoading"
-            class="chat-input"
-          />
-          <button
-            class="chat-send-btn"
-            :disabled="chatLoading || !chatInput.trim()"
-            @click="sendMessage"
-            aria-label="发送"
-          >
-            <el-icon :size="16"><Promotion /></el-icon>
-          </button>
+          <div class="chat-input-wrap">
+            <input
+              v-model="chatInput"
+              placeholder="输入问题，例如：查询周一上午的空闲教室..."
+              @keyup.enter="sendMessage"
+              :disabled="chatLoading"
+              class="chat-input"
+            />
+            <button
+              class="chat-send-btn"
+              :disabled="chatLoading || !chatInput.trim()"
+              @click="sendMessage"
+            >
+              <el-icon :size="16"><Promotion /></el-icon>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -152,13 +169,15 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
+  ChatDotRound,
+  Search,
+  Promotion,
   VideoPlay,
   TrendCharts,
   Edit,
   Upload,
   OfficeBuilding,
   DataAnalysis,
-  Promotion,
 } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/index.js'
@@ -182,12 +201,10 @@ const kpiData = ref([
 const chatInput = ref('')
 const chatLoading = ref(false)
 const messages = ref([])
-const chatCardRef = ref(null)
 const quickPrompts = [
-  '今日有哪些时间冲突？',
-  '博学楼A的教室利用率是多少？',
-  '未分配监考教师的考场有哪些？',
-  '生成一个本周排考汇总报告',
+  '查询所有教室状态',
+  '周一上午有哪些教室空闲？',
+  '5-320教室排了什么考试？',
 ]
 
 const quickActions = [
@@ -373,10 +390,9 @@ async function sendMessage() {
       scrollToBottom()
     }
   } catch (e) {
-    // 请求失败，显示错误信息
+    messages.value.push({ role: 'assistant', type: 'text', content: `⚠️ 请求失败：${e.message}` })
+  } finally {
     chatLoading.value = false
-    const errorMsg = `抱歉，服务暂时不可用。<br><small style="opacity:0.6;">${e.message || '请稍后重试'}</small>`
-    messages.value.push({ role: 'assistant', type: 'text', content: errorMsg })
     await nextTick()
     scrollToBottom()
   }
@@ -444,14 +460,6 @@ function renderTeacherAssignments(data) {
 onMounted(() => {
   clockInterval = setInterval(updateClock, 1000)
   loadStats()
-  // 初始 AI 问候
-  setTimeout(() => {
-    messages.value.push({
-      role: 'assistant',
-      type: 'text',
-      content: '您好！我是您的 <strong>AI 考务助手</strong>。<br>可以问我排考冲突、教室利用率、监考分配等问题，也可以点击下方快捷标签快速查询。'
-    })
-  }, 600)
 })
 
 onUnmounted(() => {
@@ -617,7 +625,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 1fr 320px;
   gap: 20px;
-  height: 520px;
+  min-height: 380px;
   position: relative;
   z-index: 1;
 }
@@ -625,265 +633,165 @@ onUnmounted(() => {
   .middle { grid-template-columns: 1fr; }
 }
 
-/* ========== Chat Assistant Card ========== */
-.chat-card {
+/* Chat Assistant Wrap */
+.chart-3d-wrap {
   background: rgba(26, 31, 58, 0.85);
   border: 1px solid rgba(100, 140, 255, 0.15);
   border-radius: 14px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  position: relative;
-  height: 100%;
 }
-
-/* Accent top stripe */
-.chat-card-stripe {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #4fc3f7, #7c4dff, transparent);
-  border-radius: 14px 14px 0 0;
-  z-index: 2;
-}
-
-.chat-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 18px 12px;
-  border-bottom: 1px solid rgba(100, 140, 255, 0.15);
-  flex-shrink: 0;
-}
-
-.ai-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #4fc3f7, #7c4dff);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  position: relative;
-}
-/* CSS-only "brain circuit" icon */
-.ai-avatar::before {
-  content: '';
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.9);
-  position: absolute;
-}
-.ai-avatar::after {
-  content: '';
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  background: rgba(255,255,255,0.9);
-  border-radius: 50%;
-  top: 6px;
-  left: 6px;
-  box-shadow: 12px 0 0 rgba(255,255,255,0.9),
-              6px 12px 0 rgba(255,255,255,0.9);
-}
-
-.ai-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #00e676;
-  box-shadow: 0 0 6px #00e676;
-  animation: dot-pulse 2s ease-in-out infinite;
-}
-@keyframes dot-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 6px #00e676; }
-  50%      { opacity: 0.5; box-shadow: 0 0 12px #00e676; }
-}
-
-.chat-header-info {
-  display: flex;
-  flex-direction: column;
-}
-.chat-header-name {
+.chart-3d-title {
   font-size: 0.85rem;
-  font-weight: 600;
-  color: #e0e0e0;
-  letter-spacing: 1px;
-}
-.chat-header-desc {
-  font-size: 0.65rem;
   color: rgba(224, 224, 224, 0.55);
+  letter-spacing: 2px;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-/* Chat Messages */
-.chat-messages {
+/* Chat Body */
+.chat-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 14px;
+  padding: 8px 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  scroll-behavior: smooth;
+  gap: 12px;
 }
 
-/* Scrollbar inside chat */
-.chat-messages::-webkit-scrollbar { width: 4px; }
-.chat-messages::-webkit-scrollbar-track { background: transparent; }
-.chat-messages::-webkit-scrollbar-thumb { background: rgba(124,77,255,0.4); border-radius: 2px; }
-
-/* Message bubbles */
-.msg {
+.chat-welcome {
   display: flex;
-  gap: 9px;
-  max-width: 88%;
-  animation: msg-in 0.4s cubic-bezier(0.22,1,0.36,1) both;
+  justify-content: flex-start;
 }
-@keyframes msg-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+.welcome-bubble {
+  max-width: 95%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(79,195,247,0.2);
 }
-.msg.ai    { align-self: flex-start; }
-.msg.user  { align-self: flex-end; flex-direction: row-reverse; }
 
-.msg-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.chat-message {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.6rem;
-  font-weight: 700;
-  color: #fff;
-  margin-top: 2px;
 }
-.msg.ai .msg-avatar {
-  background: linear-gradient(135deg, #4fc3f7, #7c4dff);
-  box-shadow: 0 0 8px rgba(79,195,247,0.3);
+.chat-message.user {
+  justify-content: flex-end;
 }
-.msg.user .msg-avatar {
-  background: linear-gradient(135deg, #ff9100, #d84315);
+.chat-message.assistant {
+  justify-content: flex-start;
 }
-
-.msg-bubble {
+.message-bubble {
+  max-width: 80%;
   padding: 10px 14px;
   border-radius: 12px;
-  font-size: 0.78rem;
-  line-height: 1.65;
-  position: relative;
-  color: #e0e0e0;
+  word-break: break-word;
 }
-.msg.ai .msg-bubble {
-  background: rgba(79,195,247,0.08);
-  border: 1px solid rgba(79,195,247,0.15);
-  border-bottom-left-radius: 4px;
-}
-.msg.user .msg-bubble {
-  background: rgba(124,77,255,0.12);
-  border: 1px solid rgba(124,77,255,0.2);
+.message-bubble.user {
+  background: rgba(79,195,247,0.3);
+  color: white;
   border-bottom-right-radius: 4px;
+}
+.message-bubble.assistant {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-bottom-left-radius: 4px;
   color: #e0e0e0;
 }
 
-/* Quick action chips */
-.quick-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  padding: 0 14px 12px;
+.chat-icon {
+  color: #4fc3f7;
+  margin-top: 2px;
   flex-shrink: 0;
 }
-.quick-chip {
-  padding: 5px 12px;
-  border-radius: 20px;
-  border: 1px solid rgba(100, 140, 255, 0.15);
-  background: rgba(79,195,247,0.06);
+
+/* Quick Prompts */
+.quick-prompt {
+  font-size: 12px;
   color: #4fc3f7;
-  font-size: 0.68rem;
+  background: rgba(79,195,247,0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
-  white-space: nowrap;
-  user-select: none;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
 }
-.quick-chip:hover {
-  background: rgba(79,195,247,0.15);
-  border-color: rgba(79,195,247,0.4);
+.quick-prompt:hover {
+  background: rgba(79,195,247,0.2);
 }
 
-/* Chat input area */
+/* Typing Indicator */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.typing-indicator span {
+  width: 6px;
+  height: 6px;
+  background: rgba(224,224,224,0.6);
+  border-radius: 50%;
+  animation: typing 1.2s infinite;
+}
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-6px); opacity: 1; }
+}
+
+/* Chat Input */
 .chat-input-area {
+  padding: 12px 0 0;
+  border-top: 1px solid rgba(100, 140, 255, 0.15);
+}
+.chat-input-wrap {
   display: flex;
   gap: 8px;
-  padding: 12px 14px;
-  border-top: 1px solid rgba(100, 140, 255, 0.15);
-  flex-shrink: 0;
-  align-items: center;
 }
 .chat-input {
   flex: 1;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(100, 140, 255, 0.15);
-  border-radius: 10px;
-  padding: 9px 14px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(100, 140, 255, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
   color: #e0e0e0;
-  font-size: 0.78rem;
-  font-family: inherit;
+  font-size: 14px;
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.2s;
 }
-.chat-input::placeholder { color: rgba(224, 224, 224, 0.55); }
 .chat-input:focus {
   border-color: #4fc3f7;
-  box-shadow: 0 0 0 2px rgba(79,195,247,0.15);
+}
+.chat-input::placeholder {
+  color: rgba(224, 224, 224, 0.3);
 }
 .chat-send-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: none;
   background: linear-gradient(135deg, #4fc3f7, #7c4dff);
-  color: #fff;
-  font-size: 1rem;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: white;
   cursor: pointer;
+  transition: opacity 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  transition: transform 0.15s, box-shadow 0.15s;
 }
 .chat-send-btn:hover:not(:disabled) {
-  transform: scale(1.08);
-  box-shadow: 0 0 14px rgba(79,195,247,0.45);
+  opacity: 0.85;
 }
 .chat-send-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
-
-/* Typing indicator */
-.typing-indicator {
-  display: flex;
-  gap: 4px;
-  padding: 6px 4px;
-}
-.typing-indicator span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #4fc3f7;
-  animation: typing-bounce 1.4s infinite ease-in-out;
-}
-.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-@keyframes typing-bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30%            { transform: translateY(-6px); opacity: 1; }
-}
-
-/* ========== End Chat Assistant Card ========== */
 
 /* Gauge Panel */
 .gauge-panel {
@@ -1018,4 +926,7 @@ onUnmounted(() => {
 .quick-action-btn.orange:hover { background: rgba(255,145,0,0.15); }
 
 /* Scrollbar */
+.chat-body::-webkit-scrollbar { width: 6px; }
+.chat-body::-webkit-scrollbar-track { background: transparent; }
+.chat-body::-webkit-scrollbar-thumb { background: #7c4dff; border-radius: 3px; }
 </style>
