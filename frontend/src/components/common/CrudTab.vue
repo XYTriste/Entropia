@@ -8,10 +8,16 @@
 
     <!-- 工具栏 -->
     <div class="crud-toolbar">
-      <el-button type="primary" :disabled="isMockMode" @click="openDialog()">
-        <el-icon><Plus /></el-icon>
-        新增
-      </el-button>
+      <div class="toolbar-left">
+        <el-button type="primary" :disabled="isMockMode" @click="openDialog()">
+          <el-icon><Plus /></el-icon>
+          新增
+        </el-button>
+        <el-button @click="refresh" :loading="loading">
+          <el-icon><Refresh /></el-icon>
+          刷新
+        </el-button>
+      </div>
       <el-input
         v-model="localFilters.search"
         placeholder="搜索..."
@@ -159,8 +165,19 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Warning } from '@element-plus/icons-vue'
+import { Plus, Warning, Refresh } from '@element-plus/icons-vue'
 import { useCrud } from '@/composables/useCrud'
+
+/* ================================================================
+ * 防抖工具函数 — 避免搜索时频繁触发请求
+ * ================================================================ */
+function debounce(fn, delay = 300) {
+  let timer = null
+  return function (...args) {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => fn.apply(this, args), delay)
+  }
+}
 
 /* 静态样式对象 — 避免每次渲染返回新引用触发 diff + 强制回流 */
 const HEADER_STYLE = {
@@ -275,25 +292,48 @@ const {
   deleteItem,
 } = useCrud(props.entity)
 
+// Mock 模式已确认后，不再尝试请求后端（除非手动刷新）
+let mockModeConfirmed = false
+
 // 覆盖 fetchData，检测后端是否可用
+// 注意：Mock 模式下跳过请求，避免无效网络开销
 async function fetchData() {
+  // Mock 模式已确认时，直接返回，不发请求
+  if (isMockMode.value && mockModeConfirmed) {
+    return
+  }
+
   try {
     await originalFetchData()
-    // 如果请求成功但没有数据，检查是否是后端返回空数据还是真的没有数据
-    // 如果后端确实不可用，originalFetchData 会捕获错误
+    // 请求成功，关闭 mock 模式
     isMockMode.value = false
+    mockModeConfirmed = false
   } catch (e) {
-    // 后端不可用，启用测试模式
-    isMockMode.value = true
+    // 后端不可用，启用测试模式（只设置一次）
+    if (!mockModeConfirmed) {
+      isMockMode.value = true
+      mockModeConfirmed = true
+    }
   }
 }
 
 const formRef = ref(null)
 const localFilters = ref({ ...filters.value })
 
-function onSearch() {
+// 搜索防抖：300ms 内不重复请求
+const debouncedFetchData = debounce(() => {
   filters.value = { ...localFilters.value }
   pagination.value.page = 1
+  fetchData()
+}, 300)
+
+function onSearch() {
+  debouncedFetchData()
+}
+
+// 手动刷新时强制重新检测后端
+function refresh() {
+  mockModeConfirmed = false
   fetchData()
 }
 
@@ -338,8 +378,8 @@ onMounted(() => {
   fetchData()
 })
 
-// 把 openDialog 暴露给模板（父组件也可通过 ref 调用）
-defineExpose({ openDialog })
+// 把 openDialog 和 refresh 暴露给父组件
+defineExpose({ openDialog, refresh })
 </script>
 
 <style scoped>
@@ -375,6 +415,10 @@ defineExpose({ openDialog })
   align-items: center;
   margin-bottom: var(--space-md, 16px);
   gap: var(--space-md, 16px);
+}
+.toolbar-left {
+  display: flex;
+  gap: 8px;
 }
 .crud-search {
   max-width: 320px;
