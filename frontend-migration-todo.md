@@ -32,12 +32,12 @@
 - [x] 快捷操作按钮
 
 #### ⚠️ 需要修复
-- [ ] **修复硬编码数据** (P2)
+- [x] **修复硬编码数据** (P2) ✓ 2026-05-19
   - 文件：`frontend/src/components/dashboard/DashboardView.vue`
-  - 问题1：第286行 `kpiData.value[2].value = teacherTotal > 0 ? 91.3 : 0`（监考教师分配率硬编码91.3%）
-  - 问题2：第287行 `kpiData.value[3].value = 7 // TODO: get from API`（冲突数硬编码）
-  - 方案：需要从后端API获取真实数据，或计算真实值
-  - API：可能需要新增 `/api/scheduler/conflicts` 或类似接口
+  - 修复1：调用 `/api/teachers/workload/stats` 获取真实监考教师分配率，替换硬编码的91.3%
+  - 修复2：使用超负荷教师数量（`overload_teachers.length`）作为冲突告警指标，替换硬编码的7
+  - 注意：冲突检测API尚未实现，当前使用超负荷教师数作为代理指标
+  - API：`GET /api/teachers/workload/stats`
 
 - [ ] **各考场/楼栋考试占用率图表** (P3)
   - 原生JS前端有3D图表区域，Vue版被聊天助手替代
@@ -72,17 +72,18 @@
 - [x] 排考结果展示
 
 #### ⚠️ 需要修复
-- [ ] **停止排考功能无效** (P2)
+- [x] **停止排考功能无效** (P2) ✓ 2026-05-19
   - 文件：`frontend/src/components/scheduler/SchedulerView.vue`
-  - 原因：后端是同步执行，无法真正停止
-  - 方案选项1：后端改为异步执行（推荐）
-  - 方案选项2：前端禁用停止按钮，或改为"取消应用"功能
+  - 修复：已禁用停止按钮并添加说明提示（后端同步执行无法真正停止）
+  - 方案2实现：按钮改为禁用状态，添加 tooltip 说明原因
+  - 如需真正停止功能，需要后端改为异步执行（方案1）
   - 参考：原生JS前端也有此限制，但保留了停止按钮
 
-- [ ] **排考配置持久化** (P2)
+- [x] **排考配置持久化** (P2) ✓ 2026-05-20
   - 文件：`frontend/src/components/scheduler/SchedulerView.vue`
-  - 需要确认 `loadConfig()` 和 `saveConfig()` 是否正常工作
-  - API：`GET/PUT /api/scheduler/config`
+  - 修复：`loadConfig()` 函数中错误使用 `res.data`（应为 `res`，因为响应拦截器已返回 `response.data`）
+  - 验证：后端 API `GET/PUT /api/scheduler/config` 已正确实现
+  - 状态：配置现在可以正确加载和保存
 
 ---
 
@@ -110,21 +111,23 @@
 - [x] Courses - 课程详情视图
 
 #### ⚠️ 需要修复
-- [ ] **导出功能未实现** (P1)
-  - 文件：`frontend/src/components/results/ResultsView.vue`
-  - 第244-246行 `exportData()` 函数只有 `console.log`
-  - 需要实现：
-    - 导出当前视图数据
-    - 支持Excel格式
-    - 调用后端API：`GET /api/import-export/export/excel`
+- [x] **导出功能未实现** (P1) ✓ 2026-05-19
+  - 已修复：`exportData()` 函数现已实现
+  - 调用后端API：`GET /api/import-export/export/excel?versionId=...&view=...`
+  - 支持按当前视图导出Excel格式
+  - 使用 axios 发起请求，处理 blob 响应并自动下载文件
 
-- [ ] **验证教师负荷统计图** (P2)
-  - 原生JS有横向柱状图展示
-  - 需要确认Vue版 `TeacherLoadPanel.vue` 是否有图表，还是只有表格
+- [x] **验证教师负荷统计图** (P2) ✓ 2026-05-19
+  - Vue版 `TeacherLoadPanel.vue` 已实现横向柱状图（CSS Bar Chart）
+  - 显示教师监考场次、平均负荷、最多/最少/空闲/超额教师统计
+  - 功能完整，与原生JS前端等效
 
-- [ ] **验证教室/流动监考/班级/课程视图** (P2)
-  - 需要逐一验证这些视图是否完整实现
-  - 检查：`ClassPanel.vue`, `CoursePanel.vue`, `ClassroomPanel.vue`, `PatrolPanel.vue`
+- [x] **验证教室/流动监考/班级/课程视图** (P2) ✓ 2026-05-19
+  - `ClassPanel.vue`：已完整实现班级时间线视图
+  - `CoursePanel.vue`：已完整实现课程详情视图（含AB卷分析）
+  - `ClassroomPanel.vue`：已完整实现教室使用矩阵
+  - `PatrolPanel.vue`：已完整实现流动监考矩阵
+  - 所有视图功能完整，与原生JS前端等效
 
 ---
 
@@ -145,42 +148,41 @@
 - [x] 上传Excel文件导入
 - [x] 导出Excel
 
-#### ❌ 缺失功能 (P1 - 高优先级)
-- [ ] **缺少 time-slots 模板下载**
+#### ✅ 缺失功能已补全 (P1 - 已完成 ✓ 2026-05-19)
+- [x] **time-slots 模板下载** ✓ 2026-05-19
   - 文件：`frontend/src/components/importExport/ImportExportView.vue`
-  - 原生JS支持7种导入类型，Vue版只有6种
-  - 需要添加 `time-slots` 到 templates 数组
+  - 已在 templates 数组中添加 time-slots
   - API：`GET /api/import-export/templates/time-slots`
 
-- [ ] **缺少 JSON 导出功能**
-  - 原生JS有 `exportJSON()` 函数
+- [x] **JSON 导出功能** ✓ 2026-05-19
+  - 已实现 `exportJSON()` 函数
   - API：`GET /api/import-export/export/json`
-  - 需要实现前端按钮和下载逻辑
+  - 添加前端按钮和下载逻辑
 
-- [ ] **缺少 SQL 导出功能**
-  - 原生JS有 `exportSQL()` 函数
+- [x] **SQL 导出功能** ✓ 2026-05-19
+  - 已实现 `exportSQL()` 函数
   - API：`GET /api/import-export/export/sql`
-  - 需要实现前端按钮和下载逻辑
+  - 添加前端按钮和下载逻辑
 
-- [ ] **缺少清除全部数据功能**
-  - 原生JS有 `clearAllData()` 函数
+- [x] **清除全部数据功能** ✓ 2026-05-19
+  - 已实现 `clearAllData()` 函数，带确认对话框
   - API：`POST /api/import-export/clear-data`
-  - 需要添加危险操作按钮（带确认对话框）
+  - 显示清除结果详情
 
-- [ ] **缺少初始化时段功能**
-  - 原生JS有 `initTimeSlots()` 函数
+- [x] **初始化时段功能** ✓ 2026-05-19
+  - 已实现 `initTimeSlots()` 函数，带确认对话框
   - API：`POST /api/import-export/init-time-slots`
-  - 需要添加按钮（带确认对话框）
+  - 显示初始化结果
 
-- [ ] **导入反馈不够详细**
-  - 原生JS显示：成功数、失败数、错误详情表格
-  - Vue版需要改进导入结果展示
-  - 参考：原生JS的 `showImportResult()` 和 `showAllInOneImportResult()`
+- [x] **导入反馈详细** ✓ 2026-05-19
+  - 改进导入结果展示：成功/失败数量
+  - 添加错误详情表格（支持 errors 和 warnings）
+  - 参考原生JS的 `showImportResult()` 和 `showAllInOneImportResult()`
 
-- [ ] **缺少全量导入功能**
-  - 原生JS支持 `all-in-one` 导入（单个Excel文件包含多个Sheet）
+- [x] **全量导入功能** ✓ 2026-05-19
+  - 已添加"全量导入"选项卡
   - API：`POST /api/import-export/import-excel-all`
-  - 需要添加"全量导入"选项卡
+  - 支持全量导入模板下载
 
 ---
 
@@ -229,13 +231,19 @@
 *无*
 
 ### P1 - 高优先级（核心功能缺失）
-1. [ ] 导入导出页面缺失功能（time-slots模板、JSON/SQL导出、清除数据、初始化时段、全量导入）
-2. [ ] 排考结果导出功能未实现
+1. [x] 导入导出页面缺失功能（time-slots模板、JSON/SQL导出、清除数据、初始化时段、全量导入）✓ 2026-05-19
+2. [x] 排考结果导出功能未实现 ✓ 2026-05-19
+   - 注意：已在 ImportExportView.vue 中实现 Excel/JSON/SQL 导出
 
 ### P2 - 中优先级（功能改进）
-1. [ ] 修复仪表盘硬编码数据
-2. [ ] 排考配置持久化验证
-3. [ ] 验证排考结果各子视图完整性
+1. [x] 修复仪表盘硬编码数据 ✓ 2026-05-19
+2. [x] 排考配置持久化验证 ✓ 2026-05-20
+   - 修复前端 `loadConfig()` 函数中的响应数据处理（移除错误的 `.data` 访问）
+   - 后端 API `GET/PUT /api/scheduler/config` 已正确实现
+   - 前端现在可以正确加载和保存排考配置
+3. [x] 验证排考结果各子视图完整性 ✓ 2026-05-19
+   - 已验证所有7个子视图（Overview/Teachers/TeacherLoad/Classrooms/Patrol/Classes/Courses）
+   - 所有视图功能完整，与原生JS前端等效
 
 ### P3 - 低优先级（优化项）
 1. [ ] 各考场/楼栋考试占用率图表（需求确认）

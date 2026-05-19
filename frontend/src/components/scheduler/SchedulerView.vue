@@ -144,12 +144,13 @@
               </div>
             </div>
 
-            <!-- 停止按钮 -->
+            <!-- 停止按钮 (后端同步执行，无法真正停止) -->
             <div class="btn-stop" v-if="running">
-              <el-button type="danger" @click="stopScheduler" plain>
+              <el-button type="info" disabled plain>
                 <el-icon><VideoPause /></el-icon>
-                停止排考
+                无法停止 (同步执行中)
               </el-button>
+              <div class="stop-hint">后端同步执行排考任务，无法中断。请等待排考完成。</div>
             </div>
           </div>
         </div>
@@ -397,11 +398,11 @@ const resultData = ref(null)
 async function loadConfig() {
   try {
     const res = await api.get('/scheduler/config')
-    if (res.data) {
-      config.value.fixedTeachersPerRoom = res.data.fixed_teachers_per_room || 2
-      config.value.patrolTeacherCount = res.data.patrol_teacher_count_per_slot_pair || 2
-      config.value.enableMaxDaysConstraint = res.data.enable_max_days_constraint ?? true
-      config.value.enableDayContinuityConstraint = res.data.enable_day_continuity_constraint ?? true
+    if (res) {
+      config.value.fixedTeachersPerRoom = res.fixed_teachers_per_room || 2
+      config.value.patrolTeacherCount = res.patrol_teacher_count_per_slot_pair || 2
+      config.value.enableMaxDaysConstraint = res.enable_max_days_constraint ?? true
+      config.value.enableDayContinuityConstraint = res.enable_day_continuity_constraint ?? true
     }
   } catch (e) {
     console.warn('加载配置失败:', e)
@@ -518,12 +519,8 @@ async function startScheduler() {
   }
 }
 
-function stopScheduler() {
-  // 后端是同步执行，无法真正停止
-  running.value = false
-  addProgressMsg('error', '排考任务无法停止')
-  ElMessage.warning('排考任务无法停止，请等待完成')
-}
+// stopScheduler 已移除 - 后端同步执行无法停止
+// 停止按钮已禁用，并添加说明提示
 
 function viewResults() {
   router.push('/results')
@@ -848,8 +845,16 @@ onMounted(() => {
 }
 .btn-stop {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
   margin-top: 12px;
+}
+.stop-hint {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-align: right;
+  line-height: 1.4;
 }
 
 /* Course Panel */

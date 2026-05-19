@@ -91,6 +91,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { get } from '@/api'
+import { ElMessage } from 'element-plus'
+import axios from 'axios'
 import OverviewPanel from './OverviewPanel.vue'
 import TeacherPanel from './TeacherPanel.vue'
 import TeacherLoadPanel from './TeacherLoadPanel.vue'
@@ -241,8 +243,36 @@ function refreshData() {
   loadStats()
 }
 
-function exportData() {
-  console.log('导出数据')
+async function exportData() {
+  if (!currentVersionId.value) {
+    ElMessage.warning('请先选择排考版本')
+    return
+  }
+  try {
+    ElMessage.info('正在导出，请稍候...')
+    const token = localStorage.getItem('token') || ''
+    const response = await axios.get('/api/import-export/export/excel', {
+      params: {
+        versionId: currentVersionId.value,
+        view: currentPanel.value
+      },
+      responseType: 'blob',
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `排考结果_${currentPanel.value}_${new Date().toISOString().slice(0, 10)}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch (e) {
+    console.error('导出失败:', e)
+    ElMessage.error('导出失败，请稍后重试')
+  }
 }
 
 onMounted(() => {

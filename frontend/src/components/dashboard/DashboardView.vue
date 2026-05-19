@@ -268,11 +268,12 @@ function animateRing(ringEl, valEl, pct) {
 // ------- Load Stats -------
 async function loadStats() {
   try {
-    const [exams, classrooms, teachers, versions] = await Promise.all([
+    const [exams, classrooms, teachers, versions, workloadStats] = await Promise.all([
       api.get('/exams/', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
       api.get('/classrooms/', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
       api.get('/teachers/', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
       api.get('/scheduler/versions', { params: { page: 1, page_size: 1 } }).catch(() => ({})),
+      api.get('/teachers/workload/stats').catch(() => ({})),
     ])
 
     const examTotal = exams.total ?? 0
@@ -280,11 +281,28 @@ async function loadStats() {
     const teacherTotal = teachers.total ?? 0
     const versionTotal = versions.total ?? 0
 
+    // Calculate teacher assignment rate from workload stats
+    let teacherAssignmentRate = 0
+    if (workloadStats.data) {
+      const ft = workloadStats.data.full_time || {}
+      const pt = workloadStats.data.part_time || {}
+      const totalUsed = (ft.used_slots || 0) + (pt.used_slots || 0)
+      const totalMax = (ft.total_slots || 0) + (pt.total_slots || 0)
+      teacherAssignmentRate = totalMax > 0 ? Math.round((totalUsed / totalMax) * 1000) / 10 : 0
+    }
+
+    // Use overloaded teachers count as conflict indicator
+    let conflictCount = 0
+    if (workloadStats.data && workloadStats.data.overload_teachers) {
+      conflictCount = workloadStats.data.overload_teachers.length
+    }
+
     // Update KPI data
     kpiData.value[0].value = examTotal
     kpiData.value[1].value = classroomTotal > 0 ? Math.round((examTotal / classroomTotal) * 100) : 0
-    kpiData.value[2].value = teacherTotal > 0 ? 91.3 : 0
-    kpiData.value[3].value = 7 // TODO: get from API
+    kpiData.value[2].value = teacherAssignmentRate
+    kpiData.value[3].value = conflictCount
+    kpiData.value[3].alert = conflictCount > 0
     kpiData.value[4].value = examTotal * 30 // estimated
     kpiData.value[5].value = classroomTotal > 0 ? Math.round((examTotal / classroomTotal) * 100) : 0
 
@@ -304,7 +322,7 @@ async function loadStats() {
       const ringVal1 = document.getElementById('ringVal1')
       const ringVal2 = document.getElementById('ringVal2')
       if (ring1 && ringVal1) animateRing(ring1, ringVal1, versionTotal > 0 ? 87.5 : 0)
-      if (ring2 && ringVal2) animateRing(ring2, ringVal2, versionTotal > 0 ? 94.0 : 0)
+      if (ring2 && ringVal2) animateRing(ring2, ringVal2, conflictCount === 0 ? 100 : Math.max(0, 100 - conflictCount * 10))
     }, 400)
 
   } catch (e) {
