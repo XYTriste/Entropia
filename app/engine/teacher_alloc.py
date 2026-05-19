@@ -44,11 +44,10 @@ class TeacherAssignment:
 class TeacherState:
     """
     教师状态追踪器
-    用于在分配过程中动态追踪每位教师的已分配场次和监考日期。
+    用于在分配过程中动态追踪每位教师的已分配场次
     """
     teacher: Teacher
     assigned_slots: int = 0  # 已分配场次
-    assigned_days: set[int] = field(default_factory=set)  # 已分配的监考日期集合 (day_of_week)
 
     @property
     def remaining(self) -> int:
@@ -57,77 +56,18 @@ class TeacherState:
 
     @property
     def is_full(self) -> bool:
-        """是否已达场次上限"""
+        """是否已达上限"""
         return self.assigned_slots >= self.teacher.max_slots
 
-    def assign(self, count: int = 1, day: int | None = None) -> bool:
+    def assign(self, count: int = 1) -> bool:
         """
-        分配场次，返回是否成功。
-        严格遵循HC-05：不超过max_slots。
-
-        参数:
-            count: 分配场次数
-            day: 该场次对应的星期几（day_of_week），用于追踪监考日期
+        分配场次，返回是否成功
+        严格遵循HC-05：不超过max_slots
         """
         if self.assigned_slots + count > self.teacher.max_slots:
             return False
         self.assigned_slots += count
-        if day is not None:
-            self.assigned_days.add(day)
         return True
-
-    def days_count(self) -> int:
-        """当前已监考的天数"""
-        return len(self.assigned_days)
-
-    def would_exceed_max_days(self, new_day: int, max_days: int) -> bool:
-        """
-        判断如果加入 new_day 后，是否会超过最大监考天数限制。
-        即：如果 new_day 不在已有日期集合中，且 len(assigned_days) + 1 > max_days，则超过。
-        """
-        if new_day in self.assigned_days:
-            return False
-        return len(self.assigned_days) + 1 > max_days
-
-    def day_continuity_score(self, new_day: int | None = None) -> float:
-        """
-        计算当前监考日期的连续性得分。
-
-        评分规则：
-        - 连续天数越多分数越高
-        - 最大间隔越大分数越低（越不连续）
-        - 若 new_day 不为 None，模拟加入新天后的连续性评分
-
-        返回:
-            连续性得分，越高表示越连续（越优）
-        """
-        days = set(self.assigned_days)
-        if new_day is not None:
-            days = days | {new_day}
-
-        if len(days) <= 1:
-            return float(len(days))  # 1天=1分，完全连续
-
-        sorted_days = sorted(days)
-        num_days = len(sorted_days)
-        num_consecutive_pairs = 0
-        max_gap = 0
-
-        # 统计连续对
-        for i in range(len(sorted_days) - 1):
-            if sorted_days[i + 1] - sorted_days[i] == 1:
-                num_consecutive_pairs += 1
-
-        # 统计最大间隔（跳过的天数）
-        for i in range(len(sorted_days) - 1):
-            gap = sorted_days[i + 1] - sorted_days[i] - 1  # 跳过多少天
-            if gap > 0:
-                max_gap = max(max_gap, gap)
-
-        # 得分 = 连续对数量 - 最大间隔 * 2
-        # 连续对越多越好，间隔越大越差
-        score = num_consecutive_pairs - max_gap * 2.0
-        return score
 
 
 def _build_teacher_states(teachers: list) -> list[TeacherState]:
@@ -139,63 +79,38 @@ def _get_available_by_priority(
     states: list[TeacherState],
     priority_type: str,  # "full_time" | "part_time" | "any"
     need: int,
-    candidate_day: int | None = None,
-    max_days: int | None = None,
-    prefer_continuous: bool = False,
 ) -> list[TeacherState]:
     """
-    按优先级获取可用教师，同时考虑最大天数约束和日期连续性约束。
+    按优先级获取可用教师
 
     参数:
         states: 教师状态列表
         priority_type: 优先类型
         need: 需要的人数
-        candidate_day: 候选日期（day_of_week），用于评估约束
-        max_days: 最大监考天数上限（仅当 enable_max_days_constraint=True 时生效）
-        prefer_continuous: 是否优先选择连续性更好的教师（仅当 enable_day_continuity_constraint=True 时生效）
 
     返回:
         可用教师状态列表，按优先级排序
     """
     available: list[TeacherState] = []
 
-    def _score(state: TeacherState) -> tuple:
-        """
-        计算教师优先级评分，返回 (主要分数, 连续性分数)。
-        主要分数越低越优先（先排满的人靠后），连续性分数越高越优先。
-        """
-        primary = state.assigned_slots  # 已分配场次越多越靠后（负载均衡）
-
-        # 约束A：超过最大天数 → 大幅降分（但不禁用，因为是软约束）
-        if max_days is not None and state.would_exceed_max_days(candidate_day, max_days):
-            primary += 1000  # 惩罚项：超过天数的教师优先级大幅降低
-
-        # 约束B：日期连续性
-        continuity_score = 0.0
-        if prefer_continuous and candidate_day is not None:
-            continuity_score = state.day_continuity_score(candidate_day)
-            # 连续性分数越低越靠后
-            continuity_score = -continuity_score  # 转为越小越优先
-
-        return (primary, continuity_score)
-
     if priority_type == "full_time":
         # 优先专任教师，再兼职教师
         full = [s for s in states if s.teacher.teacher_type == "full_time" and not s.is_full]
         part = [s for s in states if s.teacher.teacher_type == "part_time" and not s.is_full]
-        full.sort(key=_score)
-        part.sort(key=_score)
+        # 按已分配场次升序排列（优先使用分配少的，实现负载均衡）
+        full.sort(key=lambda s: s.assigned_slots)
+        part.sort(key=lambda s: s.assigned_slots)
         available = full + part
     elif priority_type == "part_time":
         # 优先兼职教师，再专任教师
         part = [s for s in states if s.teacher.teacher_type == "part_time" and not s.is_full]
         full = [s for s in states if s.teacher.teacher_type == "full_time" and not s.is_full]
-        part.sort(key=_score)
-        full.sort(key=_score)
+        part.sort(key=lambda s: s.assigned_slots)
+        full.sort(key=lambda s: s.assigned_slots)
         available = part + full
     else:
         available = [s for s in states if not s.is_full]
-        available.sort(key=_score)
+        available.sort(key=lambda s: s.assigned_slots)
 
     return available[:need]
 
@@ -211,10 +126,6 @@ def allocate_teachers_fixed(
     classrooms: list,  # ClassroomAssignment列表
     teacher_states: list[TeacherState],
     teachers_per_room: int = 2,
-    exam_day: int | None = None,
-    enable_max_days_constraint: bool = False,
-    max_days: int | None = None,
-    enable_day_continuity_constraint: bool = False,
 ) -> list[TeacherAssignment]:
     """
     为固定监考分配教师。
@@ -223,11 +134,6 @@ def allocate_teachers_fixed(
         exam_id: 考试ID
         classrooms: 教室分配结果列表（每个教室需要 teachers_per_room 名固定监考）
         teacher_states: 教师状态列表（会被修改，记录已分配场次）
-        teachers_per_room: 每教室固定监考人数
-        exam_day: 考试日期（day_of_week），用于约束A和约束B评估
-        enable_max_days_constraint: 是否启用最大监考天数约束
-        max_days: 最大监考天数上限
-        enable_day_continuity_constraint: 是否启用日期连续性约束
 
     返回:
         TeacherAssignment列表（即使教师不足，也尽力分配至少1人/考场）
@@ -236,8 +142,6 @@ def allocate_teachers_fixed(
         - 资源充足时每考场 teachers_per_room 名，紧张时每考场至少1名
         - 优先专任教师（SC-03软约束）
         - HC-05: 不超过教师上限
-        - 约束A: 尽量不超过最大监考天数（通过优先级调整）
-        - 约束B: 尽量保持日期连续性（通过优先级调整）
     """
     assignments: list[TeacherAssignment] = []
     if not classrooms:
@@ -252,17 +156,12 @@ def allocate_teachers_fixed(
         room_id: int = classroom.classroom_id
         needed: int = per_room
 
-        candidates = _get_available_by_priority(
-            teacher_states, "full_time", needed,
-            candidate_day=exam_day,
-            max_days=max_days if enable_max_days_constraint else None,
-            prefer_continuous=enable_day_continuity_constraint,
-        )
+        candidates = _get_available_by_priority(teacher_states, "full_time", needed)
 
         for _ in range(needed):
             assigned: bool = False
             for state in list(candidates):
-                if state.assign(1, day=exam_day):
+                if state.assign(1):
                     assignments.append(TeacherAssignment(
                         teacher_id=state.teacher.id,
                         teacher_name=state.teacher.name,
@@ -276,14 +175,9 @@ def allocate_teachers_fixed(
                     candidates.remove(state)
 
             if not assigned:
-                fallback = _get_available_by_priority(
-                    teacher_states, "any", 1,
-                    candidate_day=exam_day,
-                    max_days=max_days if enable_max_days_constraint else None,
-                    prefer_continuous=enable_day_continuity_constraint,
-                )
+                fallback = _get_available_by_priority(teacher_states, "any", 1)
                 for state in list(fallback):
-                    if state.assign(1, day=exam_day):
+                    if state.assign(1):
                         assignments.append(TeacherAssignment(
                             teacher_id=state.teacher.id,
                             teacher_name=state.teacher.name,
@@ -310,9 +204,6 @@ def allocate_teachers_patrol(
     group_rules: list[dict] | None = None,
     used_slot_pairs: set[tuple[int, int]] | None = None,
     classrooms_in_slot: list | None = None,
-    enable_max_days_constraint: bool = False,
-    max_days: int | None = None,
-    enable_day_continuity_constraint: bool = False,
 ) -> list[TeacherAssignment]:
     """
     为流动监考分配教师。
@@ -327,9 +218,6 @@ def allocate_teachers_patrol(
         group_rules: 分组规则列表
         used_slot_pairs: 已分配过的(day_of_week, slot_pair)集合
         classrooms_in_slot: 该时段使用的教室列表
-        enable_max_days_constraint: 是否启用最大监考天数约束
-        max_days: 最大监考天数上限
-        enable_day_continuity_constraint: 是否启用日期连续性约束
 
     返回:
         TeacherAssignment列表，尽量 patrol_count 名流动监考，不足时尽力分配
@@ -338,8 +226,6 @@ def allocate_teachers_patrol(
         - HC-06: 每个上下午场次对尽量 patrol_count 名流动监考
         - 优先兼职教师（SC-04软约束）
         - HC-05: 不超过教师上限
-        - 约束A: 尽量不超过最大监考天数（通过优先级调整）
-        - 约束B: 尽量保持日期连续性（通过优先级调整）
     """
     if used_slot_pairs is None:
         used_slot_pairs = set()
@@ -355,12 +241,7 @@ def allocate_teachers_patrol(
     if existing_assignments:
         used_ids = {a.teacher_id for a in existing_assignments}
 
-    candidates = _get_available_by_priority(
-        teacher_states, "part_time", needed,
-        candidate_day=day_of_week,
-        max_days=max_days if enable_max_days_constraint else None,
-        prefer_continuous=enable_day_continuity_constraint,
-    )
+    candidates = _get_available_by_priority(teacher_states, "part_time", needed)
 
     for _ in range(needed):
         assigned: bool = False
@@ -368,7 +249,7 @@ def allocate_teachers_patrol(
         for state in list(candidates):
             if state.teacher.id in used_ids:
                 continue
-            if state.assign(1, day=day_of_week):
+            if state.assign(1):
                 assignments.append(TeacherAssignment(
                     teacher_id=state.teacher.id,
                     teacher_name=state.teacher.name,
@@ -381,16 +262,11 @@ def allocate_teachers_patrol(
                 break
 
         if not assigned:
-            fallback = _get_available_by_priority(
-                teacher_states, "any", needed,
-                candidate_day=day_of_week,
-                max_days=max_days if enable_max_days_constraint else None,
-                prefer_continuous=enable_day_continuity_constraint,
-            )
+            fallback = _get_available_by_priority(teacher_states, "any", needed)
             for state in fallback:
                 if state.teacher.id in used_ids:
                     continue
-                if state.assign(1, day=day_of_week):
+                if state.assign(1):
                     assignments.append(TeacherAssignment(
                         teacher_id=state.teacher.id,
                         teacher_name=state.teacher.name,

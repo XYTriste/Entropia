@@ -148,8 +148,6 @@ async def run_scheduler(
         import json
         patrol_group_rules = json.loads(config.patrol_group_rules) if config and config.patrol_group_rules else None
         classroom_priority_rules = json.loads(config.classroom_priority_rules) if config and config.classroom_priority_rules else None
-        enable_max_days_constraint = config.enable_max_days_constraint if config else True
-        enable_day_continuity_constraint = config.enable_day_continuity_constraint if config else True
 
         engine = SchedulingEngine(
             max_solve_time=300,
@@ -157,8 +155,6 @@ async def run_scheduler(
             patrol_teacher_count=patrol_teacher_count,
             patrol_group_rules=patrol_group_rules,
             classroom_priority_rules=classroom_priority_rules,
-            enable_max_days_constraint=enable_max_days_constraint,
-            enable_day_continuity_constraint=enable_day_continuity_constraint,
         )
 
         engine_courses = []
@@ -290,9 +286,8 @@ async def run_scheduler(
         return {"code": 0, "message": "success", "data": _scheduler_jobs[job_id]}
 
     except Exception as e:
-        import traceback
         _scheduler_jobs[job_id]["status"] = "failed"
-        _scheduler_jobs[job_id]["error"] = f"{str(e)}\n{traceback.format_exc()}"
+        _scheduler_jobs[job_id]["error"] = str(e)
         return {"code": 0, "message": "排考失败", "data": _scheduler_jobs[job_id]}
 
 
@@ -599,8 +594,6 @@ class ScheduleConfigUpdate(BaseModel):
     patrol_teacher_count_per_slot_pair: int = Field(2, ge=1, le=5, description="每时段对流动监考人数")
     patrol_group_rules: list[dict] = Field(default_factory=list, description="流动监考分组规则")
     classroom_priority_rules: list[dict] = Field(default_factory=list, description="教室优先级规则")
-    enable_max_days_constraint: bool = Field(True, description="是否启用最大监考天数约束")
-    enable_day_continuity_constraint: bool = Field(True, description="是否启用日期连续性约束")
 
 
 @router.get("/config", response_model=dict)
@@ -618,15 +611,13 @@ async def get_schedule_config(
                 "fixed_teachers_per_room": 2,
                 "patrol_teacher_count_per_slot_pair": 2,
                 "patrol_group_rules": [
-                    {"group_name": "流动监考5-2和理东二", "patterns": ["5-2*", "理东二"]},
-                    {"group_name": "流动监考5-3", "patterns": ["5-3*"]},
+                    {"group_name": "5-2及理东二", "patterns": ["5-2*", "理东二"]},
+                    {"group_name": "5-3", "patterns": ["5-3*"]},
                 ],
                 "classroom_priority_rules": [
                     {"priority": 1, "patterns": ["5-2*"]},
                     {"priority": 2, "patterns": ["5-3*"]},
                 ],
-                "enable_max_days_constraint": True,
-                "enable_day_continuity_constraint": True,
             },
         }
     import json
@@ -638,8 +629,6 @@ async def get_schedule_config(
             "patrol_teacher_count_per_slot_pair": config.patrol_teacher_count_per_slot_pair,
             "patrol_group_rules": json.loads(config.patrol_group_rules) if config.patrol_group_rules else [],
             "classroom_priority_rules": json.loads(config.classroom_priority_rules) if config.classroom_priority_rules else [],
-            "enable_max_days_constraint": config.enable_max_days_constraint,
-            "enable_day_continuity_constraint": config.enable_day_continuity_constraint,
         },
     }
 
@@ -661,8 +650,6 @@ async def update_schedule_config(
     config.patrol_teacher_count_per_slot_pair = req.patrol_teacher_count_per_slot_pair
     config.patrol_group_rules = json.dumps(req.patrol_group_rules, ensure_ascii=False)
     config.classroom_priority_rules = json.dumps(req.classroom_priority_rules, ensure_ascii=False)
-    config.enable_max_days_constraint = req.enable_max_days_constraint
-    config.enable_day_continuity_constraint = req.enable_day_continuity_constraint
 
     await db.commit()
     await db.refresh(config)
@@ -675,7 +662,5 @@ async def update_schedule_config(
             "patrol_teacher_count_per_slot_pair": config.patrol_teacher_count_per_slot_pair,
             "patrol_group_rules": req.patrol_group_rules,
             "classroom_priority_rules": req.classroom_priority_rules,
-            "enable_max_days_constraint": config.enable_max_days_constraint,
-            "enable_day_continuity_constraint": config.enable_day_continuity_constraint,
         },
     }
