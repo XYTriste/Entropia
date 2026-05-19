@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -50,6 +50,10 @@ class ScheduleRunRequest(BaseModel):
     """运行排考引擎请求"""
     course_ids: list[int] | None = Field(None, description="指定排考的课程ID列表 (None=全部)")
     strategy: str = Field("full", description="策略: full / public_only / major_only")
+    fixed_teachers_per_room: int | None = Field(None, ge=1, le=2, description="每教室固定监考人数 (None=使用数据库配置)")
+    enable_max_days_constraint: bool | None = Field(None, description="是否启用最大监考天数约束 (None=使用数据库配置)")
+    enable_day_continuity_constraint: bool | None = Field(None, description="是否启用日期连续性约束 (None=使用数据库配置)")
+    max_days: int | None = Field(None, ge=1, le=5, description="最大监考天数上限 (None=使用数据库配置或引擎自动计算)")
 
 
 # ============================================================
@@ -143,11 +147,23 @@ async def run_scheduler(
         # 读取排考配置
         config_result = await db.execute(select(ScheduleConfig).order_by(ScheduleConfig.id.desc()).limit(1))
         config = config_result.scalar_one_or_none()
-        fixed_teachers_per_room = config.fixed_teachers_per_room if config else 2
+
+        fixed_teachers_per_room = req.fixed_teachers_per_room
+        if fixed_teachers_per_room is None:
+            fixed_teachers_per_room = config.fixed_teachers_per_room if config else 2
         patrol_teacher_count = config.patrol_teacher_count_per_slot_pair if config else 2
         import json
         patrol_group_rules = json.loads(config.patrol_group_rules) if config and config.patrol_group_rules else None
         classroom_priority_rules = json.loads(config.classroom_priority_rules) if config and config.classroom_priority_rules else None
+        enable_max_days_constraint = req.enable_max_days_constraint
+        if enable_max_days_constraint is None:
+            enable_max_days_constraint = config.enable_max_days_constraint if config else True
+        enable_day_continuity_constraint = req.enable_day_continuity_constraint
+        if enable_day_continuity_constraint is None:
+            enable_day_continuity_constraint = config.enable_day_continuity_constraint if config else True
+        max_days = req.max_days
+        if max_days is None:
+            max_days = config.max_days if config else None
 
         engine = SchedulingEngine(
             max_solve_time=300,
@@ -155,6 +171,9 @@ async def run_scheduler(
             patrol_teacher_count=patrol_teacher_count,
             patrol_group_rules=patrol_group_rules,
             classroom_priority_rules=classroom_priority_rules,
+            enable_max_days_constraint=enable_max_days_constraint,
+            enable_day_continuity_constraint=enable_day_continuity_constraint,
+            max_days=max_days,
         )
 
         engine_courses = []
@@ -286,8 +305,9 @@ async def run_scheduler(
         return {"code": 0, "message": "success", "data": _scheduler_jobs[job_id]}
 
     except Exception as e:
+        import traceback
         _scheduler_jobs[job_id]["status"] = "failed"
-        _scheduler_jobs[job_id]["error"] = str(e)
+        _scheduler_jobs[job_id]["error"] = f"{str(e)}\n{traceback.format_exc()}"
         return {"code": 0, "message": "排考失败", "data": _scheduler_jobs[job_id]}
 
 
@@ -429,10 +449,10 @@ async def apply_schedule_version(
                             student_count=count,
                         ))
 
-        # 教师分配 (去重：同一考试同一教师同一角色只出现一次)
+        # 教师分配 (去重：同一考试同一教师同一角色同一教室只出现一次)
         seen_teachers = set()
         for tr in er.get("teachers", []):
-            tkey = (tr["teacher_id"], tr.get("role", "fixed"))
+            tkey = (tr["teacher_id"], tr.get("role", "fixed"), tr.get("classroom_id"))
             if tkey in seen_teachers:
                 continue
             seen_teachers.add(tkey)
@@ -475,6 +495,9 @@ async def apply_schedule_version(
             if tid not in teacher_slot_counts:
                 teacher_slot_counts[tid] = set()
             teacher_slot_counts[tid].add(pr["time_slot_id"])
+    # 先重置所有教师的 current_slots，避免旧版本数据残留
+    await db.execute(update(Teacher).values(current_slots=0))
+
     # 写入数据库
     for tid, slots in teacher_slot_counts.items():
         teacher = await db.get(Teacher, tid)
@@ -594,6 +617,9 @@ class ScheduleConfigUpdate(BaseModel):
     patrol_teacher_count_per_slot_pair: int = Field(2, ge=1, le=5, description="每时段对流动监考人数")
     patrol_group_rules: list[dict] = Field(default_factory=list, description="流动监考分组规则")
     classroom_priority_rules: list[dict] = Field(default_factory=list, description="教室优先级规则")
+    enable_max_days_constraint: bool = Field(True, description="是否启用最大监考天数约束")
+    enable_day_continuity_constraint: bool = Field(True, description="是否启用日期连续性约束")
+    max_days: int = Field(3, ge=1, le=5, description="最大监考天数上限")
 
 
 @router.get("/config", response_model=dict)
@@ -611,13 +637,16 @@ async def get_schedule_config(
                 "fixed_teachers_per_room": 2,
                 "patrol_teacher_count_per_slot_pair": 2,
                 "patrol_group_rules": [
-                    {"group_name": "5-2及理东二", "patterns": ["5-2*", "理东二"]},
-                    {"group_name": "5-3", "patterns": ["5-3*"]},
+                    {"group_name": "流动监考5-2和理东二", "patterns": ["5-2*", "理东二"]},
+                    {"group_name": "流动监考5-3", "patterns": ["5-3*"]},
                 ],
                 "classroom_priority_rules": [
                     {"priority": 1, "patterns": ["5-2*"]},
                     {"priority": 2, "patterns": ["5-3*"]},
                 ],
+                "enable_max_days_constraint": True,
+                "enable_day_continuity_constraint": True,
+                "max_days": 3,
             },
         }
     import json
@@ -629,6 +658,9 @@ async def get_schedule_config(
             "patrol_teacher_count_per_slot_pair": config.patrol_teacher_count_per_slot_pair,
             "patrol_group_rules": json.loads(config.patrol_group_rules) if config.patrol_group_rules else [],
             "classroom_priority_rules": json.loads(config.classroom_priority_rules) if config.classroom_priority_rules else [],
+            "enable_max_days_constraint": config.enable_max_days_constraint,
+            "enable_day_continuity_constraint": config.enable_day_continuity_constraint,
+            "max_days": config.max_days,
         },
     }
 
@@ -650,6 +682,9 @@ async def update_schedule_config(
     config.patrol_teacher_count_per_slot_pair = req.patrol_teacher_count_per_slot_pair
     config.patrol_group_rules = json.dumps(req.patrol_group_rules, ensure_ascii=False)
     config.classroom_priority_rules = json.dumps(req.classroom_priority_rules, ensure_ascii=False)
+    config.enable_max_days_constraint = req.enable_max_days_constraint
+    config.enable_day_continuity_constraint = req.enable_day_continuity_constraint
+    config.max_days = req.max_days
 
     await db.commit()
     await db.refresh(config)
@@ -662,5 +697,8 @@ async def update_schedule_config(
             "patrol_teacher_count_per_slot_pair": config.patrol_teacher_count_per_slot_pair,
             "patrol_group_rules": req.patrol_group_rules,
             "classroom_priority_rules": req.classroom_priority_rules,
+            "enable_max_days_constraint": config.enable_max_days_constraint,
+            "enable_day_continuity_constraint": config.enable_day_continuity_constraint,
+            "max_days": config.max_days,
         },
     }

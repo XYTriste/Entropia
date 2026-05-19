@@ -637,8 +637,10 @@ const App = {
         if (radio) radio.checked = true;
         const maxDaysEl = document.getElementById('enableMaxDaysConstraint');
         const continuityEl = document.getElementById('enableDayContinuityConstraint');
+        const maxDaysLimitEl = document.getElementById('maxDaysLimit');
         if (maxDaysEl) maxDaysEl.checked = cfg.enable_max_days_constraint !== false;
         if (continuityEl) continuityEl.checked = cfg.enable_day_continuity_constraint !== false;
+        if (maxDaysLimitEl) maxDaysLimitEl.value = cfg.max_days || 3;
       } catch { /* ignore */ }
     },
 
@@ -1109,15 +1111,14 @@ const App = {
             if (!teacherName && allFixedTeachers.length === 1) {
               teacherName = allFixedTeachers[0];
             }
-            if (!teacherName && allFixedTeachers.length > 0) {
-              teacherName = allFixedTeachers.join('、');
-            }
-            if (!teacherName) teacherName = '--';
+            const teacherCellHtml = teacherName
+              ? App.utils.escapeHtml(teacherName)
+              : '<span class="text-red-500">未分配</span>';
             classroomsHtml += `<tr>
               <td>${App.utils.escapeHtml(cr.classroom_name)}</td>
               <td>${cr.total_students}人</td>
               <td>${classesText}</td>
-              <td>${App.utils.escapeHtml(teacherName)}</td>
+              <td>${teacherCellHtml}</td>
             </tr>`;
           }
           classroomsHtml += '</tbody></table>';
@@ -1307,6 +1308,7 @@ const App = {
       const fixedTeachers = document.querySelector('input[name="fixedTeachersPerRoom"]:checked')?.value || '2';
       const enableMaxDays = document.getElementById('enableMaxDaysConstraint')?.checked ?? true;
       const enableContinuity = document.getElementById('enableDayContinuityConstraint')?.checked ?? true;
+      const maxDaysLimit = document.getElementById('maxDaysLimit')?.value || '3';
       try {
         await App.api.put('/scheduler/config', {
           fixed_teachers_per_room: parseInt(fixedTeachers),
@@ -1321,6 +1323,7 @@ const App = {
           ],
           enable_max_days_constraint: enableMaxDays,
           enable_day_continuity_constraint: enableContinuity,
+          max_days: parseInt(maxDaysLimit),
         });
         App.utils.showToast('排考配置已保存', 'success');
       } catch (e) {
@@ -1340,7 +1343,17 @@ const App = {
       document.getElementById('btnStartScheduler').innerHTML = '<span class="spinner mr-2"></span>排考中...';
 
       try {
-        const result = await App.api.post('/scheduler/run', { courses: courseIds, strategy, timeout });
+        const fixedTeachers = document.querySelector('input[name="fixedTeachersPerRoom"]:checked')?.value || '2';
+        const enableMaxDays = document.getElementById('enableMaxDaysConstraint')?.checked ?? true;
+        const enableContinuity = document.getElementById('enableDayContinuityConstraint')?.checked ?? true;
+        const maxDaysLimit = document.getElementById('maxDaysLimit')?.value || '3';
+        const result = await App.api.post('/scheduler/run', {
+          courses: courseIds, strategy, timeout,
+          fixed_teachers_per_room: parseInt(fixedTeachers),
+          enable_max_days_constraint: enableMaxDays,
+          enable_day_continuity_constraint: enableContinuity,
+          max_days: parseInt(maxDaysLimit),
+        });
         const jobId = result.data ? result.data.job_id : result.job_id;
         App.scheduler.jobId = jobId;
         App.handlers.pollSchedulerStatus(jobId);
@@ -1370,7 +1383,7 @@ const App = {
           logContainer.innerHTML = logs.map(l => `<div style="margin-bottom:2px;">${App.utils.escapeHtml(l)}</div>`).join('');
           logContainer.scrollTop = logContainer.scrollHeight;
 
-          if (status.status === 'completed') {
+          if (status.status === 'completed' || status.status === 'completed_with_violations') {
             clearInterval(App.scheduler.pollInterval);
             App.scheduler.pollInterval = null;
             App.handlers.onSchedulerComplete(status);
@@ -1394,10 +1407,27 @@ const App = {
     },
     onSchedulerComplete(status) {
       const result = status.result || {};
+      const hasViolations = status.status === 'completed_with_violations' || (result.violations && result.violations.length > 0);
       document.getElementById('btnStartScheduler').disabled = false;
       document.getElementById('btnStartScheduler').innerHTML = '<i class="fas fa-play"></i> 开始自动排考';
       document.getElementById('schedulerResultPanel').style.display = 'block';
-      document.getElementById('schedulerResultBody').innerHTML = `
+      let resultHtml = '';
+      if (hasViolations) {
+        resultHtml = `
+        <div class="flex items-center gap-2 mb-3"><i class="fas fa-exclamation-triangle text-warning text-xl"></i><span class="font-semibold text-gray-800">排考完成（有冲突）</span></div>
+        <div class="text-sm text-gray-600 mb-2">求解耗时: ${result.solve_time || '--'}</div>
+        <div class="text-sm text-gray-600 mb-1">排考版本: ${App.utils.escapeHtml(result.version_no || '')}</div>
+        <div class="text-sm text-gray-600 mb-3">已排课程: ${result.exams_scheduled || 0} 门</div>
+        ${result.violations && result.violations.length ? `<div class="text-sm text-warning mb-3"><strong>冲突提示:</strong><ul class="list-disc ml-4 mt-1">${result.violations.map(c => `<li>${App.utils.escapeHtml(c)}</li>`).join('')}</ul></div>` : ''}
+        <button class="btn btn-primary" onclick="App.handlers.applyScheduleResult(${result.version_id || 0})">
+          <i class="fas fa-check"></i> 应用此排考结果
+        </button>
+        <button class="btn btn-success ml-2" onclick="App.handlers.exportExcel()">
+          <i class="fas fa-file-excel"></i> 导出Excel
+        </button>
+      `;
+      } else {
+        resultHtml = `
         <div class="flex items-center gap-2 mb-3"><i class="fas fa-check-circle text-success text-xl"></i><span class="font-semibold text-gray-800">排考成功</span></div>
         <div class="text-sm text-gray-600 mb-2">求解耗时: ${result.solve_time || '--'}</div>
         <div class="text-sm text-gray-600 mb-3">排考版本: ${App.utils.escapeHtml(result.version_no || '')}</div>
@@ -1408,7 +1438,9 @@ const App = {
           <i class="fas fa-file-excel"></i> 导出Excel
         </button>
       `;
-      App.utils.showToast('自动排考完成', 'success');
+      }
+      document.getElementById('schedulerResultBody').innerHTML = resultHtml;
+      App.utils.showToast(hasViolations ? '排考完成（有冲突）' : '自动排考完成', hasViolations ? 'warning' : 'success');
       // 刷新课程列表以更新排考状态
       App.api.getList('/courses/').then(courses => {
         App.scheduler.courses = courses;

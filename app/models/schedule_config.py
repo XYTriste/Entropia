@@ -59,6 +59,14 @@ class ScheduleConfig(Base):
         comment='教室优先级规则JSON，例如: [{"priority":1,"patterns":["5-2*"]},{"priority":2,"patterns":["5-3*"]}]',
     )
 
+    # 教师分配软约束：最大监考天数上限
+    max_days: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=3,
+        comment="最大监考天数上限",
+    )
+
     # 教师分配软约束：是否启用最大监考天数约束（默认开启）
     enable_max_days_constraint: Mapped[bool] = mapped_column(
         Boolean,
