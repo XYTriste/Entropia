@@ -55,9 +55,10 @@ services:
       - .env
     environment:
       # 数据库连接（通过环境变量读取，参考 .env.example 配置）
-      SCHEDULER_DATABASE_URL: ${SCHEDULER_DATABASE_URL}
+      # 注意：容器内使用 db 作为主机名，而非 localhost
+      SCHEDULER_DATABASE_URL: postgresql+asyncpg://scheduler:scheduler@db:5432/exam_scheduler
       # 数据库连接（同步驱动，用于alembic迁移）
-      SCHEDULER_DATABASE_SYNC_URL: ${SCHEDULER_DATABASE_SYNC_URL}
+      SCHEDULER_DATABASE_SYNC_URL: postgresql://scheduler:scheduler@db:5432/exam_scheduler
       # 应用配置
       SCHEDULER_DEBUG: "false"
       SCHEDULER_SECRET_KEY: ${SCHEDULER_SECRET_KEY:-change-me-in-production}
@@ -69,9 +70,9 @@ services:
       - "8000:8000"
     volumes:
       # 开发模式：代码热重载（生产环境可注释掉）
-      - ./app:/app/app:ro
+      - ./app:/app/app
       # 脚本目录同步（避免每次修改脚本都要重建镜像）
-      - ./scripts:/app/scripts:ro
+      - ./scripts:/app/scripts
       # 日志持久化
       - api_logs:/app/logs
     # 开发模式启用热重载，生产环境去掉 --reload

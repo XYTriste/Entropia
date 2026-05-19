@@ -1348,7 +1348,7 @@ const App = {
         const enableContinuity = document.getElementById('enableDayContinuityConstraint')?.checked ?? true;
         const maxDaysLimit = document.getElementById('maxDaysLimit')?.value || '3';
         const result = await App.api.post('/scheduler/run', {
-          courses: courseIds, strategy, timeout,
+          course_ids: courseIds, strategy, timeout,
           fixed_teachers_per_room: parseInt(fixedTeachers),
           enable_max_days_constraint: enableMaxDays,
           enable_day_continuity_constraint: enableContinuity,
