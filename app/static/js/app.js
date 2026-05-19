@@ -637,8 +637,10 @@ const App = {
         if (radio) radio.checked = true;
         const maxDaysEl = document.getElementById('enableMaxDaysConstraint');
         const continuityEl = document.getElementById('enableDayContinuityConstraint');
+        const maxDaysLimitEl = document.getElementById('maxDaysLimit');
         if (maxDaysEl) maxDaysEl.checked = cfg.enable_max_days_constraint !== false;
         if (continuityEl) continuityEl.checked = cfg.enable_day_continuity_constraint !== false;
+        if (maxDaysLimitEl) maxDaysLimitEl.value = cfg.max_days || 3;
       } catch { /* ignore */ }
     },
 
@@ -1306,6 +1308,7 @@ const App = {
       const fixedTeachers = document.querySelector('input[name="fixedTeachersPerRoom"]:checked')?.value || '2';
       const enableMaxDays = document.getElementById('enableMaxDaysConstraint')?.checked ?? true;
       const enableContinuity = document.getElementById('enableDayContinuityConstraint')?.checked ?? true;
+      const maxDaysLimit = document.getElementById('maxDaysLimit')?.value || '3';
       try {
         await App.api.put('/scheduler/config', {
           fixed_teachers_per_room: parseInt(fixedTeachers),
@@ -1320,6 +1323,7 @@ const App = {
           ],
           enable_max_days_constraint: enableMaxDays,
           enable_day_continuity_constraint: enableContinuity,
+          max_days: parseInt(maxDaysLimit),
         });
         App.utils.showToast('排考配置已保存', 'success');
       } catch (e) {
@@ -1340,7 +1344,16 @@ const App = {
 
       try {
         const fixedTeachers = document.querySelector('input[name="fixedTeachersPerRoom"]:checked')?.value || '2';
-        const result = await App.api.post('/scheduler/run', { courses: courseIds, strategy, timeout, fixed_teachers_per_room: parseInt(fixedTeachers) });
+        const enableMaxDays = document.getElementById('enableMaxDaysConstraint')?.checked ?? true;
+        const enableContinuity = document.getElementById('enableDayContinuityConstraint')?.checked ?? true;
+        const maxDaysLimit = document.getElementById('maxDaysLimit')?.value || '3';
+        const result = await App.api.post('/scheduler/run', {
+          courses: courseIds, strategy, timeout,
+          fixed_teachers_per_room: parseInt(fixedTeachers),
+          enable_max_days_constraint: enableMaxDays,
+          enable_day_continuity_constraint: enableContinuity,
+          max_days: parseInt(maxDaysLimit),
+        });
         const jobId = result.data ? result.data.job_id : result.job_id;
         App.scheduler.jobId = jobId;
         App.handlers.pollSchedulerStatus(jobId);

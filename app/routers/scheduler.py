@@ -51,6 +51,9 @@ class ScheduleRunRequest(BaseModel):
     course_ids: list[int] | None = Field(None, description="指定排考的课程ID列表 (None=全部)")
     strategy: str = Field("full", description="策略: full / public_only / major_only")
     fixed_teachers_per_room: int | None = Field(None, ge=1, le=2, description="每教室固定监考人数 (None=使用数据库配置)")
+    enable_max_days_constraint: bool | None = Field(None, description="是否启用最大监考天数约束 (None=使用数据库配置)")
+    enable_day_continuity_constraint: bool | None = Field(None, description="是否启用日期连续性约束 (None=使用数据库配置)")
+    max_days: int | None = Field(None, ge=1, le=5, description="最大监考天数上限 (None=使用数据库配置或引擎自动计算)")
 
 
 # ============================================================
@@ -152,8 +155,15 @@ async def run_scheduler(
         import json
         patrol_group_rules = json.loads(config.patrol_group_rules) if config and config.patrol_group_rules else None
         classroom_priority_rules = json.loads(config.classroom_priority_rules) if config and config.classroom_priority_rules else None
-        enable_max_days_constraint = config.enable_max_days_constraint if config else True
-        enable_day_continuity_constraint = config.enable_day_continuity_constraint if config else True
+        enable_max_days_constraint = req.enable_max_days_constraint
+        if enable_max_days_constraint is None:
+            enable_max_days_constraint = config.enable_max_days_constraint if config else True
+        enable_day_continuity_constraint = req.enable_day_continuity_constraint
+        if enable_day_continuity_constraint is None:
+            enable_day_continuity_constraint = config.enable_day_continuity_constraint if config else True
+        max_days = req.max_days
+        if max_days is None:
+            max_days = config.max_days if config else None
 
         engine = SchedulingEngine(
             max_solve_time=300,
@@ -163,6 +173,7 @@ async def run_scheduler(
             classroom_priority_rules=classroom_priority_rules,
             enable_max_days_constraint=enable_max_days_constraint,
             enable_day_continuity_constraint=enable_day_continuity_constraint,
+            max_days=max_days,
         )
 
         engine_courses = []
@@ -608,6 +619,7 @@ class ScheduleConfigUpdate(BaseModel):
     classroom_priority_rules: list[dict] = Field(default_factory=list, description="教室优先级规则")
     enable_max_days_constraint: bool = Field(True, description="是否启用最大监考天数约束")
     enable_day_continuity_constraint: bool = Field(True, description="是否启用日期连续性约束")
+    max_days: int = Field(3, ge=1, le=5, description="最大监考天数上限")
 
 
 @router.get("/config", response_model=dict)
@@ -634,6 +646,7 @@ async def get_schedule_config(
                 ],
                 "enable_max_days_constraint": True,
                 "enable_day_continuity_constraint": True,
+                "max_days": 3,
             },
         }
     import json
@@ -647,6 +660,7 @@ async def get_schedule_config(
             "classroom_priority_rules": json.loads(config.classroom_priority_rules) if config.classroom_priority_rules else [],
             "enable_max_days_constraint": config.enable_max_days_constraint,
             "enable_day_continuity_constraint": config.enable_day_continuity_constraint,
+            "max_days": config.max_days,
         },
     }
 
@@ -670,6 +684,7 @@ async def update_schedule_config(
     config.classroom_priority_rules = json.dumps(req.classroom_priority_rules, ensure_ascii=False)
     config.enable_max_days_constraint = req.enable_max_days_constraint
     config.enable_day_continuity_constraint = req.enable_day_continuity_constraint
+    config.max_days = req.max_days
 
     await db.commit()
     await db.refresh(config)
@@ -684,5 +699,6 @@ async def update_schedule_config(
             "classroom_priority_rules": req.classroom_priority_rules,
             "enable_max_days_constraint": config.enable_max_days_constraint,
             "enable_day_continuity_constraint": config.enable_day_continuity_constraint,
+            "max_days": config.max_days,
         },
     }

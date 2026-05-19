@@ -561,7 +561,17 @@
                                             <span class="toggle-slider"></span>
                                         </label>
                                     </div>
-                                    <div class="text-xs text-gray-400 pl-2">教师监考天数不超过总排考天数-1</div>
+                                    <div class="flex items-center justify-between mt-1">
+                                        <span class="text-sm text-gray-700">天数上限</span>
+                                        <select id="maxDaysLimit" class="form-select text-sm">
+                                            <option value="1">1天</option>
+                                            <option value="2">2天</option>
+                                            <option value="3" selected>3天</option>
+                                            <option value="4">4天</option>
+                                            <option value="5">5天</option>
+                                        </select>
+                                    </div>
+                                    <div class="text-xs text-gray-400 pl-2">教师监考天数不超过设定上限</div>
                                     <div class="flex items-center justify-between mt-2">
                                         <span class="text-sm text-gray-700">日期连续性</span>
                                         <label class="toggle-switch">

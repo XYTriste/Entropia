@@ -97,6 +97,7 @@ class SchedulingEngine:
         classroom_priority_rules: list[dict] | None = None,
         enable_max_days_constraint: bool = True,
         enable_day_continuity_constraint: bool = True,
+        max_days: int | None = None,
     ) -> None:
         """
         参数:
@@ -107,6 +108,7 @@ class SchedulingEngine:
             classroom_priority_rules: 教室优先级规则
             enable_max_days_constraint: 是否启用最大监考天数约束（默认开启）
             enable_day_continuity_constraint: 是否启用日期连续性约束（默认开启）
+            max_days: 最大监考天数上限（None=引擎自动计算）
         """
         self.max_solve_time: int = max_solve_time
         self.fixed_teachers_per_room: int = fixed_teachers_per_room
@@ -115,6 +117,7 @@ class SchedulingEngine:
         self.classroom_priority_rules: list[dict] | None = classroom_priority_rules
         self.enable_max_days_constraint: bool = enable_max_days_constraint
         self.enable_day_continuity_constraint: bool = enable_day_continuity_constraint
+        self.max_days: int | None = max_days
         self._patrol_slot_pairs_used: set[tuple[int, int]] = set()
         self.force_one_teacher_per_room: bool = False
 
@@ -166,11 +169,14 @@ class SchedulingEngine:
         teacher_usage: dict[int, list[int]] = create_teacher_usage_tracker(teachers)  # 教师->时段列表
         room_slot_usage: dict[int, set[int]] = {}  # 时段ID -> 已占用教室ID集合
 
-        # 动态计算最大监考天数 = 实际排考天数 - 1
-        actual_exam_days: set[int] = set()
-        for ts in time_slots:
-            actual_exam_days.add(ts.day_of_week)
-        max_days: int = max(len(actual_exam_days) - 1, 1)  # 至少为1
+        # 最大监考天数：优先使用用户自定义值，否则动态计算
+        if self.max_days is not None:
+            max_days: int = self.max_days
+        else:
+            actual_exam_days: set[int] = set()
+            for ts in time_slots:
+                actual_exam_days.add(ts.day_of_week)
+            max_days = max(len(actual_exam_days) - 1, 1)  # 至少为1
         exam_results: list[ExamResult] = []  # 结果
         patrol_results: list[PatrolResult] = []  # 流动监考结果
         violations: list[str] = []  # 违规信息
