@@ -215,6 +215,7 @@ def allocate_teachers_fixed(
     enable_max_days_constraint: bool = False,
     max_days: int | None = None,
     enable_day_continuity_constraint: bool = False,
+    classroom_map: dict[int, Any] | None = None,
 ) -> list[TeacherAssignment]:
     """
     为固定监考分配教师。
@@ -254,6 +255,9 @@ def allocate_teachers_fixed(
     for classroom in classrooms:
         room_id: int = classroom.classroom_id
         needed: int = per_room
+        # 阶梯教室(lecture)强制至少2名固定监考
+        if classroom_map and (room_info := classroom_map.get(room_id)) and getattr(room_info, "room_type", None) == "lecture":
+            needed = max(needed, 2)
 
         candidates = _get_available_by_priority(
             teacher_states, "full_time", needed,

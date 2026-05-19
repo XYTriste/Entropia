@@ -896,6 +896,7 @@ class SchedulingEngine:
             enable_max_days_constraint=self.enable_max_days_constraint,
             max_days=max_days,
             enable_day_continuity_constraint=self.enable_day_continuity_constraint,
+            classroom_map=classroom_map,
         )
         if not fixed_teachers and room_assignments:
             violations.append(f"课程 {course.name} 固定监考分配失败：无可用教师")
