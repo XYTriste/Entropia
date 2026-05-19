@@ -546,7 +546,15 @@ const App = {
             columns = [
               { header: 'ID', key: 'id', width: '60px' },
               { header: '班级名称', key: 'name' },
-              { header: '专业', key: 'major_name', render: (r) => App.utils.escapeHtml(r.major_name || '--') },
+              { header: '专业', key: 'major_name', render: (r) => {
+                console.log('🔍 major_name render:', r);
+                const val = r.major_name;
+                if (val === undefined || val === null || val === '') {
+                  console.warn('⚠️ major_name missing for row:', r);
+                  return '--';
+                }
+                return String(val);
+              }},
               { header: '年级', key: 'grade', width: '80px', render: (r) => r.grade ? `${r.grade}级` : '--' },
               { header: '人数', key: 'student_count', width: '60px' },
               { header: '操作', render: (r) => `<div class="flex gap-1"><button class="btn btn-primary btn-xs" onclick="App.handlers.editItem('${type}', ${r.id})"><i class="fas fa-edit"></i></button><button class="btn btn-danger btn-xs" onclick="App.handlers.deleteItem('${type}', ${r.id})"><i class="fas fa-trash"></i></button></div>`, width: '90px' },

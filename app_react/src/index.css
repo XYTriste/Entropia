@@ -1,0 +1,280 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 14% 96%;
+    --foreground: 220 20% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 14%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 14%;
+    --primary: 30 40% 64%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 220 20% 14%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 214 10% 58%;
+    --accent: 30 40% 64%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 15 45% 57%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 30 40% 64%;
+    --radius: 1.5rem;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 20% 14%;
+    --sidebar-primary: 30 40% 64%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 30 40% 64%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 30 40% 64%;
+
+    /* Custom color tokens */
+    --page-bg: #F9FAFB;
+    --page-bg-end: #FFFFFF;
+    --card-bg: #FFFFFF;
+    --card-bg-hover: #F9FAFB;
+    --text-primary: #1F2328;
+    --text-secondary: #8C959F;
+    --text-muted: #C8CDD3;
+    --border-color: #F3F4F6;
+    --border-strong: #E5E7EB;
+    --input-bg: rgba(255, 255, 255, 0.6);
+    --glass-bg: rgba(255, 255, 255, 0.65);
+    --glass-border: rgba(255, 255, 255, 0.4);
+    --glass-inset: rgba(255, 255, 255, 0.8);
+    --table-header-bg: rgba(249, 250, 251, 0.8);
+    --table-row-hover: rgba(212, 163, 115, 0.05);
+    --btn-ghost-bg: rgba(255, 255, 255, 0.6);
+    --footer-bg: #334155;
+  }
+
+  .dark {
+    --background: 220 13% 9%;
+    --foreground: 210 40% 93%;
+    --card: 220 13% 11%;
+    --card-foreground: 210 40% 93%;
+    --popover: 220 13% 11%;
+    --popover-foreground: 210 40% 93%;
+    --primary: 30 40% 64%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 14% 16%;
+    --secondary-foreground: 210 40% 93%;
+    --muted: 215 14% 16%;
+    --muted-foreground: 215 10% 55%;
+    --accent: 30 40% 64%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 15 45% 57%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 14% 20%;
+    --input: 215 14% 20%;
+    --ring: 30 40% 64%;
+    --sidebar-background: 220 13% 11%;
+    --sidebar-foreground: 210 40% 93%;
+    --sidebar-primary: 30 40% 64%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 30 40% 64%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 215 14% 20%;
+    --sidebar-ring: 30 40% 64%;
+
+    --page-bg: #0D1117;
+    --page-bg-end: #161B22;
+    --card-bg: #161B22;
+    --card-bg-hover: #21262D;
+    --text-primary: #E6EDF3;
+    --text-secondary: #8B949E;
+    --text-muted: #484F58;
+    --border-color: #30363D;
+    --border-strong: #30363D;
+    --input-bg: rgba(33, 38, 45, 0.6);
+    --glass-bg: rgba(22, 27, 34, 0.75);
+    --glass-border: rgba(48, 54, 61, 0.4);
+    --glass-inset: rgba(255, 255, 255, 0.05);
+    --table-header-bg: rgba(22, 27, 34, 0.8);
+    --table-row-hover: rgba(212, 163, 115, 0.08);
+    --btn-ghost-bg: rgba(33, 38, 45, 0.6);
+    --footer-bg: #0D1117;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply antialiased;
+    background-color: var(--page-bg);
+    color: var(--text-primary);
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Noto Serif SC', 'Noto Sans SC', serif;
+    color: var(--text-primary);
+  }
+}
+
+@layer components {
+  .font-display {
+    font-family: 'Noto Serif SC', serif;
+  }
+
+  .font-body {
+    font-family: 'Noto Sans SC', sans-serif;
+  }
+
+  .page-container {
+    min-height: calc(100vh - 96px);
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+    background: linear-gradient(180deg, var(--page-bg) 0%, var(--page-bg-end) 100%);
+    transition: background 0.3s ease;
+  }
+
+  @media (min-width: 768px) {
+    .page-container {
+      padding-top: 1.5rem;
+      padding-bottom: 1.5rem;
+    }
+  }
+
+  .glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05), inset 0 1px 0 var(--glass-inset);
+    transition: background 0.3s ease, border-color 0.3s ease;
+  }
+
+  .glass-card {
+    background: var(--card-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04), inset 0 1px 0 var(--glass-inset);
+    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .data-table-row {
+    transition: background-color 0.2s ease;
+  }
+
+  .data-table-row:hover {
+    background-color: var(--table-row-hover);
+  }
+
+  .btn-amber {
+    @apply px-4 py-2 rounded-xl text-white font-medium transition-all duration-200;
+    background: linear-gradient(135deg, #D4A373 0%, #C9956B 100%);
+    box-shadow: 0 2px 8px rgba(212, 163, 115, 0.3);
+  }
+
+  .btn-amber:hover {
+    box-shadow: 0 4px 16px rgba(212, 163, 115, 0.4);
+    transform: translateY(-1px);
+  }
+
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium;
+  }
+
+  .status-badge-success {
+    @apply status-badge;
+    background-color: rgba(107, 155, 138, 0.1);
+    color: #6B9B8A;
+  }
+
+  .dark .status-badge-success {
+    background-color: rgba(107, 155, 138, 0.15);
+  }
+
+  .status-badge-warning {
+    @apply status-badge;
+    background-color: rgba(194, 122, 99, 0.1);
+    color: #C27A63;
+  }
+
+  .dark .status-badge-warning {
+    background-color: rgba(194, 122, 99, 0.15);
+  }
+
+  .status-badge-info {
+    @apply status-badge;
+    background-color: rgba(212, 163, 115, 0.1);
+    color: #D4A373;
+  }
+
+  .dark .status-badge-info {
+    background-color: rgba(212, 163, 115, 0.15);
+  }
+
+  .form-input-glass {
+    @apply w-full px-4 py-2.5 border-0 border-b-2 rounded-t-lg text-sm outline-none transition-all duration-300;
+    background: var(--input-bg);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  .form-input-glass::placeholder {
+    color: var(--text-muted);
+  }
+
+  .form-input-glass:focus {
+    border-color: #D4A373;
+    box-shadow: 0 1px 0 0 #D4A373;
+  }
+}
+
+@layer utilities {
+  .animate-shimmer {
+    background: linear-gradient(90deg, transparent 0%, rgba(212, 163, 115, 0.06) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  .animate-pulse-soft {
+    animation: pulse-soft 2s ease-in-out infinite;
+  }
+
+  .text-gradient-amber {
+    background: linear-gradient(135deg, #D4A373 0%, #C9956B 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes breathe-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(212, 163, 115, 0.2); }
+  50% { box-shadow: 0 0 12px rgba(212, 163, 115, 0.35); }
+}
+
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes alert-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(194, 122, 99, 0.3); }
+  50% { box-shadow: 0 0 16px 4px rgba(194, 122, 99, 0.15); }
+}

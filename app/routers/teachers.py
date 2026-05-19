@@ -26,6 +26,7 @@ from app.models.time_slot import TimeSlot
 from app.models.classroom import Classroom
 from app.models.course import Course
 from app.models.exam_classroom import ExamClassroom
+from app.models.exam_classroom_class import ExamClassroomClass
 from app.schemas.teacher import TeacherCreate, TeacherResponse, TeacherUpdate
 from sqlalchemy.orm import selectinload
 
@@ -39,10 +40,11 @@ router = APIRouter()
 async def list_teachers(
     db: AsyncSession = Depends(get_db),
     skip: int = Query(0, ge=0, description="跳过记录数"),
-    limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
+    limit: int = Query(100, ge=1, le=10000, description="每页记录数"),
     search: Optional[str] = Query(None, description="按姓名搜索"),
     teacher_type: Optional[TeacherType] = Query(None, description="按类型过滤"),
     is_active: Optional[bool] = Query(None, description="按启用状态过滤"),
+    all: bool = Query(False, description="返回所有记录，忽略分页"),
 ) -> dict:
     """获取教师列表，支持分页、搜索、类型过滤"""
     query = select(Teacher)
@@ -55,13 +57,15 @@ async def list_teachers(
     if is_active is not None:
         query = query.where(Teacher.is_active == is_active)
 
-    # 总数 - 正确的写法
+    # 总数
     count_query = select(func.count()).select_from(query.subquery())
     count_result = await db.execute(count_query)
     total = count_result.scalar_one() or 0
 
-    # 分页数据
-    query = query.offset(skip).limit(limit).order_by(Teacher.id)
+    # 分页数据（all=true 时忽略分页）
+    if not all:
+        query = query.offset(skip).limit(limit)
+    query = query.order_by(Teacher.id)
     result = await db.execute(query)
     items = result.scalars().all()
 
@@ -256,6 +260,7 @@ async def get_teacher_exams(
             selectinload(ExamTeacher.exam).selectinload(Exam.course),
             selectinload(ExamTeacher.exam).selectinload(Exam.time_slot),
             selectinload(ExamTeacher.exam).selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.classroom),
+            selectinload(ExamTeacher.exam).selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.class_assignments).selectinload(ExamClassroomClass.class_),
         )
     )
     exam_teachers = result.scalars().all()
@@ -272,7 +277,9 @@ async def get_teacher_exams(
             "course_id": exam.course_id,
             "course_name": exam.course.name if exam.course else "",
             "course_type": exam.course.course_type.value if exam.course else "",
-            "exam_label": exam.exam_label.value if exam.exam_label else "",
+            "exam_paper": exam.exam_label.value if exam.exam_label else "",
+            "date": f"周{'一二三四五'[(slot.day_of_week or 1) - 1]}" if slot else "",
+            "time_slot": f"{slot.start_time}-{slot.end_time}" if slot else "",
             "day_of_week": slot.day_of_week if slot else None,
             "day_name": f"周{'一二三四五'[(slot.day_of_week or 1) - 1]}" if slot else "",
             "slot_code": slot.slot_code if slot else "",
@@ -290,14 +297,24 @@ async def get_teacher_exams(
             # 固定监考需标注具体教室及该教室人数
             classroom = None
             assigned_student_count = 0
+            assigned_classes = []
             if et.classroom_id:
                 for ec in exam.classroom_assignments:
                     if ec.classroom_id == et.classroom_id:
                         classroom = ec.classroom.name if ec.classroom else f"教室{ec.classroom_id}"
                         assigned_student_count = ec.total_students or 0
+                        # 获取该教室的班级信息
+                        assigned_classes = [
+                            {
+                                "class_name": ecc.class_.name if ecc.class_ else f"班级{ecc.class_id}",
+                                "student_count": ecc.student_count or 0,
+                            }
+                            for ecc in (ec.class_assignments or [])
+                        ]
                         break
             exam_info["assigned_classroom"] = classroom
             exam_info["assigned_student_count"] = assigned_student_count
+            exam_info["assigned_classes"] = assigned_classes
             fixed_exams.append(exam_info)
         else:
             patrol_exams.append(exam_info)

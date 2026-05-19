@@ -19,6 +19,9 @@ from app.models.class_ import Class
 from app.models.course import Course
 from app.models.course_class import CourseClass
 from app.models.exam import Exam
+from app.models.exam_classroom import ExamClassroom
+from app.models.exam_classroom_class import ExamClassroomClass
+from app.models.exam_teacher import ExamTeacher
 from app.schemas.course import CourseClassLink, CourseCreate, CourseResponse, CourseUpdate
 
 router = APIRouter()
@@ -28,9 +31,10 @@ router = APIRouter()
 async def list_courses(
     db: AsyncSession = Depends(get_db),
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(100, ge=1, le=10000),
     course_type: str | None = Query(None, description="按类型过滤 public/major"),
     search: str | None = Query(None, description="按名称搜索"),
+    all: bool = Query(False, description="返回所有记录"),
 ) -> dict:
     """获取课程列表"""
     query = select(Course).options(
@@ -47,7 +51,10 @@ async def list_courses(
     count_result = await db.execute(count_query)
     total = count_result.scalar_one() or 0
 
-    result = await db.execute(query.offset(skip).limit(limit).order_by(Course.id))
+    if not all:
+        query = query.offset(skip).limit(limit)
+    query = query.order_by(Course.id)
+    result = await db.execute(query)
     items = result.scalars().all()
 
     data_items = []
@@ -148,6 +155,147 @@ async def get_course(
     ]
 
     return {"code": 0, "message": "success", "data": item}
+
+
+@router.get("/{course_id}/exams", response_model=dict)
+async def get_course_exams(
+    course_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """获取指定课程的考试安排"""
+    result = await db.execute(
+        select(Course)
+        .where(Course.id == course_id)
+        .options(
+            selectinload(Course.class_links).selectinload(CourseClass.class_).selectinload(Class.major),
+            selectinload(Course.exams).selectinload(Exam.time_slot),
+            selectinload(Course.exams).selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.classroom),
+            selectinload(Course.exams).selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.class_assignments).selectinload(ExamClassroomClass.class_),
+            selectinload(Course.exams).selectinload(Exam.teacher_assignments).selectinload(ExamTeacher.teacher),
+            selectinload(Course.exams).selectinload(Exam.teacher_assignments).selectinload(ExamTeacher.classroom),
+        )
+    )
+    course = result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail=f"课程(id={course_id})不存在")
+
+    day_names = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五"}
+
+    # 建立 class_id -> 考试信息列表 的映射（一门课可能有多场考试，如A/B卷）
+    # 每个班级只显示自己所在的教室和对应的监考教师
+    class_exam_map: dict[int, list[dict]] = {}
+    for exam in course.exams:
+        if exam.status.value != "scheduled":
+            continue
+
+        # 按教室分组固定监考教师（只显示固定监考，不显示流动监考）
+        # classroom_id -> list of "教师名(教室名)"
+        classroom_teachers: dict[int, list[str]] = {}
+        for et in exam.teacher_assignments:
+            if not et.teacher or et.role.value == "patrol":
+                continue
+            if et.classroom_id and et.classroom:
+                entry = f"{et.teacher.name}({et.classroom.name})"
+                if et.classroom_id not in classroom_teachers:
+                    classroom_teachers[et.classroom_id] = []
+                classroom_teachers[et.classroom_id].append(entry)
+
+        # 建立 class_id -> 该班级所在的教室ID列表和教室名列表
+        class_classroom_ids: dict[int, list[int]] = {}
+        class_classroom_names: dict[int, list[str]] = {}
+        for ec in exam.classroom_assignments:
+            if not ec.classroom:
+                continue
+            rid = ec.classroom.id
+            rname = ec.classroom.name
+            for ca in ec.class_assignments:
+                cid = ca.class_id
+                if cid not in class_classroom_ids:
+                    class_classroom_ids[cid] = []
+                    class_classroom_names[cid] = []
+                if rid not in class_classroom_ids[cid]:
+                    class_classroom_ids[cid].append(rid)
+                    class_classroom_names[cid].append(rname)
+
+        # 为每个班级生成对应的 exam_info
+        for cid in class_classroom_names:
+            if cid not in class_exam_map:
+                class_exam_map[cid] = []
+
+            # 收集该班级所在教室的固定监考教师
+            teacher_set: set[str] = set()
+            for rid in class_classroom_ids[cid]:
+                for t in classroom_teachers.get(rid, []):
+                    teacher_set.add(t)
+            teachers_str = "、".join(sorted(teacher_set)) if teacher_set else "-"
+
+            exam_info = {
+                "date": day_names.get(exam.time_slot.day_of_week, "") if exam.time_slot else "",
+                "time_slot": f"{exam.time_slot.start_time}-{exam.time_slot.end_time}" if exam.time_slot else "",
+                "classroom_names": "、".join(class_classroom_names[cid]),
+                "teachers_str": teachers_str,
+                "exam_paper": exam.exam_label.value if exam.exam_label else "-",
+            }
+            class_exam_map[cid].append(exam_info)
+
+    exams = []
+    for exam in course.exams:
+        if exam.status.value != "scheduled":
+            continue
+        # 获取教室名称
+        classroom_names = []
+        classes_str = []
+        total_students = 0
+        for ec in exam.classroom_assignments:
+            if ec.classroom:
+                classroom_names.append(ec.classroom.name)
+            total_students += ec.total_students
+            for ca in ec.class_assignments:
+                if ca.class_:
+                    classes_str.append(f"{ca.class_.name}({ca.student_count}人)")
+
+        # 获取监考教师
+        teachers_str = []
+        for et in exam.teacher_assignments:
+            if et.teacher:
+                teachers_str.append(et.teacher.name)
+
+        exam_data = {
+            "exam_id": exam.id,
+            "date": day_names.get(exam.time_slot.day_of_week, "") if exam.time_slot else "",
+            "time_slot": f"{exam.time_slot.start_time}-{exam.time_slot.end_time}" if exam.time_slot else "",
+            "classroom_names": "、".join(classroom_names) if classroom_names else "-",
+            "classes_str": "、".join(classes_str) if classes_str else "-",
+            "total_students": total_students,
+            "teachers_str": "、".join(teachers_str) if teachers_str else "-",
+            "exam_paper": exam.exam_label.value if exam.exam_label else "-",
+        }
+        exams.append(exam_data)
+
+    linked_classes = [
+        {
+            "class_id": cl.class_id,
+            "class_name": cl.class_.name if cl.class_ else "",
+            "grade": cl.grade,
+            "major_name": cl.class_.major.name if cl.class_ and cl.class_.major else "",
+            "exams": class_exam_map.get(cl.class_id, []),
+        }
+        for cl in course.class_links
+    ]
+
+    return {
+        "code": 0,
+        "message": "success",
+        "data": {
+            "course_name": course.name,
+            "needs_ab": course.needs_ab,
+            "student_count": sum(cl.class_.student_count for cl in course.class_links if cl.class_) if course.class_links else 0,
+            "linked_class_count": len(course.class_links),
+            "linked_classes": linked_classes,
+            "exam_count": len(exams),
+            "exams": exams,
+        },
+    }
 
 
 @router.post("/", response_model=dict)

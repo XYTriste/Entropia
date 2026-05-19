@@ -20,6 +20,7 @@ from app.routers import (
     courses_router,
     exams_router,
     import_export_router,
+    kpi_router,
     majors_router,
     scheduler_router,
     students_router,
@@ -99,3 +100,4 @@ app.include_router(adjustments_router, prefix="/api/adjustments", tags=["排考�
 app.include_router(audit_logs_router, prefix="/api/audit-logs", tags=["审计日志"])
 app.include_router(import_export_router, prefix="/api/import-export", tags=["导入导出"])
 app.include_router(chat_router, prefix="/api/chat", tags=["AI 助手"])
+app.include_router(kpi_router, prefix="/api/kpi", tags=["KPI 数据"])

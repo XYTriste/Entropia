@@ -40,7 +40,14 @@ class Settings(BaseSettings):
     DATABASE_SYNC_URL: str = ""
 
     # CORS 配置
-    CORS_ORIGINS: List[str] = ["http://localhost:8080", "http://127.0.0.1:8080"]
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:5173",   # React/Vite 开发服务器
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",   # Next.js / CRA 开发服务器
+        "http://127.0.0.1:3000",
+        "http://localhost:8080",  # 原生 JS 前端
+        "http://127.0.0.1:8080",
+    ]
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: List[str] = ["*"]
     CORS_ALLOW_HEADERS: List[str] = ["*"]

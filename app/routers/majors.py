@@ -20,8 +20,9 @@ router = APIRouter()
 async def list_majors(
     db: AsyncSession = Depends(get_db),
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(100, ge=1, le=10000),
     search: str | None = Query(None, description="按名称搜索"),
+    all: bool = Query(False, description="返回所有记录"),
 ) -> dict:
     """获取专业列表"""
     query = select(Major)
@@ -32,7 +33,10 @@ async def list_majors(
     count_result = await db.execute(count_query)
     total = count_result.scalar_one() or 0
 
-    result = await db.execute(query.offset(skip).limit(limit).order_by(Major.id))
+    if not all:
+        query = query.offset(skip).limit(limit)
+    query = query.order_by(Major.id)
+    result = await db.execute(query)
     items = result.scalars().all()
 
     return {

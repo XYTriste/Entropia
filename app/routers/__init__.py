@@ -17,6 +17,7 @@ from app.routers.adjustments import router as adjustments_router
 from app.routers.audit_logs import router as audit_logs_router
 from app.routers.import_export import router as import_export_router
 from app.routers.chat import router as chat_router
+from app.routers.kpi import router as kpi_router
 
 __all__ = [
     "teachers_router",
@@ -32,4 +33,5 @@ __all__ = [
     "audit_logs_router",
     "import_export_router",
     "chat_router",
+    "kpi_router",
 ]

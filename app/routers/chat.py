@@ -206,6 +206,46 @@ async def generate_response_deepseek(messages: list[dict]) -> AsyncGenerator[str
 # API 端点
 # ============================================================
 
+@router.get("/message")
+async def chat_message_get(message: str):
+    """
+    SSE 流式对话接口（GET 方式，用于 EventSource）
+
+    查询参数:
+    - message: 用户消息
+
+    响应: text/event-stream
+    """
+    from fastapi.responses import StreamingResponse
+
+    async def generate():
+        try:
+            if is_deepseek_mode():
+                # DeepSeek 模式 - 需要构造 messages 数组
+                messages = [{"role": "user", "content": message}]
+                async for chunk in generate_response_deepseek(messages):
+                    yield chunk
+            else:
+                # 基础模式
+                async for chunk in generate_response_basic(message):
+                    yield chunk
+        except Exception as e:
+            error_chunk = json.dumps({"type": "error", "content": str(e)})
+            yield f"data: {error_chunk}\n\n"
+            done_chunk = json.dumps({"type": "done"})
+            yield f"data: {done_chunk}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.post("/stream")
 async def chat_stream(body: ChatRequest) -> StreamingResponse:
     """
