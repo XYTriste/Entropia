@@ -248,6 +248,9 @@ def allocate_teachers_fixed(
     # 若全局总可用量不足标准需求，统一降为1人/考场，确保公平
     per_room = 1 if total_available < total_needed else teachers_per_room
 
+    # 追踪本考试已使用的教师，避免同一教师被重复分配到不同教室
+    used_teacher_ids: set[int] = set()
+
     for classroom in classrooms:
         room_id: int = classroom.classroom_id
         needed: int = per_room
@@ -262,6 +265,9 @@ def allocate_teachers_fixed(
         for _ in range(needed):
             assigned: bool = False
             for state in list(candidates):
+                if state.teacher.id in used_teacher_ids:
+                    candidates.remove(state)
+                    continue
                 if state.assign(1, day=exam_day):
                     assignments.append(TeacherAssignment(
                         teacher_id=state.teacher.id,
@@ -269,6 +275,7 @@ def allocate_teachers_fixed(
                         role="fixed",
                         classroom_id=room_id,
                     ))
+                    used_teacher_ids.add(state.teacher.id)
                     assigned = True
                     candidates.remove(state)
                     break
@@ -283,6 +290,8 @@ def allocate_teachers_fixed(
                     prefer_continuous=enable_day_continuity_constraint,
                 )
                 for state in list(fallback):
+                    if state.teacher.id in used_teacher_ids:
+                        continue
                     if state.assign(1, day=exam_day):
                         assignments.append(TeacherAssignment(
                             teacher_id=state.teacher.id,
@@ -290,6 +299,7 @@ def allocate_teachers_fixed(
                             role="fixed",
                             classroom_id=room_id,
                         ))
+                        used_teacher_ids.add(state.teacher.id)
                         assigned = True
                         break
 

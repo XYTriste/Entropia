@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -50,6 +50,7 @@ class ScheduleRunRequest(BaseModel):
     """运行排考引擎请求"""
     course_ids: list[int] | None = Field(None, description="指定排考的课程ID列表 (None=全部)")
     strategy: str = Field("full", description="策略: full / public_only / major_only")
+    fixed_teachers_per_room: int | None = Field(None, ge=1, le=2, description="每教室固定监考人数 (None=使用数据库配置)")
 
 
 # ============================================================
@@ -143,7 +144,10 @@ async def run_scheduler(
         # 读取排考配置
         config_result = await db.execute(select(ScheduleConfig).order_by(ScheduleConfig.id.desc()).limit(1))
         config = config_result.scalar_one_or_none()
-        fixed_teachers_per_room = config.fixed_teachers_per_room if config else 2
+
+        fixed_teachers_per_room = req.fixed_teachers_per_room
+        if fixed_teachers_per_room is None:
+            fixed_teachers_per_room = config.fixed_teachers_per_room if config else 2
         patrol_teacher_count = config.patrol_teacher_count_per_slot_pair if config else 2
         import json
         patrol_group_rules = json.loads(config.patrol_group_rules) if config and config.patrol_group_rules else None
@@ -434,10 +438,10 @@ async def apply_schedule_version(
                             student_count=count,
                         ))
 
-        # 教师分配 (去重：同一考试同一教师同一角色只出现一次)
+        # 教师分配 (去重：同一考试同一教师同一角色同一教室只出现一次)
         seen_teachers = set()
         for tr in er.get("teachers", []):
-            tkey = (tr["teacher_id"], tr.get("role", "fixed"))
+            tkey = (tr["teacher_id"], tr.get("role", "fixed"), tr.get("classroom_id"))
             if tkey in seen_teachers:
                 continue
             seen_teachers.add(tkey)
@@ -480,6 +484,9 @@ async def apply_schedule_version(
             if tid not in teacher_slot_counts:
                 teacher_slot_counts[tid] = set()
             teacher_slot_counts[tid].add(pr["time_slot_id"])
+    # 先重置所有教师的 current_slots，避免旧版本数据残留
+    await db.execute(update(Teacher).values(current_slots=0))
+
     # 写入数据库
     for tid, slots in teacher_slot_counts.items():
         teacher = await db.get(Teacher, tid)
