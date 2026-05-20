@@ -33,7 +33,7 @@ class ScheduleConfig(Base):
     fixed_teachers_per_room: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
-        default=2,
+        default=1,
         comment="每教室固定监考人数",
     )
 

@@ -78,7 +78,7 @@ export default function SchedulerView() {
   });
 
   // 轮询排考状态
-  const { mutate: startPolling } = useSchedulerStatus(jobId || undefined, (status) => {
+  useSchedulerStatus(jobId || undefined, (status) => {
     if (status.status === 'running') {
       setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] 排考进行中...`]);
       setProgress((p) => Math.min(p + 10, 90));
@@ -275,17 +275,37 @@ export default function SchedulerView() {
 
                 <div>
                   <label className="block text-sm text-[#8C959F] dark:text-[#8B949E] mb-2">最大监考天数</label>
-                  <div className="relative">
-                    <select
-                      value={config.maxProctorDays}
-                      onChange={(e) => setConfig({ ...config, maxProctorDays: Number(e.target.value) })}
-                      className="form-input-glass rounded-xl appearance-none w-full pr-10"
-                    >
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <option key={n} value={n}>{n} 天</option>
-                      ))}
-                    </select>
-                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#C8CDD3] pointer-events-none" />
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-1">
+                      <select
+                        value={config.maxProctorDays}
+                        onChange={(e) => setConfig({ ...config, maxProctorDays: Number(e.target.value) })}
+                        className="form-input-glass rounded-xl appearance-none w-full pr-10"
+                      >
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <option key={n} value={n}>{n} 天</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#C8CDD3] pointer-events-none" />
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer group shrink-0">
+                      <div className="relative">
+                        <input
+                          type="checkbox"
+                          checked={advancedConfig.enable_max_days_constraint}
+                          onChange={(e) => setAdvancedConfig({
+                            ...advancedConfig,
+                            enable_max_days_constraint: e.target.checked,
+                          })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-[#E5E7EB] dark:bg-[#30363D] rounded-full peer transition-all peer-checked:bg-[#D4A373]" />
+                        <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5" />
+                      </div>
+                      <span className="text-sm text-[#8C959F] dark:text-[#8B949E] group-hover:text-[#D4A373] transition-colors whitespace-nowrap">
+                        启用约束
+                      </span>
+                    </label>
                   </div>
                 </div>
 
@@ -322,7 +342,7 @@ export default function SchedulerView() {
                     <div className="mt-4 space-y-4 pl-4 border-l-2 border-[#D4A373]/20">
                       <div>
                         <label className="block text-sm text-[#8C959F] dark:text-[#8B949E] mb-2">
-                          每时段对流动监考人数
+                          每时段流动监考人数
                         </label>
                         <div className="relative">
                           <select
@@ -340,25 +360,6 @@ export default function SchedulerView() {
                           <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#C8CDD3] pointer-events-none" />
                         </div>
                       </div>
-
-                      <label className="flex items-center gap-3 cursor-pointer group">
-                        <div className="relative">
-                          <input
-                            type="checkbox"
-                            checked={advancedConfig.enable_max_days_constraint}
-                            onChange={(e) => setAdvancedConfig({
-                              ...advancedConfig,
-                              enable_max_days_constraint: e.target.checked,
-                            })}
-                            className="sr-only peer"
-                          />
-                          <div className="w-11 h-6 bg-[#E5E7EB] dark:bg-[#30363D] rounded-full peer transition-all peer-checked:bg-[#D4A373]" />
-                          <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5" />
-                        </div>
-                        <span className="text-sm text-[#1F2328] dark:text-[#E6EDF3] group-hover:text-[#D4A373] transition-colors">
-                          启用最大监考天数约束
-                        </span>
-                      </label>
                     </div>
                   )}
                 </div>

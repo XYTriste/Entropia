@@ -702,3 +702,36 @@ async def update_schedule_config(
             "max_days": config.max_days,
         },
     }
+
+
+# ============================================================
+# 排考版本列表
+# ============================================================
+
+
+@router.get("/versions", response_model=dict)
+async def list_schedule_versions(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """获取排考版本列表"""
+    result = await db.execute(
+        select(ScheduleVersion)
+        .order_by(ScheduleVersion.created_at.desc())
+    )
+    versions = result.scalars().all()
+
+    items = []
+    for v in versions:
+        items.append({
+            "id": v.id,
+            "version_no": v.version_no,
+            "status": v.status.value,
+            "description": v.description,
+            "created_at": v.created_at.isoformat() if v.created_at else None,
+        })
+
+    return {
+        "code": 0,
+        "message": "success",
+        "data": {"items": items},
+    }

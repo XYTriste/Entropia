@@ -621,3 +621,82 @@ def _format_exam_detail(exam: Exam) -> dict:
     item["total_students"] = sum(ec.total_students for ec in exam.classroom_assignments)
 
     return item
+
+
+# ============================================================
+# 批量班级考试表
+# ============================================================
+
+
+@router.get("/classes/batch-schedule", response_model=dict)
+async def get_batch_class_schedule(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """获取所有班级的考试安排"""
+    # 获取所有班级
+    result = await db.execute(select(Class).order_by(Class.grade.desc(), Class.name))
+    classes = result.scalars().all()
+
+    classes_data = []
+    for cls in classes:
+        # 获取该班级的考试安排
+        exam_result = await db.execute(
+            select(Exam)
+            .join(ExamClassroom, Exam.id == ExamClassroom.exam_id)
+            .join(ExamClassroomClass, ExamClassroom.id == ExamClassroomClass.exam_classroom_id)
+            .where(
+                ExamClassroomClass.class_id == cls.id,
+                Exam.status == ExamStatus.SCHEDULED,
+            )
+            .options(
+                selectinload(Exam.course),
+                selectinload(Exam.time_slot),
+                selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.classroom),
+                selectinload(Exam.teacher_assignments).selectinload(ExamTeacher.teacher),
+            )
+            .distinct()
+        )
+        exams = exam_result.scalars().all()
+
+        exams_data = []
+        for exam in exams:
+            if not exam.time_slot:
+                continue
+
+            # 找到该班级所在的教室
+            classroom_name = None
+            for ec in exam.classroom_assignments:
+                for ca in ec.class_assignments:
+                    if ca.class_id == cls.id:
+                        classroom_name = ec.classroom.name if ec.classroom else f"教室{ec.classroom_id}"
+                        break
+                if classroom_name:
+                    break
+
+            # 获取监考教师姓名
+            teacher_names = [et.teacher.name if et.teacher else f"教师{et.teacher_id}" for et in exam.teacher_assignments if et.role.value == "fixed"]
+
+            exams_data.append({
+                "course_name": exam.course.name if exam.course else "",
+                "day_name": DAY_NAMES.get(exam.time_slot.day_of_week, ""),
+                "slot_code": exam.time_slot.slot_code,
+                "time_range": f"{exam.time_slot.start_time}-{exam.time_slot.end_time}",
+                "classroom_name": classroom_name,
+                "teacher_names": teacher_names,
+            })
+
+        exams_data.sort(key=lambda x: (x["day_name"], x["slot_code"]))
+
+        classes_data.append({
+            "class_id": cls.id,
+            "class_name": cls.name,
+            "grade": cls.grade,
+            "exam_count": len(exams_data),
+            "exams": exams_data,
+        })
+
+    return {
+        "code": 0,
+        "message": "success",
+        "data": {"classes": classes_data},
+    }

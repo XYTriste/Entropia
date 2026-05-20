@@ -8,6 +8,7 @@
  *   // 轮询排考进度
  *   useSchedulerStatus(taskId, (status) => { ... })
  */
+import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '@/api/scheduler'
 import type { SchedulerRunRequest, SchedulerConfig } from '@/api/scheduler'
@@ -59,7 +60,6 @@ export function useSchedulerStatus(
   jobId: string | undefined,
   onStatusChange?: (status: Awaited<ReturnType<typeof api.getSchedulerStatus>>) => void,
 ) {
-  const { useEffect, useRef } = require('react')
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastStatusRef = useRef<string | null>(null)
 
