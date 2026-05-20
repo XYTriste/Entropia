@@ -1,6 +1,8 @@
 /**
  * 排考结果 API
  * 封装排考结果各维度的数据查询接口
+ * 所有查询始终返回当前已发布版本的数据（status=SCHEDULED）
+ * 版本切换通过 "应用版本" 接口实现（publish时持久化到exams表）
  */
 
 import apiClient from './client';
@@ -47,6 +49,8 @@ export async function getExamOverviewMatrix(): Promise<OverviewMatrixResponse> {
 export interface TeacherGanttItem {
   teacher_id: number;
   teacher_name: string;
+  teacher_type?: string;
+  max_slots: number;
   events: Array<{
     exam_id: number;
     course_name: string;
@@ -81,6 +85,11 @@ export interface ClassroomMatrixResponse {
     course_name: string;
     exam_label: string;
     total_students: number;
+    class_names: string[];
+    teacher_names: string[];
+    day_of_week: number;
+    day_name: string;
+    time_range: string;
   }>>>;
 }
 
@@ -148,7 +157,7 @@ export async function getClassSchedule(classId: number): Promise<ClassScheduleRe
 /**
  * 获取所有班级的考试安排（批量接口）
  */
-export async function getBatchClassSchedule(): Promise<{ classes: Array<ClassScheduleResponse> }> {
+export async function getBatchClassSchedule(): Promise<{ classes: ClassScheduleResponse[] }> {
   const { data } = await apiClient.get<ApiResponse<{ classes: ClassScheduleResponse[] }>>('/exams/classes/batch-schedule');
   return data.data;
 }

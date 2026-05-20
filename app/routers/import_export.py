@@ -150,14 +150,26 @@ async def validate_data(
 
 @router.get("/export/excel")
 async def export_excel_file(
+    version_id: int | None = Query(None, description="指定版本ID，导出版本对应的排考数据"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Excel 导出排考结果 (多 Sheet)"""
-    excel_bytes = await export_excel(db)
+    """Excel 导出排考结果 (多 Sheet)
+
+    - 不指定 version_id：导出所有已排考的考试
+    - 指定 version_id：仅导出版本对应的考试数据
+    """
+    excel_bytes = await export_excel(db, version_id=version_id)
+    # 使用 ASCII 文件名 + RFC 5987 中文文件名
+    filename_ascii = f"exam_schedule_v{version_id}.xlsx" if version_id else "exam_schedule.xlsx"
+    filename_cn = f"排考结果_v{version_id}.xlsx" if version_id else "排考结果.xlsx"
+    # RFC 5987: filename*=UTF-8''%XX%XX%XX...
+    import urllib.parse
+    encoded_name = urllib.parse.quote(filename_cn, safe='')
+    header_value = f"attachment; filename=\"{filename_ascii}\"; filename*=UTF-8''{encoded_name}"
     return Response(
         content=excel_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=exam_schedule.xlsx"},
+        headers={"Content-Disposition": header_value},
     )
 
 
@@ -168,10 +180,15 @@ async def export_excel_file(
 
 @router.get("/export/json", response_model=dict)
 async def export_json_file(
+    version_id: int | None = Query(None, description="指定版本ID，导出版本对应的排考数据"),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """JSON 导出排考结果"""
-    result = await export_json(db)
+    """JSON 导出排考结果
+
+    - 不指定 version_id：导出所有已排考的考试
+    - 指定 version_id：仅导出版本对应的考试数据
+    """
+    result = await export_json(db, version_id=version_id)
     return {"code": 0, "message": "success", "data": result}
 
 
@@ -182,14 +199,25 @@ async def export_json_file(
 
 @router.get("/export/sql")
 async def export_sql_file(
+    version_id: int | None = Query(None, description="指定版本ID，导出版本对应的排考数据"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """SQL 导出排考结果"""
-    sql_content = await export_sql(db)
+    """SQL 导出排考结果
+
+    - 不指定 version_id：导出所有已排考的考试
+    - 指定 version_id：仅导出版本对应的考试数据
+    """
+    sql_content = await export_sql(db, version_id=version_id)
+    # 使用 ASCII 文件名 + RFC 5987 中文文件名
+    filename_ascii = f"exam_schedule_v{version_id}.sql" if version_id else "exam_schedule.sql"
+    filename_cn = f"排考结果_v{version_id}.sql" if version_id else "排考结果.sql"
+    import urllib.parse
+    encoded_name = urllib.parse.quote(filename_cn, safe='')
+    header_value = f"attachment; filename=\"{filename_ascii}\"; filename*=UTF-8''{encoded_name}"
     return Response(
         content=sql_content.encode("utf-8"),
         media_type="text/plain; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=exam_schedule.sql"},
+        headers={"Content-Disposition": header_value},
     )
 
 

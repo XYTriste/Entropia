@@ -10,7 +10,7 @@
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 from fastapi import HTTPException
@@ -32,6 +32,9 @@ from app.utils.validators import (
     validate_teacher_workload,
 )
 
+# 国内时区 UTC+8
+CN_TZ = timezone(timedelta(hours=8))
+
 
 # ============================================================
 # 撤销栈管理
@@ -47,7 +50,7 @@ class AdjustmentAction:
     old_data: dict[str, Any]
     new_data: dict[str, Any]
     reason: str
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(CN_TZ).isoformat())
 
 
 class UndoStack:
@@ -595,7 +598,7 @@ async def _create_audit_log(
         new_value=json.dumps(new_value, ensure_ascii=False),
         reason=reason,
         operator=operator,
-        created_at=datetime.now(),
+        created_at=datetime.now(CN_TZ),
     )
     db.add(log)
     await db.flush()

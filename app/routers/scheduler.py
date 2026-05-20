@@ -12,7 +12,7 @@
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -36,6 +36,9 @@ from app.models.teacher import Teacher
 from app.models.time_slot import TimeSlot
 
 router = APIRouter()
+
+# 国内时区 UTC+8
+CN_TZ = timezone(timedelta(hours=8))
 
 # 排考任务内存存储 (生产环境应使用 Redis)
 _scheduler_jobs: dict[str, dict[str, Any]] = {}

@@ -8,13 +8,16 @@
 - 教师分配软约束
 """
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+
+# 国内时区 UTC+8
+CN_TZ = timezone(timedelta(hours=8))
 
 
 class ScheduleConfig(Base):
@@ -85,13 +88,13 @@ class ScheduleConfig(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=datetime.now,
-        comment="创建时间",
+        default=lambda: datetime.now(CN_TZ),
+        comment="创建时间 (国内时区)",
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=datetime.now,
-        onupdate=datetime.now,
-        comment="更新时间",
+        default=lambda: datetime.now(CN_TZ),
+        onupdate=lambda: datetime.now(CN_TZ),
+        comment="更新时间 (国内时区)",
     )

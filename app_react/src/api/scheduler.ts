@@ -10,7 +10,7 @@ import type { SchedulerConfig } from '@/types';
 export interface SchedulerRunRequest {
   course_ids: number[];
   strategy?: 'all' | 'public_only' | 'major_only';
-  fixed_proctors_per_room?: 1 | 2 | 3;
+  fixed_teachers_per_room?: 1 | 2 | 3;
   max_solve_time?: number;
   max_proctor_days?: number;
   no_cross_day?: boolean;

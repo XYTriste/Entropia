@@ -18,11 +18,14 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models import Exam, ExamTeacher, Teacher, TimeSlot
+from app.models.exam import ExamStatus
 from app.services.adjustment_service import (
     can_undo,
     change_classroom,
@@ -254,3 +257,111 @@ async def undo_last_endpoint(
     result = await undo_last_transfer(db)
     await db.commit()
     return {"code": 0, "message": "已撤销最近一次调剂", "data": result}
+
+
+# ============================================================
+# 查询端点
+# ============================================================
+
+
+DAY_NAME_TO_NUMBER = {
+    "周一": 1, "周二": 2, "周三": 3, "周四": 4, "周五": 5
+}
+
+
+@router.get("/available-teachers", response_model=dict)
+async def get_available_teachers(
+    db: AsyncSession = Depends(get_db),
+    date: str = Query(..., description="日期: 周一/周二/周三/周四/周五"),
+    time_slot_code: str = Query(..., description="时段代码: T1/T2/T3/T4"),
+    exclude_teacher_id: int | None = Query(None, description="排除的教师ID（如当前监考）"),
+) -> dict:
+    """获取可用教师列表（用于换教师对话框）
+
+    返回所有教师及其在指定时段的安排状态：
+    - has_conflict: 是否时段冲突（该时段已有监考任务）
+    - current_slots: 当前总场次
+    - max_slots: 最大可安排场次
+    """
+    # 转换日期为 day_of_week
+    day_of_week = DAY_NAME_TO_NUMBER.get(date)
+    if not day_of_week:
+        raise HTTPException(status_code=400, detail=f"无效的日期: {date}，应为 周一/周二/周三/周四/周五")
+
+    # 查询指定时段的时段ID
+    time_slot_result = await db.execute(
+        select(TimeSlot).where(
+            TimeSlot.day_of_week == day_of_week,
+            TimeSlot.slot_code == time_slot_code
+        )
+    )
+    time_slot = time_slot_result.scalar_one_or_none()
+    if not time_slot:
+        raise HTTPException(status_code=404, detail=f"未找到时段: {date} {time_slot_code}")
+
+    time_slot_id = time_slot.id
+
+    # 查询该时段已有监考任务的教师ID列表
+    conflict_result = await db.execute(
+        select(ExamTeacher.teacher_id).join(
+            Exam, ExamTeacher.exam_id == Exam.id
+        ).where(
+            Exam.time_slot_id == time_slot_id,
+            Exam.status == ExamStatus.SCHEDULED,
+        )
+    )
+    conflict_teacher_ids = set(conflict_result.scalars().all())
+
+    # 如果排除教师，从冲突列表中移除
+    if exclude_teacher_id:
+        conflict_teacher_ids.discard(exclude_teacher_id)
+
+    # 查询所有教师及其当前场次
+    # 教师当前场次从 exam_teachers 表统计
+    current_slots_result = await db.execute(
+        select(
+            ExamTeacher.teacher_id,
+            func.count(ExamTeacher.id).label("current_slots")
+        ).join(
+            Exam, ExamTeacher.exam_id == Exam.id
+        ).where(
+            Exam.status == ExamStatus.SCHEDULED
+        ).group_by(ExamTeacher.teacher_id)
+    )
+    teacher_slots_map = {row.teacher_id: row.current_slots for row in current_slots_result}
+
+    # 查询所有活跃教师
+    teachers_result = await db.execute(
+        select(Teacher).where(Teacher.is_active == True).order_by(Teacher.name)
+    )
+    teachers = teachers_result.scalars().all()
+
+    # 构建返回数据
+    teachers_data = []
+    for teacher in teachers:
+        current_slots = teacher_slots_map.get(teacher.id, 0)
+        max_slots = teacher.max_slots or 2  # 默认最大2场
+        has_conflict = teacher.id in conflict_teacher_ids
+
+        teachers_data.append({
+            "id": teacher.id,
+            "name": teacher.name,
+            "teacher_type": teacher.teacher_type.value if teacher.teacher_type else "unknown",
+            "current_slots": current_slots,
+            "max_slots": max_slots,
+            "has_conflict": has_conflict,
+        })
+
+    return {
+        "code": 0,
+        "message": "success",
+        "data": {
+            "teachers": teachers_data,
+            "time_slot": {
+                "id": time_slot_id,
+                "day_name": date,
+                "slot_code": time_slot_code,
+                "time_range": f"{time_slot.start_time}-{time_slot.end_time}",
+            }
+        }
+    }

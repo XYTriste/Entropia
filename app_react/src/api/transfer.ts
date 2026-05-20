@@ -26,6 +26,7 @@ export interface BatchTransferRequest {
   from_teacher_id: number;
   to_teacher_id: number;
   reason: string;
+  exam_ids?: number[];  // 可选：指定要转移的考试ID列表
 }
 
 /**
@@ -51,7 +52,7 @@ export async function swapExams(payload: SwapRequest): Promise<{
     success: boolean;
     message: string;
     operation_id: string;
-  }>>('/swap', payload);
+  }>>('/transfer/swap', payload);
   return data.data;
 }
 
@@ -67,7 +68,7 @@ export async function transferExam(payload: TransferRequest): Promise<{
     success: boolean;
     message: string;
     operation_id: string;
-  }>>('/transfer', payload);
+  }>>('/transfer/transfer', payload);
   return data.data;
 }
 
@@ -85,7 +86,7 @@ export async function batchTransfer(payload: BatchTransferRequest): Promise<{
     message: string;
     transferred_count: number;
     operation_id: string;
-  }>>('/batch', payload);
+  }>>('/transfer/batch', payload);
   return data.data;
 }
 
@@ -99,6 +100,6 @@ export async function undoTransfer(operationId: string): Promise<{
   const { data } = await apiClient.post<ApiResponse<{
     success: boolean;
     message: string;
-  }>>(`/undo/${operationId}`);
+  }>>(`/transfer/undo/${operationId}`);
   return data.data;
 }

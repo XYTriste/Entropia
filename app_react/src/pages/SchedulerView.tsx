@@ -21,13 +21,13 @@ import {
   GraduationCap,
   User,
 } from 'lucide-react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import WaveProgress from '@/components/WaveProgress';
 import RollingNumber from '@/components/RollingNumber';
 import { getCourses } from '@/api/courses';
 import { runScheduler, getSchedulerStatus, getSchedulerConfig, saveSchedulerConfig, applyVersion } from '@/api/scheduler';
-import { getExamOverviewMatrix } from '@/api/results';
+import { getExamOverviewMatrix, getScheduleVersions } from '@/api/results';
 import { useSchedulerStatus } from '@/hooks/useScheduler';
 import type { Course, SchedulerConfig } from '@/types';
 
@@ -55,6 +55,7 @@ export default function SchedulerView() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
 
   // 高级配置状态
   const [advancedConfig, setAdvancedConfig] = useState<{
@@ -94,6 +95,8 @@ export default function SchedulerView() {
     onSuccess: (data) => {
       toast.success('版本已应用，排考结果已更新');
       setShowResults(false);
+      // 刷新课程列表（排考状态可能变化）
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
       // 可以添加跳转到结果页面等后续操作
     },
     onError: (error: any) => {
@@ -108,6 +111,29 @@ export default function SchedulerView() {
     violations: number;
     solve_time: string;
   } | null>(null);
+
+  // 监听版本列表变化，当版本被删除时清除 schedulerResult
+  const { data: versionsData } = useQuery({
+    queryKey: ['scheduleVersions'],
+    queryFn: getScheduleVersions,
+  });
+
+  useEffect(() => {
+    // 当版本列表为空时，清除 schedulerResult 并刷新课程列表
+    if (versionsData && versionsData.length === 0) {
+      setSchedulerResult(null);
+      setShowResults(false);
+      // 刷新课程列表（排考状态可能变化）
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
+    } else if (versionsData && schedulerResult) {
+      // 检查当前 schedulerResult 的 version_id 是否还在版本列表中
+      const versionExists = versionsData.some((v: any) => v.id === schedulerResult.version_id);
+      if (!versionExists) {
+        setSchedulerResult(null);
+        setShowResults(false);
+      }
+    }
+  }, [versionsData]);
   
   useSchedulerStatus(jobId || undefined, (status) => {
     if (status.status === 'running') {
@@ -178,14 +204,13 @@ export default function SchedulerView() {
     mutationFn: () => runScheduler({
       course_ids: selectedCourses,
       strategy: config.strategy === 'all' ? 'full' : config.strategy,
-      fixed_proctors_per_room: config.fixedProctorsPerRoom as 1 | 2 | 3,
+      fixed_teachers_per_room: config.fixedProctorsPerRoom as 1 | 2 | 3,
       enable_max_days_constraint: advancedConfig.enable_max_days_constraint,
       enable_day_continuity_constraint: config.noCrossDay,
       max_days: config.maxProctorDays,
     }),
     onSuccess: (data) => {
       setJobId(data.job_id);
-      startPolling(data.job_id);
     },
     onError: (error: any) => {
       toast.error(error?.toast || '启动排考失败');

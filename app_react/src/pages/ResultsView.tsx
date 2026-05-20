@@ -22,9 +22,11 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import RollingNumber from '@/components/RollingNumber';
+import ExportModal, { type ExportFormat } from '@/components/ExportModal';
 import { getExamOverviewMatrix, getPatrolMatrix, getTeacherGanttData, getClassroomMatrix, getBatchClassSchedule, getCourseExams, getScheduleVersions } from '@/api/results';
 import { getCourses } from '@/api/courses';
 import { deleteScheduleVersion, applyVersion } from '@/api/scheduler';
+import apiClient from '@/api/client';
 import { examSchedules, teachers, classrooms, classesData, courses, daysOfWeek, slotCodes, slotLabels } from '@/data/mock';
 import type { ResultPanelType } from '@/types';
 
@@ -65,8 +67,66 @@ export default function ResultsView() {
     versionId: number;
     versionNo: string;
   } | null>(null);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   const queryClient = useQueryClient();
+
+  // 导出处理函数
+  const handleExport = useCallback(async (format: ExportFormat, versionId: number | null) => {
+    try {
+      const params = versionId ? `?version_id=${versionId}` : '';
+      let url = '';
+      let filename = '';
+
+      switch (format) {
+        case 'excel':
+          url = `/import-export/export/excel${params}`;
+          filename = `排考结果${versionId ? `_v${versionId}` : ''}.xlsx`;
+          break;
+        case 'json':
+          url = `/import-export/export/json${params}`;
+          filename = `排考结果${versionId ? `_v${versionId}` : ''}.json`;
+          break;
+        case 'sql':
+          url = `/import-export/export/sql${params}`;
+          filename = `排考结果${versionId ? `_v${versionId}` : ''}.sql`;
+          break;
+      }
+
+      // 发起请求获取文件
+      const response = await apiClient.get(url, {
+        responseType: format === 'json' ? 'json' : 'blob',
+      });
+
+      if (format === 'json') {
+        // JSON 格式：下载为文件
+        const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+        downloadBlob(blob, filename);
+      } else {
+        // Excel/SQL：直接下载
+        const blob = new Blob([response.data], {
+          type: format === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/plain',
+        });
+        downloadBlob(blob, filename);
+      }
+
+      toast.success(`导出成功：${filename}`);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || '导出失败');
+    }
+  }, []);
+
+  // 下载 Blob 文件
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   // 展开/折叠教室辅助函数
   const toggleClassroom = useCallback((roomName: string) => {
@@ -118,6 +178,12 @@ export default function ResultsView() {
       // 如果删除的是当前选中版本，需要切换到其他版本
       if (activeVersionId === versionId) {
         setActiveVersionId(null);
+        // 清除所有面板数据
+        queryClient.invalidateQueries({ queryKey: ['examOverviewMatrix'] });
+        queryClient.invalidateQueries({ queryKey: ['teacherGanttData'] });
+        queryClient.invalidateQueries({ queryKey: ['classroomMatrix'] });
+        queryClient.invalidateQueries({ queryKey: ['patrolMatrix'] });
+        queryClient.invalidateQueries({ queryKey: ['batchClassSchedule'] });
       }
       // 刷新版本列表
       refetchVersions();
@@ -132,12 +198,29 @@ export default function ResultsView() {
     mutationFn: (versionId: number) => applyVersion(versionId),
     onSuccess: () => {
       toast.success('版本已应用，排考结果已更新');
+      // 刷新版本列表和所有面板数据
       refetchVersions();
+      queryClient.invalidateQueries({ queryKey: ['examOverviewMatrix'] });
+      queryClient.invalidateQueries({ queryKey: ['teacherGanttData'] });
+      queryClient.invalidateQueries({ queryKey: ['classroomMatrix'] });
+      queryClient.invalidateQueries({ queryKey: ['patrolMatrix'] });
+      queryClient.invalidateQueries({ queryKey: ['batchClassSchedule'] });
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.detail || error?.message || '应用失败');
     },
   });
+
+  // 刷新所有面板数据
+  const refreshAllPanels = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['examOverviewMatrix'] });
+    queryClient.invalidateQueries({ queryKey: ['teacherGanttData'] });
+    queryClient.invalidateQueries({ queryKey: ['classroomMatrix'] });
+    queryClient.invalidateQueries({ queryKey: ['patrolMatrix'] });
+    queryClient.invalidateQueries({ queryKey: ['batchClassSchedule'] });
+    queryClient.invalidateQueries({ queryKey: ['courseExams'] });
+    toast.success('数据已刷新');
+  }, [queryClient]);
 
   // 过滤后的版本列表：默认只显示已发布版本
   const filteredVersions = useMemo(() => {
@@ -162,32 +245,32 @@ export default function ResultsView() {
     return version?.status || null;
   }, [activeVersionId, versionsData]);
 
-  // 获取总览矩阵数据（用于 OverviewCellModal）
+  // 获取总览矩阵数据
   const { data: overviewData } = useQuery({
     queryKey: ['examOverviewMatrix', activeVersionId],
-    queryFn: () => getExamOverviewMatrix(activeVersionId!),
+    queryFn: () => getExamOverviewMatrix(),
     enabled: !!activeVersionId,
   });
 
-  // 各面板数据查询（依赖 activeVersionId）
+  // 各面板数据查询
   const { data: teacherGanttData } = useQuery({
     queryKey: ['teacherGanttData', activeVersionId],
-    queryFn: () => getTeacherGanttData(activeVersionId!),
+    queryFn: () => getTeacherGanttData(),
     enabled: !!activeVersionId,
   });
   const { data: classroomMatrixData } = useQuery({
     queryKey: ['classroomMatrix', activeVersionId],
-    queryFn: () => getClassroomMatrix(activeVersionId!),
+    queryFn: () => getClassroomMatrix(),
     enabled: !!activeVersionId,
   });
   const { data: patrolMatrixData } = useQuery({
     queryKey: ['patrolMatrix', activeVersionId],
-    queryFn: () => getPatrolMatrix(activeVersionId!),
+    queryFn: () => getPatrolMatrix(),
     enabled: !!activeVersionId,
   });
   const { data: batchClassData } = useQuery({
     queryKey: ['batchClassSchedule', activeVersionId],
-    queryFn: () => getBatchClassSchedule(activeVersionId!),
+    queryFn: () => getBatchClassSchedule(),
     enabled: !!activeVersionId,
   });
   const { data: coursesData } = useQuery({
@@ -646,6 +729,16 @@ export default function ResultsView() {
           </div>
         )}
 
+        {/* 导出对话框 */}
+        <ExportModal
+          open={exportModalOpen}
+          onClose={() => setExportModalOpen(false)}
+          versionId={activeVersionId}
+          versionNo={filteredVersions.find((v: any) => v.id === activeVersionId)?.version_no || ''}
+          versionStatus={currentVersionStatus}
+          onExport={handleExport}
+        />
+
         {/* Right Stats Panel */}
         <aside className="hidden md:block w-[280px] flex-shrink-0">
           <div className="glass-card rounded-3xl p-5 sticky top-24">
@@ -688,11 +781,17 @@ export default function ResultsView() {
             </div>
 
             <div className="mt-5 space-y-2">
-              <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white/60 dark:bg-[#21262D]/80 hover:bg-[#D4A373]/10 text-[#8C959F] dark:text-[#8B949E] hover:text-[#D4A373] rounded-xl text-sm transition-all">
+              <button
+                onClick={refreshAllPanels}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white/60 dark:bg-[#21262D]/80 hover:bg-[#D4A373]/10 text-[#8C959F] dark:text-[#8B949E] hover:text-[#D4A373] rounded-xl text-sm transition-all"
+              >
                 <RefreshCw size={14} />
                 刷新数据
               </button>
-              <button className="w-full btn-amber text-sm flex items-center justify-center gap-2">
+              <button
+                onClick={() => setExportModalOpen(true)}
+                className="w-full btn-amber text-sm flex items-center justify-center gap-2"
+              >
                 <Download size={14} />
                 导出结果
               </button>
@@ -1042,7 +1141,7 @@ function TeacherPanel({
                     {teacherExams.map((exam, i) => (
                       <div key={i} className="text-xs bg-[#F9FAFB] dark:bg-[#21262D] rounded-xl p-3 space-y-1.5">
                         <div className="flex justify-between">
-                          <span className="text-[#1F2328] dark:text-[#E6EDF3] font-medium">{exam.day_name} {exam.slot_code}</span>
+                          <span className="text-[#1F2328] dark:text-[#E6EDF3] font-medium">{exam.day_name} {exam.time_range}</span>
                           <span className={`px-1.5 py-0.5 rounded text-[10px] ${
                             exam.role === 'fixed'
                               ? 'bg-[#D4A373]/10 text-[#D4A373]'
@@ -1092,12 +1191,16 @@ function TeacherLoadPanel({ searchQuery, activeVersionId }: { searchQuery: strin
   }
 
   const teacherList = data?.teachers || [];
-  // 计算教师负荷率（使用每位老师的 max_slots）
+  // 教师类型映射
+  const typeLabels: Record<string, string> = {
+    full_time: '专任',
+    part_time: '兼任',
+  };
+  // 计算教师负荷率（使用 API 返回的 max_slots）
   const filtered = teacherList
     .filter((t) => t.teacher_name.toLowerCase().includes(searchQuery.toLowerCase()))
     .map((t) => {
       const examCount = t.events?.length || 0;
-      // 从 API 获取 max_slots（默认为 5）
       const maxSlots = t.max_slots || 5;
       return { ...t, examCount, maxSlots, loadRate: maxSlots > 0 ? (examCount / maxSlots) * 100 : 0 };
     })
@@ -1120,7 +1223,7 @@ function TeacherLoadPanel({ searchQuery, activeVersionId }: { searchQuery: strin
             </div>
             <div className="w-24 flex-shrink-0">
               <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3]">{t.teacher_name}</div>
-              <div className="text-[10px] text-[#8C959F] dark:text-[#8B949E]">{t.teacher_type || '未知'}</div>
+              <div className="text-[10px] text-[#8C959F] dark:text-[#8B949E]">{typeLabels[t.teacher_type] || '未知'}</div>
             </div>
             <div className="flex-1">
               <div className="flex items-center justify-between mb-1">
@@ -1197,7 +1300,13 @@ function ClassroomPanel({
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
         {filtered.map((roomName) => {
           const roomData = matrix[roomName] || {};
-          const roomExams = Object.values(roomData).flat();
+          const roomExams = Object.values(roomData).flat().sort((a, b) => {
+            // 按日期排序（周一在前），再按时间排序（早的在前）
+            if (a.day_of_week !== b.day_of_week) {
+              return a.day_of_week - b.day_of_week;
+            }
+            return a.time_range.localeCompare(b.time_range);
+          });
           const isExpanded = expandedClassrooms.has(roomName);
 
           return (
@@ -1209,7 +1318,7 @@ function ClassroomPanel({
                 }`}
                 onClick={() => toggleClassroom(roomName)}
               >
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Building2 size={16} className="text-[#D4A373]" />
                     <span className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3]">{roomName}</span>
@@ -1221,32 +1330,6 @@ function ClassroomPanel({
                       className={`text-[#8C959F] transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                     />
                   </div>
-                </div>
-
-                <div className="grid grid-cols-4 gap-1.5">
-                  {slots.map((slot) => {
-                    const slotExams = Object.entries(roomData)
-                      .filter(([key]) => key.includes(`-${slot}`))
-                      .flatMap(([, exams]) => exams);
-                    return (
-                      <div key={slot} className="bg-[#F9FAFB] dark:bg-[#21262D] rounded-lg p-2 text-center">
-                        <div className="text-[10px] text-[#C8CDD3] dark:text-[#484F58] mb-1">{slot}</div>
-                        {slotExams.length > 0 ? (
-                          <div className="space-y-1">
-                            {slotExams.slice(0, 1).map((e: any, i: number) => (
-                              <div key={i} className="text-[10px]">
-                                <div className="text-[#1F2328] dark:text-[#E6EDF3] truncate">{e.course_name}</div>
-                                <div className="text-[#C8CDD3] dark:text-[#484F58] truncate">{e.exam_label || '-'}</div>
-                                <div className="text-[#8C959F] dark:text-[#8B949E]">{e.total_students}人</div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-[10px] text-[#C8CDD3] dark:text-[#484F58]">空闲</div>
-                        )}
-                      </div>
-                    );
-                  })}
                 </div>
               </div>
 
@@ -1260,16 +1343,26 @@ function ClassroomPanel({
                     {roomExams.map((exam: any, i: number) => (
                       <div key={i} className="text-xs bg-[#F9FAFB] dark:bg-[#21262D] rounded-xl p-3 space-y-1.5">
                         <div className="text-[#1F2328] dark:text-[#E6EDF3] font-medium">{exam.course_name}</div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-[#8C959F] dark:text-[#8B949E]">
-                            {exam.day_name} {exam.slot_code} {exam.time_range}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2 py-1 rounded bg-[#10B981]/10 text-[#10B981] font-medium text-[11px]">
+                            星期{exam.day_name.replace('周', '')} {exam.time_range}
                           </span>
                           <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#D4A373]/10 text-[#D4A373]">
                             {exam.exam_label || '-'}
                           </span>
                         </div>
-                        <div className="text-[#C8CDD3] dark:text-[#484F58] pt-1 border-t border-[#F3F4F6] dark:border-[#30363D]">
-                          {exam.class_names?.join('、') || '未知班级'} · {exam.total_students} 人
+                        <div className="flex items-center gap-2 pt-1 border-t border-[#F3F4F6] dark:border-[#30363D] flex-wrap">
+                          <span className="px-2 py-0.5 rounded-md bg-[#6395C3]/10 text-[#6395C3] text-[10px]">
+                            {exam.class_names?.join('、') || '未知班级'}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-[#D4A373]/10 text-[#D4A373] text-[10px]">
+                            {exam.total_students} 人
+                          </span>
+                          {exam.teacher_names?.length > 0 && (
+                            <span className="px-2 py-0.5 rounded-md bg-[#8B5CF6]/10 text-[#8B5CF6] text-[10px]">
+                              {exam.teacher_names.join('、')}
+                            </span>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1446,7 +1539,7 @@ function ClassPanel({
                   {previewExams.map((exam, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs bg-[#F9FAFB] dark:bg-[#21262D] rounded-lg p-2">
                       <Clock size={12} className="text-[#8C959F] dark:text-[#8B949E] flex-shrink-0" />
-                      <span className="text-[#8C959F] dark:text-[#8B949E]">{exam.day_name} {exam.slot_code}</span>
+                      <span className="text-[#8C959F] dark:text-[#8B949E]">{exam.day_name} {exam.time_range}</span>
                       <span className="text-[#1F2328] dark:text-[#E6EDF3] font-medium truncate">{exam.course_name}</span>
                       <span className="text-[#C8CDD3] dark:text-[#484F58]">{exam.classroom_name}</span>
                     </div>
@@ -1471,7 +1564,7 @@ function ClassPanel({
                         <div className="text-[#1F2328] dark:text-[#E6EDF3] font-medium">{exam.course_name}</div>
                         <div className="flex justify-between items-center">
                           <span className="text-[#8C959F] dark:text-[#8B949E]">
-                            {exam.day_name} {exam.slot_code} {exam.time_range}
+                            {exam.day_name} {exam.time_range}
                           </span>
                           <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#D4A373]/10 text-[#D4A373]">
                             {exam.exam_label || '-'}
@@ -1609,20 +1702,61 @@ function CourseExamDetail({ courseId }: { courseId: number }) {
   return (
     <div className="px-4 pb-4 border-t border-[#F3F4F6] dark:border-[#30363D]">
       <div className="mt-3 space-y-2">
-        {courseDetailData.exams?.map((exam: any, i: number) => (
-          <div key={i} className="flex items-center gap-3 text-xs bg-[#F9FAFB] dark:bg-[#21262D] rounded-xl p-3">
-            <Clock size={12} className="text-[#8C959F] dark:text-[#8B949E]" />
-            <span className="text-[#8C959F] dark:text-[#8B949E]">{exam.day_name}</span>
-            <span className="text-[#8C959F] dark:text-[#8B949E]">{exam.slot_code}</span>
-            <span className="text-[#D4A373] font-medium">{exam.exam_label || '-'}</span>
-            <span className="text-[#1F2328] dark:text-[#E6EDF3] font-medium">
-              {exam.classrooms?.map((c: any) => c.classroom_name).join(', ')}
-            </span>
-            <span className="text-[#8C959F] dark:text-[#8B949E]">
-              {exam.classrooms?.reduce((sum: number, c: any) => sum + c.total_students, 0)}人
-            </span>
-          </div>
-        ))}
+        {courseDetailData.exams?.map((exam: any, i: number) => {
+          // 后端返回 classrooms 数组，每个元素包含 classroom_name 和 classes 数组
+          const classrooms = exam.classrooms || [];
+          const items: { room: string; classInfo: string }[] = classrooms.map((c: any) => {
+            const classNames = c.classes
+              ?.map((cl: any) => `${cl.class_name}(${cl.student_count}人)`)
+              .join('、') || '-';
+            return { room: c.classroom_name, classInfo: classNames };
+          });
+          if (items.length === 0) items.push({ room: '-', classInfo: '-' });
+
+          // 每4个一行
+          const rows: typeof items[] = [];
+          for (let k = 0; k < items.length; k += 4) {
+            rows.push(items.slice(k, k + 4));
+          }
+
+          return (
+            <div key={i} className="mb-3">
+              {/* 标题行 - 加大显示 */}
+              <div className="flex items-center gap-3 mb-2 text-sm">
+                <Clock size={14} className="text-[#D4A373]" />
+                <span className="font-semibold text-[#1F2328] dark:text-[#E6EDF3]">{exam.day_name}</span>
+                <span className="text-[#8C959F] dark:text-[#8B949E]">{exam.time_range}</span>
+                <span className="px-2 py-0.5 rounded bg-[#D4A373]/10 text-[#D4A373] font-medium">
+                  {exam.exam_label || '-'}
+                </span>
+              </div>
+              {/* 教室信息 - 每4个一行，用grid保证对齐 */}
+              <div className="space-y-1">
+                {rows.map((row, j) => (
+                  <div key={j} className="grid grid-cols-4 gap-2">
+                    {row.map((item, k) => (
+                      <div
+                        key={k}
+                        className={`px-2 py-1.5 rounded-lg text-xs font-medium text-center truncate ${
+                          (j * 4 + k) % 2 === 0
+                            ? 'bg-[#6395C3]/10 text-[#6395C3]'
+                            : 'bg-[#D4A373]/10 text-[#D4A373]'
+                        }`}
+                        title={`${item.room}@${item.classInfo}`}
+                      >
+                        {item.room}@{item.classInfo}
+                      </div>
+                    ))}
+                    {/* 填充空白格子 */}
+                    {row.length < 4 && Array.from({ length: 4 - row.length }).map((_, k) => (
+                      <div key={`empty-${k}`} />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
         {courseDetailData.ab_analysis && (
           <div className="mt-3 p-3 bg-[#F9FAFB] dark:bg-[#21262D] rounded-xl text-xs">
             <div className="text-[#8C959F] dark:text-[#8B949E] mb-2">AB卷分析</div>

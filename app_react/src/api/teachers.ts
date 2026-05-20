@@ -94,6 +94,62 @@ export async function updateTeacher(id: number, payload: TeacherUpdate): Promise
 }
 
 /**
+ * 获取教师详情（含监考安排）
+ */
+export async function getTeacherExams(id: number): Promise<{
+  teacher_id: number;
+  teacher_name: string;
+  current_slots: number;
+  max_slots: number;
+  fixed_count: number;
+  patrol_count: number;
+  fixed_exams: Array<{
+    exam_id: number;
+    course_name: string;
+    course_type: string;
+    date: string;
+    time_slot: string;
+    classroom_name: string;
+    student_count: number;
+  }>;
+  patrol_exams: Array<{
+    exam_id: number;
+    course_name: string;
+    course_type: string;
+    date: string;
+    time_slot: string;
+    classrooms: Array<{ classroom_name: string; student_count: number }>;
+  }>;
+}> {
+  const { data } = await apiClient.get<ApiResponse<{
+    teacher_id: number;
+    teacher_name: string;
+    current_slots: number;
+    max_slots: number;
+    fixed_count: number;
+    patrol_count: number;
+    fixed_exams: Array<{
+      exam_id: number;
+      course_name: string;
+      course_type: string;
+      date: string;
+      time_slot: string;
+      classroom_name: string;
+      student_count: number;
+    }>;
+    patrol_exams: Array<{
+      exam_id: number;
+      course_name: string;
+      course_type: string;
+      date: string;
+      time_slot: string;
+      classrooms: Array<{ classroom_name: string; student_count: number }>;
+    }>;
+  }>>(`/teachers/${id}/exams`);
+  return data.data;
+}
+
+/**
  * 删除教师
  */
 export async function deleteTeacher(id: number): Promise<void> {

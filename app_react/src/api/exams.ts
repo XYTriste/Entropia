@@ -190,10 +190,34 @@ export async function getKPIStats(versionId?: number): Promise<KPIStats> {
 
 /**
  * 获取排考版本列表
+ * 后端返回格式: { total, items: [{ id, version_no, status, description, created_at }] }
+ * 转换为前端格式
  */
 export async function getScheduleVersions(): Promise<ScheduleVersion[]> {
-  const { data } = await apiClient.get<ApiResponse<ScheduleVersion[]>>('/versions');
-  return data.data;
+  const { data } = await apiClient.get<ApiResponse<{
+    total: number;
+    items: Array<{
+      id: number;
+      version_no: string;
+      status: string;
+      description: string | null;
+      created_at: string | null;
+    }>;
+  }>>('/scheduler/versions');
+
+  // 转换为前端格式
+  return data.data.items.map((v) => ({
+    id: v.id,
+    name: v.version_no,  // 使用 version_no 作为 name
+    createdAt: v.created_at || '',
+    examCount: 0,  // 后端未返回，需要额外查询
+    teacherCount: 0,
+    roomCount: 0,
+    classCount: 0,
+    courseCount: 0,
+    patrolCount: 0,
+    isActive: v.status === 'published',  // published 对应 isActive
+  }));
 }
 
 // ── 专业班级考试数量批量接口 ──────────────────────────────────────

@@ -9,7 +9,7 @@
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from typing import Any, Optional
 
@@ -28,8 +28,12 @@ from app.models.exam_classroom import ExamClassroom
 from app.models.exam_classroom_class import ExamClassroomClass
 from app.models.exam_teacher import ExamTeacher
 from app.models.patrol_teacher import PatrolTeacher
+from app.models.schedule_version import ScheduleVersion, ScheduleVersionStatus
 from app.models.teacher import Teacher
 from app.models.time_slot import TimeSlot
+
+# 国内时区 UTC+8
+CN_TZ = timezone(timedelta(hours=8))
 
 
 # ============================================================
@@ -76,20 +80,54 @@ def _auto_width(worksheet, min_width: int = 10, max_width: int = 40):
 # ============================================================
 
 
-async def _load_exams_with_relations(db: AsyncSession) -> list[Exam]:
-    """加载所有考试及其关联数据"""
-    result = await db.execute(
-        select(Exam)
-        .options(
-            selectinload(Exam.course),
-            selectinload(Exam.time_slot),
-            selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.class_assignments).selectinload(ExamClassroomClass.class_),
-            selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.classroom),
-            selectinload(Exam.teacher_assignments).selectinload(ExamTeacher.teacher),
+async def _load_exams_with_relations(db: AsyncSession, version_id: int | None = None) -> list[Exam]:
+    """加载所有考试及其关联数据
+
+    Args:
+        version_id: 如果指定，仅导出版本对应的考试数据（需是PUBLISHED状态）
+    """
+    query = select(Exam)
+
+    # 如果指定版本且是 PUBLISHED，只导出该版本数据
+    if version_id:
+        version_result = await db.execute(
+            select(ScheduleVersion).where(ScheduleVersion.id == version_id)
         )
-        .order_by(Exam.time_slot_id)
-    )
+        version = version_result.scalar_one_or_none()
+        if version and version.status == ScheduleVersionStatus.PUBLISHED:
+            # PUBLISHED 版本的数据在 exams 表中，status=SCHEDULED
+            query = query.where(Exam.status == "scheduled")
+        elif version:
+            # 非 PUBLISHED 版本（draft/archived），数据在快照中
+            # 临时解析快照返回虚拟数据
+            return await _load_exams_from_snapshot(version.data_snapshot, db)
+        else:
+            return []
+
+    query = query.options(
+        selectinload(Exam.course),
+        selectinload(Exam.time_slot),
+        selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.class_assignments).selectinload(ExamClassroomClass.class_),
+        selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.classroom),
+        selectinload(Exam.teacher_assignments).selectinload(ExamTeacher.teacher),
+    ).order_by(Exam.time_slot_id)
+
+    result = await db.execute(query)
     return list(result.scalars().all())
+
+
+async def _load_exams_from_snapshot(snapshot_data: str | None, db: AsyncSession) -> list[dict]:
+    """从快照数据加载考试信息（用于非PUBLISHED版本）"""
+    if not snapshot_data:
+        return []
+
+    try:
+        snapshot = json.loads(snapshot_data)
+    except json.JSONDecodeError:
+        return []
+
+    # 返回快照中的原始数据（不转换为 Exam 模型）
+    return snapshot.get("exams", [])
 
 
 async def _load_time_slots(db: AsyncSession) -> list[TimeSlot]:
@@ -125,11 +163,15 @@ async def _load_classes(db: AsyncSession) -> list[Class]:
 # ============================================================
 
 
-async def export_excel(db: AsyncSession) -> bytes:
-    """导出排考结果为 Excel 文件 (多 Sheet)"""
+async def export_excel(db: AsyncSession, version_id: int | None = None) -> bytes:
+    """导出排考结果为 Excel 文件 (多 Sheet)
+
+    Args:
+        version_id: 可选，指定版本ID，仅导出版本对应的排考数据
+    """
     wb = Workbook()
 
-    exams = await _load_exams_with_relations(db)
+    exams = await _load_exams_with_relations(db, version_id=version_id)
     time_slots = await _load_time_slots(db)
     teachers = await _load_teachers(db)
     classrooms_data = await _load_classrooms(db)
@@ -421,9 +463,13 @@ def _build_patrol_sheet(ws, time_slots, teachers):
 # ============================================================
 
 
-async def export_json(db: AsyncSession) -> dict[str, Any]:
-    """导出排考结果为 JSON 格式"""
-    exams = await _load_exams_with_relations(db)
+async def export_json(db: AsyncSession, version_id: int | None = None) -> dict[str, Any]:
+    """导出排考结果为 JSON 格式
+
+    Args:
+        version_id: 可选，指定版本ID，仅导出版本对应的排考数据
+    """
+    exams = await _load_exams_with_relations(db, version_id=version_id)
     time_slots = await _load_time_slots(db)
     ts_map = {ts.id: ts for ts in time_slots}
 
@@ -470,7 +516,7 @@ async def export_json(db: AsyncSession) -> dict[str, Any]:
         exam_list.append(exam_data)
 
     return {
-        "export_time": datetime.now().isoformat(),
+        "export_time": datetime.now(CN_TZ).isoformat(),
         "total_exams": len(exam_list),
         "exams": exam_list,
     }
@@ -481,18 +527,31 @@ async def export_json(db: AsyncSession) -> dict[str, Any]:
 # ============================================================
 
 
-async def export_sql(db: AsyncSession) -> str:
-    """导出排考结果为 SQL INSERT 语句"""
-    exams = await _load_exams_with_relations(db)
+async def export_sql(db: AsyncSession, version_id: int | None = None) -> str:
+    """导出排考结果为 SQL INSERT 语句
+
+    Args:
+        version_id: 可选，指定版本ID，仅导出版本对应的排考数据
+    """
+    exams = await _load_exams_with_relations(db, version_id=version_id)
 
     lines: list[str] = [
         "-- 考试排考系统 - 排考结果 SQL 导出",
-        f"-- 导出时间: {datetime.now().isoformat()}",
+        f"-- 导出时间: {datetime.now(CN_TZ).isoformat()}",
+        f"-- 版本ID: {version_id if version_id else '全部'}",
         "BEGIN;",
         "",
     ]
 
     for exam in exams:
+        # 快照数据是字典格式，需要特殊处理
+        if isinstance(exam, dict):
+            label = f"'{exam.get('exam_label', '')}'" if exam.get('exam_label') else "NULL"
+            lines.append(
+                f"-- 快照数据: course_id={exam.get('course_id')}, time_slot_id={exam.get('time_slot_id')}"
+            )
+            continue
+
         label = f"'{exam.exam_label.value}'" if exam.exam_label else "NULL"
         lines.append(
             f"INSERT INTO exams (id, course_id, time_slot_id, exam_label, status, is_locked, created_at, updated_at) "

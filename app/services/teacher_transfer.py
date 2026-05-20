@@ -13,7 +13,7 @@
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 from fastapi import HTTPException
@@ -26,6 +26,9 @@ from app.models.exam import Exam
 from app.models.exam_teacher import ExamTeacher
 from app.models.teacher import Teacher
 from app.utils.validators import validate_teacher_workload
+
+# 国内时区 UTC+8
+CN_TZ = timezone(timedelta(hours=8))
 
 
 # ============================================================
@@ -43,7 +46,7 @@ class TransferRecord:
     exam_ids: list[int]  # 涉及的考试ID列表
     details: list[dict[str, Any]]  # 每次具体变更的详细记录
     reason: str
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(CN_TZ).isoformat())
 
 
 # 全局调剂记录栈
@@ -548,7 +551,7 @@ async def _create_audit_log(
         new_value=json.dumps(new_value, ensure_ascii=False),
         reason=reason,
         operator=operator,
-        created_at=datetime.now(),
+        created_at=datetime.now(CN_TZ),
     )
     db.add(log)
     await db.flush()

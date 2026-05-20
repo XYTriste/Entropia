@@ -91,6 +91,11 @@ async def list_courses(
         item["unscheduled_class_count"] = len(unscheduled_classes)
         item["scheduled_classes"] = scheduled_classes
         item["unscheduled_classes"] = unscheduled_classes
+        item["exam_count"] = sum(
+            len(exam.classroom_assignments)
+            for exam in c.exams
+            if exam.status.value == "scheduled"
+        )
 
         # 计算选课人数（总人数 + AB卷分卷人数）
         total_students = sum(cl.class_.student_count for cl in c.class_links if cl.class_)

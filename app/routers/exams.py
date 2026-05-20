@@ -9,14 +9,18 @@
 - 教室视图矩阵
 - 班级考试时间表
 - 课程考试详情 (含AB卷分卷情况)
-"""
 
-from typing import Optional
+版本说明:
+- "应用版本" 时，快照数据会持久化到 Exam 表 (status=SCHEDULED)
+- 所有查询始终返回当前已发布版本 (status=SCHEDULED)
+- 版本切换由 "应用版本" 接口 (POST /scheduler/apply/{version_id}) 处理
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+import json
 
 from app.crud import exam as exam_crud
 from app.database import get_db
@@ -27,6 +31,7 @@ from app.models.exam import Exam, ExamStatus
 from app.models.exam_classroom import ExamClassroom
 from app.models.exam_classroom_class import ExamClassroomClass
 from app.models.exam_teacher import ExamTeacher
+from app.models.schedule_version import ScheduleVersion
 from app.models.teacher import Teacher
 from app.models.time_slot import TimeSlot
 from app.schemas.exam import ExamResponse
@@ -47,10 +52,83 @@ async def list_exams(
     time_slot_id: int | None = Query(None, description="按时段过滤"),
     course_id: int | None = Query(None, description="按课程过滤"),
     status: ExamStatus | None = Query(None, description="按状态过滤"),
+    course_type: str | None = Query(None, description="按课程类型过滤: major(专业课)/common(公共课)"),
+    version_id: int | None = Query(None, description="按排考版本过滤，默认显示已发布版本"),
+    date: str | None = Query(None, description="按日期过滤: 周一/周二/周三/周四/周五"),
+    search: str | None = Query(None, description="搜索关键词: 课程名/教室名/教师名"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
 ) -> dict:
-    """获取考试列表 (支持多维度过滤)"""
+    """获取考试列表 (支持多维度过滤)
+    
+    - version_id 不指定时默认返回已发布版本 (status=SCHEDULED)
+    - version_id 指定时返回该版本的快照数据
+    - 支持按 course_type 过滤: common(公共课) / major(专业课)
+    - 支持按 date 过滤: 周一/周二/周三/周四/周五
+    - 支持 search 关键词搜索: 课程名/教室名/教师名
+    """
+    # 处理版本过滤逻辑
+    if version_id:
+        # 从指定版本的快照读取数据
+        version = await db.get(ScheduleVersion, version_id)
+        if not version:
+            raise HTTPException(status_code=404, detail=f"版本(id={version_id})不存在")
+        
+        snapshot = {}
+        if version.data_snapshot:
+            try:
+                snapshot = json.loads(version.data_snapshot)
+            except json.JSONDecodeError:
+                snapshot = {}
+        
+        # 获取时段映射
+        time_slot_result = await db.execute(select(TimeSlot))
+        time_slots = time_slot_result.scalars().all()
+        time_slot_map = {ts.id: ts for ts in time_slots}
+        
+        # 从快照构建考试列表
+        items = []
+        for er in snapshot.get("exams", []):
+            ts_id = er.get("time_slot_id")
+            ts = time_slot_map.get(ts_id) if ts_id else None
+            
+            # 过滤条件
+            if course_id and er.get("course_id") != course_id:
+                continue
+            if date and ts and DAY_NAMES.get(ts.day_of_week) != date:
+                continue
+            if course_type:
+                er_course_type = er.get("course_type", "major")
+                if course_type == "common" and er_course_type != "common":
+                    continue
+                if course_type == "major" and er_course_type != "major":
+                    continue
+            
+            # 搜索过滤
+            if search:
+                search_lower = search.lower()
+                course_name = er.get("course_name", "").lower()
+                classroom_names = [cr.get("classroom_name", "").lower() for cr in er.get("classrooms", [])]
+                teacher_names = [tr.get("teacher_name", "").lower() for tr in er.get("teachers", [])]
+                if search_lower not in course_name and \
+                   not any(search_lower in cn for cn in classroom_names) and \
+                   not any(search_lower in tn for tn in teacher_names):
+                    continue
+            
+            # 格式化快照数据
+            item = _format_exam_from_snapshot(er, ts)
+            items.append(item)
+        
+        total = len(items)
+        paginated_items = items[skip:skip + limit]
+        
+        return {
+            "code": 0,
+            "message": "success",
+            "data": {"total": total, "items": paginated_items, "skip": skip, "limit": limit},
+        }
+    
+    # 从数据库查询已发布版本
     query = select(Exam).options(
         selectinload(Exam.course),
         selectinload(Exam.time_slot),
@@ -59,22 +137,76 @@ async def list_exams(
         selectinload(Exam.teacher_assignments).selectinload(ExamTeacher.teacher),
     )
 
+    # 过滤条件
     if time_slot_id:
         query = query.where(Exam.time_slot_id == time_slot_id)
     if course_id:
         query = query.where(Exam.course_id == course_id)
     if status:
         query = query.where(Exam.status == status)
+    else:
+        # 默认只返回已发布版本
+        query = query.where(Exam.status == ExamStatus.SCHEDULED)
+    
+    # 日期过滤 (通过 time_slot.day_of_week)
+    if date:
+        day_map = {"周一": 1, "周二": 2, "周三": 3, "周四": 4, "周五": 5}
+        day_of_week = day_map.get(date)
+        if day_of_week:
+            query = query.join(TimeSlot, Exam.time_slot_id == TimeSlot.id)
+            query = query.where(TimeSlot.day_of_week == day_of_week)
+    
+    # 课程类型过滤
+    if course_type:
+        # 数据库枚举值是大写：PUBLIC / MAJOR
+        course_type_map = {"common": "PUBLIC", "major": "MAJOR"}
+        mapped_type = course_type_map.get(course_type)
+        if mapped_type:
+            query = query.join(Course, Exam.course_id == Course.id)
+            query = query.where(Course.course_type == mapped_type)
+
+    # 搜索过滤 (需要子查询)
+    if search:
+        from sqlalchemy import or_
+        search_pattern = f"%{search}%"
+
+        # 搜索课程名、教室名、教师名、班级名
+        search_subquery = select(Exam.id).where(
+            or_(
+                Exam.course_id.in_(
+                    select(Course.id).where(Course.name.ilike(search_pattern))
+                ),
+                Exam.id.in_(
+                    select(ExamClassroom.exam_id).join(
+                        Classroom, ExamClassroom.classroom_id == Classroom.id
+                    ).where(Classroom.name.ilike(search_pattern))
+                ),
+                Exam.id.in_(
+                    select(ExamTeacher.exam_id).join(
+                        Teacher, ExamTeacher.teacher_id == Teacher.id
+                    ).where(Teacher.name.ilike(search_pattern))
+                ),
+                # 新增：班级名搜索
+                Exam.id.in_(
+                    select(ExamClassroom.exam_id).join(
+                        ExamClassroomClass, ExamClassroom.id == ExamClassroomClass.exam_classroom_id
+                    ).join(
+                        Class, ExamClassroomClass.class_id == Class.id
+                    ).where(Class.name.ilike(search_pattern))
+                ),
+            )
+        )
+        query = query.where(Exam.id.in_(search_subquery))
 
     count_query = select(func.count()).select_from(query.subquery())
     count_result = await db.execute(count_query)
     total = count_result.scalar_one() or 0
 
     result = await db.execute(query.offset(skip).limit(limit).order_by(Exam.id))
-    items = result.scalars().all()
+    exam_items = result.scalars().all()
 
     data_items = []
-    for exam in items:
+    for exam in exam_items:
         item = _format_exam_detail(exam)
         data_items.append(item)
 
@@ -124,71 +256,116 @@ async def get_exam(
 async def get_exam_overview_matrix(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """获取总览视图矩阵 (日期 x 时段)，含教室/班级/教师详情"""
+    """获取总览视图矩阵 (日期 x 时段)，含教室/班级/教师详情
+    
+    优先从最新版本的快照读取数据，支持预览未发布的排考结果。
+    """
+    # 1. 获取最新版本的快照
     result = await db.execute(
-        select(Exam)
-        .where(Exam.status == ExamStatus.SCHEDULED)
-        .options(
-            selectinload(Exam.course),
-            selectinload(Exam.time_slot),
-            selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.classroom),
-            selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.class_assignments).selectinload(ExamClassroomClass.class_),
-            selectinload(Exam.teacher_assignments).selectinload(ExamTeacher.teacher),
-        )
+        select(ScheduleVersion)
+        .order_by(ScheduleVersion.created_at.desc())
+        .limit(1)
     )
-    exams = result.scalars().all()
-
+    latest_version = result.scalar_one_or_none()
+    
+    snapshot = {}
+    if latest_version and latest_version.data_snapshot:
+        try:
+            snapshot = json.loads(latest_version.data_snapshot)
+        except json.JSONDecodeError:
+            snapshot = {}
+    
+    # 2. 获取时段信息用于日期/时段映射
+    time_slot_result = await db.execute(select(TimeSlot))
+    time_slots = time_slot_result.scalars().all()
+    time_slot_map = {ts.id: ts for ts in time_slots}
+    
+    # 3. 初始化矩阵
     matrix: dict[str, dict[str, list[dict]]] = {}
     for day in range(1, 6):
         matrix[DAY_NAMES[day]] = {"T1": [], "T2": [], "T3": [], "T4": []}
-
-    for exam in exams:
-        if not exam.time_slot:
+    
+    # 4. 从快照构建矩阵
+    for er in snapshot.get("exams", []):
+        ts_id = er.get("time_slot_id")
+        if not ts_id or ts_id not in time_slot_map:
             continue
-        day_name = DAY_NAMES.get(exam.time_slot.day_of_week)
-        slot_code = exam.time_slot.slot_code
+        
+        ts = time_slot_map[ts_id]
+        day_name = DAY_NAMES.get(ts.day_of_week)
+        slot_code = ts.slot_code
         if not day_name or not slot_code:
             continue
-
+        
+        # 获取课程名称
+        course_id = er.get("course_id")
+        course_name = er.get("course_name", f"课程{course_id}")
+        course_type = er.get("course_type", "major")
+        
         # 教室详情
         classrooms_detail: list[dict] = []
-        for ec in exam.classroom_assignments:
-            room_name = ec.classroom.name if ec.classroom else f"教室{ec.classroom_id}"
+        total_students = 0
+        for cr in er.get("classrooms", []):
+            room_id = cr.get("classroom_id")
+            # 获取教室名称
+            room_result = await db.execute(select(Classroom).where(Classroom.id == room_id))
+            room = room_result.scalar_one_or_none()
+            room_name = room.name if room else f"教室{room_id}"
+            capacity = room.capacity if room else 0
+            
             class_list = []
-            for ca in ec.class_assignments:
-                cls_name = ca.class_.name if ca.class_ else f"班级{ca.class_id}"
+            for ca in cr.get("class_assignments", []):
+                cid = ca.get("class_id")
+                # 获取班级名称
+                cls_result = await db.execute(select(Class).where(Class.id == cid))
+                cls = cls_result.scalar_one_or_none()
+                cls_name = cls.name if cls else f"班级{cid}"
                 class_list.append({
                     "class_name": cls_name,
-                    "student_count": ca.student_count,
+                    "student_count": ca.get("student_count", 0),
                 })
+            
             classrooms_detail.append({
                 "classroom_name": room_name,
-                "capacity": ec.classroom.capacity if ec.classroom else 0,
-                "total_students": ec.total_students,
+                "capacity": capacity,
+                "total_students": cr.get("student_count", 0),
                 "classes": class_list,
             })
-
+            total_students += cr.get("student_count", 0)
+        
         # 教师详情
         teachers_detail: list[dict] = []
-        for et in exam.teacher_assignments:
+        for tr in er.get("teachers", []):
+            teacher_id = tr.get("teacher_id")
+            # 获取教师名称
+            teacher_result = await db.execute(select(Teacher).where(Teacher.id == teacher_id))
+            teacher = teacher_result.scalar_one_or_none()
+            teacher_name = teacher.name if teacher else f"教师{teacher_id}"
+            
+            classroom_name = None
+            if tr.get("classroom_id"):
+                room_result = await db.execute(select(Classroom).where(Classroom.id == tr.get("classroom_id")))
+                room = room_result.scalar_one_or_none()
+                classroom_name = room.name if room else None
+            
             teachers_detail.append({
-                "teacher_name": et.teacher.name if et.teacher else f"教师{et.teacher_id}",
-                "role": et.role.value,
-                "classroom_name": et.classroom.name if getattr(et, "classroom", None) else None,
-                "patrol_group_name": et.patrol_group_name,
+                "teacher_name": teacher_name,
+                "role": tr.get("role", "fixed"),
+                "classroom_name": classroom_name,
+                "patrol_group_name": tr.get("patrol_group_name"),
             })
-
+        
         matrix[day_name][slot_code].append({
-            "exam_id": exam.id,
-            "course_id": exam.course_id,
-            "course_name": exam.course.name,
-            "exam_label": exam.exam_label.value if exam.exam_label else "",
-            "course_type": exam.course.course_type.value,
+            "exam_id": er.get("exam_id", 0),
+            "course_id": course_id,
+            "course_name": course_name,
+            "exam_label": er.get("exam_label", ""),
+            "course_type": course_type,
             "classrooms": classrooms_detail,
             "teachers": teachers_detail,
-            "total_students": sum(ec.total_students for ec in exam.classroom_assignments),
+            "total_students": total_students,
         })
-
+    
     return {"code": 0, "message": "success", "data": {"matrix": matrix}}
 
 
@@ -223,6 +400,8 @@ async def get_teacher_gantt(
             teacher_events[tid] = {
                 "teacher_id": tid,
                 "teacher_name": et.teacher.name if et.teacher else f"教师{tid}",
+                "teacher_type": et.teacher.teacher_type.value if et.teacher else None,
+                "max_slots": et.teacher.max_slots if et.teacher else 5,
                 "events": [],
             }
 
@@ -301,6 +480,8 @@ async def get_classroom_matrix(
             selectinload(ExamClassroom.classroom),
             selectinload(ExamClassroom.exam).selectinload(Exam.course),
             selectinload(ExamClassroom.exam).selectinload(Exam.time_slot),
+            selectinload(ExamClassroom.exam).selectinload(Exam.teacher_assignments).selectinload(ExamTeacher.teacher),
+            selectinload(ExamClassroom.class_assignments).selectinload(ExamClassroomClass.class_),
         )
     )
     assignments = result.scalars().all()
@@ -316,11 +497,28 @@ async def get_classroom_matrix(
             slot_key = f"{DAY_NAMES.get(exam.time_slot.day_of_week, '')}-{exam.time_slot.slot_code}"
             if slot_key not in matrix[room_name]:
                 matrix[room_name][slot_key] = []
+            # 收集班级名称
+            class_names = [
+                c.class_.name for c in ec.class_assignments
+                if c.class_ and c.class_.name
+            ]
+            # 收集该教室的固定监考教师
+            teacher_names = [
+                et.teacher.name for et in exam.teacher_assignments
+                if et.classroom_id == ec.classroom_id
+                and et.teacher
+                and et.role.value == "fixed"
+            ]
             matrix[room_name][slot_key].append({
                 "exam_id": exam.id,
                 "course_name": exam.course.name if exam.course else "",
                 "exam_label": exam.exam_label.value if exam.exam_label else "",
                 "total_students": ec.total_students,
+                "class_names": class_names,
+                "teacher_names": teacher_names,
+                "day_of_week": exam.time_slot.day_of_week,
+                "day_name": DAY_NAMES.get(exam.time_slot.day_of_week, ""),
+                "time_range": f"{exam.time_slot.start_time}-{exam.time_slot.end_time}",
             })
 
     return {"code": 0, "message": "success", "data": {"matrix": matrix}}
@@ -490,8 +688,6 @@ async def get_class_schedule(
     }
 
 
-
-
 # ============================================================
 # 课程考试详情 (含AB卷分卷情况)
 # ============================================================
@@ -623,6 +819,96 @@ def _format_exam_detail(exam: Exam) -> dict:
     return item
 
 
+def _format_exam_from_snapshot(exam_record: dict, time_slot: TimeSlot | None) -> dict:
+    """从快照数据格式化考试详情为字典"""
+    course_id = exam_record.get("course_id")
+    course_name = exam_record.get("course_name", f"课程{course_id}")
+    course_type = exam_record.get("course_type", "major")
+    exam_label = exam_record.get("exam_label", "")
+
+    # 时段信息
+    time_slot_info = {}
+    if time_slot:
+        time_slot_info = {
+            "id": time_slot.id,
+            "day_of_week": time_slot.day_of_week,
+            "day_name": DAY_NAMES.get(time_slot.day_of_week, ""),
+            "slot_code": time_slot.slot_code,
+            "time_range": f"{time_slot.start_time}-{time_slot.end_time}",
+        }
+    else:
+        time_slot_info = {
+            "id": None,
+            "day_of_week": 0,
+            "day_name": "",
+            "slot_code": "",
+            "time_range": "",
+        }
+
+    # 教室信息
+    classrooms = []
+    classroom_name_map = {}
+    for cr in exam_record.get("classrooms", []):
+        room_id = cr.get("classroom_id")
+        room_name = cr.get("classroom_name", f"教室{room_id}")
+        capacity = cr.get("capacity", 0)
+        classroom_name_map[room_id] = room_name
+        
+        class_list = []
+        for ca in cr.get("class_assignments", []):
+            class_list.append({
+                "class_id": ca.get("class_id"),
+                "class_name": ca.get("class_name", f"班级{ca.get('class_id')}"),
+                "student_count": ca.get("student_count", 0),
+            })
+        
+        classrooms.append({
+            "classroom_id": room_id,
+            "classroom_name": room_name,
+            "capacity": capacity,
+            "total_students": cr.get("student_count", 0),
+            "classes": class_list,
+        })
+
+    # 教师信息
+    fixed_teachers = []
+    patrol_teachers = []
+    teachers = []
+    for tr in exam_record.get("teachers", []):
+        teacher_id = tr.get("teacher_id")
+        teacher_name = tr.get("teacher_name", f"教师{teacher_id}")
+        role = tr.get("role", "fixed")
+        classroom_id = tr.get("classroom_id")
+        classroom_name = classroom_name_map.get(classroom_id) if classroom_id else None
+        
+        t_info = {
+            "teacher_id": teacher_id,
+            "teacher_name": teacher_name,
+            "role": role,
+            "classroom_id": classroom_id,
+            "classroom_name": classroom_name,
+        }
+        teachers.append(t_info)
+        if role == "fixed":
+            fixed_teachers.append(t_info)
+        else:
+            patrol_teachers.append(t_info)
+
+    return {
+        "id": exam_record.get("exam_id", 0),
+        "course_id": course_id,
+        "course_name": course_name,
+        "course_type": course_type,
+        "exam_label": exam_label,
+        "time_slot": time_slot_info,
+        "classrooms": classrooms,
+        "teachers": teachers,
+        "fixed_teachers": fixed_teachers,
+        "patrol_teachers": patrol_teachers,
+        "total_students": exam_record.get("student_count", 0),
+    }
+
+
 # ============================================================
 # 批量班级考试表
 # ============================================================
@@ -633,7 +919,6 @@ async def get_batch_class_schedule(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """获取所有班级的考试安排"""
-    # 获取所有班级
     result = await db.execute(select(Class).order_by(Class.grade.desc(), Class.name))
     classes = result.scalars().all()
 
@@ -663,18 +948,24 @@ async def get_batch_class_schedule(
             if not exam.time_slot:
                 continue
 
-            # 找到该班级所在的教室
+            # 找到该班级所在的教室及其 classroom_id
             classroom_name = None
+            matched_classroom_id = None
             for ec in exam.classroom_assignments:
                 for ca in ec.class_assignments:
                     if ca.class_id == cls.id:
                         classroom_name = ec.classroom.name if ec.classroom else f"教室{ec.classroom_id}"
+                        matched_classroom_id = ec.classroom_id
                         break
                 if classroom_name:
                     break
 
-            # 获取监考教师姓名
-            teacher_names = [et.teacher.name if et.teacher else f"教师{et.teacher_id}" for et in exam.teacher_assignments if et.role.value == "fixed"]
+            # 只获取该教室的固定监考老师
+            teacher_names = [
+                et.teacher.name if et.teacher else f"教师{et.teacher_id}"
+                for et in exam.teacher_assignments
+                if et.role.value == "fixed" and et.classroom_id == matched_classroom_id
+            ]
 
             exams_data.append({
                 "course_name": exam.course.name if exam.course else "",
@@ -699,4 +990,78 @@ async def get_batch_class_schedule(
         "code": 0,
         "message": "success",
         "data": {"classes": classes_data},
+    }
+
+
+# ============================================================
+# 课程考试安排（与 detail 接口合并，供前端 CoursePanel 使用）
+# ============================================================
+
+
+@router.get("/{course_id}/exams", response_model=dict)
+async def get_course_exams(
+    course_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """获取课程的考试安排（供前端 CoursePanel 使用）"""
+    course = await db.get(Course, course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail=f"课程(id={course_id})不存在")
+
+    result = await db.execute(
+        select(Exam)
+        .where(Exam.course_id == course_id)
+        .options(
+            selectinload(Exam.time_slot),
+            selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.classroom),
+            selectinload(Exam.classroom_assignments).selectinload(ExamClassroom.class_assignments).selectinload(ExamClassroomClass.class_),
+            selectinload(Exam.teacher_assignments).selectinload(ExamTeacher.teacher),
+        )
+        .order_by(Exam.exam_label)
+    )
+    exams = result.scalars().all()
+
+    exam_list = []
+    for exam in exams:
+        classrooms_info = []
+        for ec in exam.classroom_assignments:
+            room_name = ec.classroom.name if ec.classroom else f"教室{ec.classroom_id}"
+            class_list = [
+                {"class_name": ca.class_.name if ca.class_ else f"班级{ca.class_id}", "student_count": ca.student_count}
+                for ca in ec.class_assignments
+            ]
+            classrooms_info.append({
+                "classroom_name": room_name,
+                "capacity": ec.classroom.capacity if ec.classroom else 0,
+                "total_students": ec.total_students,
+                "classes": class_list,
+            })
+
+        teachers_info = [
+            {"teacher_name": et.teacher.name if et.teacher else f"教师{et.teacher_id}", "role": et.role.value}
+            for et in exam.teacher_assignments
+        ]
+
+        exam_list.append({
+            "exam_id": exam.id,
+            "exam_label": exam.exam_label.value if exam.exam_label else "",
+            "day_of_week": exam.time_slot.day_of_week if exam.time_slot else 0,
+            "day_name": DAY_NAMES.get(exam.time_slot.day_of_week, "") if exam.time_slot else "",
+            "slot_code": exam.time_slot.slot_code if exam.time_slot else "",
+            "time_range": f"{exam.time_slot.start_time}-{exam.time_slot.end_time}" if exam.time_slot else "",
+            "classrooms": classrooms_info,
+            "teachers": teachers_info,
+        })
+
+    return {
+        "code": 0,
+        "message": "success",
+        "data": {
+            "course_id": course_id,
+            "course_name": course.name,
+            "course_type": course.course_type.value,
+            "needs_ab": course.needs_ab,
+            "exam_count": len(exam_list),
+            "exams": exam_list,
+        },
     }

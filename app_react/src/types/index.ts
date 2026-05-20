@@ -37,6 +37,7 @@ export interface Course {
   studentCount: number;
   // 排考状态
   schedule_status?: 'scheduled' | 'unscheduled' | 'partial';
+  exam_count?: number;  // 已排考场次
 }
 
 export interface Class {
