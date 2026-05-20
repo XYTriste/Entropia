@@ -2,7 +2,7 @@
  * 排考引擎 API
  */
 
-import apiClient, { API_BASE_URL } from './client';
+import apiClient from './client';
 import type { ApiResponse } from './types';
 import type { SchedulerConfig } from '@/types';
 
@@ -17,7 +17,7 @@ export interface SchedulerRunRequest {
 }
 
 export interface SchedulerRunResponse {
-  task_id: string;
+  job_id: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
 }
 
@@ -41,39 +41,32 @@ export async function runScheduler(payload: SchedulerRunRequest): Promise<Schedu
 }
 
 /**
- * 获取排考状态（SSE 流式）
+ * 获取排考状态（轮询）
  */
-export function subscribeSchedulerStatus(
-  taskId: string,
-  onProgress: ProgressCallback,
-  onError?: (error: Error) => void,
-  onComplete?: () => void
-): () => void {
-  const eventSource = new EventSource(`${API_BASE_URL}/api/scheduler/status/${taskId}`);
-
-  eventSource.addEventListener('progress', (event: MessageEvent) => {
-    try {
-      const progress: SchedulerProgress = JSON.parse(event.data);
-      onProgress(progress);
-    } catch (e) {
-      console.error('Failed to parse progress event:', e);
-    }
-  });
-
-  eventSource.addEventListener('complete', () => {
-    onComplete?.();
-    eventSource.close();
-  });
-
-  eventSource.addEventListener('error', (event: MessageEvent) => {
-    console.error('SSE error:', event);
-    onError?.(new Error('SSE connection error'));
-    eventSource.close();
-  });
-
-  // 返回清理函数
-  return () => {
-    eventSource.close();
+export async function getSchedulerStatus(jobId: string): Promise<{
+  job_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'completed_with_violations';
+  created_at?: string;
+  result?: {
+    version_id: number;
+    version_no: string;
+    success: boolean;
+    exams_scheduled: number;
+    violations: number;
+    solve_time: string;
+  };
+  error?: string;
+}> {
+  const { data } = await apiClient.get<ApiResponse<{
+    job_id: string;
+    status: string;
+    created_at?: string;
+    result?: any;
+    error?: string;
+  }>>(`/scheduler/status/${jobId}`);
+  return {
+    ...data.data,
+    status: data.data.status as 'pending' | 'running' | 'completed' | 'failed' | 'completed_with_violations',
   };
 }
 
@@ -83,16 +76,6 @@ export function subscribeSchedulerStatus(
 export async function applyVersion(versionId: number): Promise<{ success: boolean; message: string }> {
   const { data } = await apiClient.post<ApiResponse<{ success: boolean; message: string }>>(
     `/scheduler/apply/${versionId}`
-  );
-  return data.data;
-}
-
-/**
- * 放弃排考任务
- */
-export async function abandonTask(taskId: string): Promise<{ success: boolean }> {
-  const { data } = await apiClient.post<ApiResponse<{ success: boolean }>>(
-    `/scheduler/abandon/${taskId}`
   );
   return data.data;
 }
@@ -109,6 +92,6 @@ export async function getSchedulerConfig(): Promise<SchedulerConfig> {
  * 保存排考配置
  */
 export async function saveSchedulerConfig(config: Partial<SchedulerConfig>): Promise<SchedulerConfig> {
-  const { data } = await apiClient.post<ApiResponse<SchedulerConfig>>('/scheduler/config', config);
+  const { data } = await apiClient.put<ApiResponse<SchedulerConfig>>('/scheduler/config', config);
   return data.data;
 }

@@ -485,8 +485,11 @@ async def get_class_schedule(
             "class_name": cls.name,
             "grade": cls.grade,
             "exams": schedule,
+            "exam_count": len(schedule),
         },
     }
+
+
 
 
 # ============================================================

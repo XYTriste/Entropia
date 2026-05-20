@@ -7,11 +7,11 @@ import type { ClassCreate, ClassUpdate, SearchParams } from '@/api/classes'
 
 const keys = {
   all: ['classes'] as const,
-  lists: (params?: SearchParams & { all?: boolean }) => ['classes', 'list', params] as const,
+  lists: (params?: SearchParams & { all?: boolean; major_id?: number }) => ['classes', 'list', params] as const,
   detail: (id: number) => ['classes', 'detail', id] as const,
 }
 
-export function useClasses(params?: SearchParams & { all?: boolean }) {
+export function useClasses(params?: SearchParams & { all?: boolean; major_id?: number }) {
   return useQuery({
     queryKey: keys.lists(params),
     queryFn: () => api.getClasses(params),

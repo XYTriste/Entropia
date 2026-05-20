@@ -19,7 +19,7 @@ export interface ClassUpdate extends Partial<ClassCreate> {}
 /**
  * 获取班级列表
  */
-export async function getClasses(params?: SearchParams & { all?: boolean }): Promise<PaginatedResponse<Class>> {
+export async function getClasses(params?: SearchParams & { all?: boolean; major_id?: number }): Promise<PaginatedResponse<Class>> {
   const queryParams: Record<string, unknown> = {};
   if (params?.all) {
     queryParams.all = true;
@@ -28,6 +28,7 @@ export async function getClasses(params?: SearchParams & { all?: boolean }): Pro
     if (params?.page_size) queryParams.limit = params.page_size;
   }
   if (params?.search) queryParams.search = params.search;
+  if (params?.major_id) queryParams.major_id = params.major_id;
 
   const { data } = await apiClient.get<{
     code: number;

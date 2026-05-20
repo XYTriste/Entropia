@@ -23,9 +23,9 @@ export interface TimeSlotUpdate extends Partial<TimeSlotCreate> {}
 export async function getTimeSlots(): Promise<TimeSlot[]> {
   const { data } = await apiClient.get<{
     code: number;
-    data: TimeSlot[];
+    data: { total: number; items: TimeSlot[] };
   }>('/time-slots/');
-  return data.data;
+  return data.data.items;
 }
 
 /**

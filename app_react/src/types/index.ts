@@ -27,18 +27,27 @@ export interface Classroom {
 export interface Course {
   id: number;
   name: string;
-  code: string;
+  // 后端字段映射
+  course_type?: 'public' | 'major';  // 后端原始字段
+  student_count?: number;            // 后端原始字段
+  // 前端展示字段（由后端数据转换）
+  code?: string;
   type: '公共课' | '专业课';
-  department: string;
+  department?: string;
   studentCount: number;
+  // 排考状态
+  schedule_status?: 'scheduled' | 'unscheduled' | 'partial';
 }
 
 export interface Class {
   id: number;
   name: string;
-  major: string;
-  grade: string;
-  studentCount: number;
+  major_id: number;
+  major_name?: string;  // 后端返回的专业名称
+  grade: number;        // 后端返回：年级 (1-4)
+  student_count: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Student {
@@ -152,11 +161,20 @@ export interface TransferOperation {
 }
 
 export interface SchedulerConfig {
-  strategy: string;
-  fixedProctorsPerRoom: number;
-  maxSolveTime: number;
-  patrolGroupRule: string;
-  constraints: string[];
-  maxProctorDays: number;
-  noCrossDay: boolean;
+  // 排考策略
+  strategy?: 'all' | 'public_only' | 'major_only';
+  // 每教室固定监考人数
+  fixed_teachers_per_room: number;
+  // 每时段对流动监考人数
+  patrol_teacher_count_per_slot_pair: number;
+  // 流动监考分组规则
+  patrol_group_rules: Array<{ group_name: string; patterns: string[] }>;
+  // 教室优先级规则
+  classroom_priority_rules: Array<{ priority: number; patterns: string[] }>;
+  // 是否启用最大监考天数约束
+  enable_max_days_constraint: boolean;
+  // 是否启用日期连续性约束
+  enable_day_continuity_constraint: boolean;
+  // 最大监考天数上限
+  max_days: number;
 }

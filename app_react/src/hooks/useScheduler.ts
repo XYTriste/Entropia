@@ -5,8 +5,8 @@
  *   const { mutate: run } = useRunScheduler()
  *   run({ course_ids: [1,2,3] })
  *
- *   // SSE 进度流
- *   useSchedulerStatus(taskId, (progress) => { ... })
+ *   // 轮询排考进度
+ *   useSchedulerStatus(taskId, (status) => { ... })
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '@/api/scheduler'
@@ -35,13 +35,6 @@ export function useApplyVersion() {
   })
 }
 
-// ── 变更：放弃排考任务 ────────────────────────────────────
-export function useAbandonTask() {
-  return useMutation({
-    mutationFn: (taskId: string) => api.abandonTask(taskId),
-  })
-}
-
 // ── 查询：排考配置 ────────────────────────────────────────
 export function useSchedulerConfig() {
   return useQuery({
@@ -61,35 +54,54 @@ export function useSaveSchedulerConfig() {
   })
 }
 
-// ── SSE：订阅排考进度流 ──────────────────────────────────
-/**
- * 管理 SSE 进度订阅的自定义 hook。
- * 当 taskId 有值时自动建立连接，组件卸载或 taskId 变化时自动关闭。
- *
- * @param taskId 排考任务 ID（undefined 时不连接）
- * @param onProgress 进度回调
- * @param onComplete 完成回调
- * @param onError 错误回调
- */
+// ── 轮询：排考状态 ────────────────────────────────────────
 export function useSchedulerStatus(
-  taskId: string | undefined,
-  onProgress?: (progress: api.SchedulerProgress) => void,
-  onComplete?: () => void,
-  onError?: (error: Error) => void,
+  jobId: string | undefined,
+  onStatusChange?: (status: Awaited<ReturnType<typeof api.getSchedulerStatus>>) => void,
 ) {
   const { useEffect, useRef } = require('react')
-  const statusRef = useRef<typeof EventSource | null>(null)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastStatusRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!taskId) return
+    if (!jobId) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+      return
+    }
 
-    const cleanup = api.subscribeSchedulerStatus(
-      taskId,
-      (progress) => onProgress?.(progress),
-      (error) => onError?.(error),
-      () => onComplete?.(),
-    )
+    const poll = async () => {
+      try {
+        const status = await api.getSchedulerStatus(jobId)
+        // 状态变化时通知回调
+        if (status.status !== lastStatusRef.current) {
+          lastStatusRef.current = status.status
+          onStatusChange?.(status)
+        }
+        // 完成或失败时停止轮询
+        if (status.status === 'completed' || status.status === 'failed' || status.status === 'completed_with_violations') {
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
+          }
+        }
+      } catch (e) {
+        console.error('轮询排考状态失败:', e)
+      }
+    }
 
-    return cleanup
-  }, [taskId])
+    // 立即查询一次
+    poll()
+    // 每 2 秒轮询一次
+    intervalRef.current = setInterval(poll, 2000)
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [jobId])
 }

@@ -195,3 +195,29 @@ export async function getScheduleVersions(): Promise<ScheduleVersion[]> {
   const { data } = await apiClient.get<ApiResponse<ScheduleVersion[]>>('/versions');
   return data.data;
 }
+
+// ── 专业班级考试数量批量接口 ──────────────────────────────────────
+
+export interface MajorClassExamCount {
+  class_id: number;
+  class_name: string;
+  grade: number;
+  student_count: number;
+  exam_count: number;
+}
+
+export interface MajorClassesExamCountsResponse {
+  major_id: number;
+  major_name: string;
+  classes: MajorClassExamCount[];
+}
+
+/**
+ * 获取专业下所有班级的考试数量（批量接口）
+ */
+export async function getMajorClassesExamCounts(majorId: number): Promise<MajorClassesExamCountsResponse> {
+  const { data } = await apiClient.get<ApiResponse<MajorClassesExamCountsResponse>>(
+    `/majors/${majorId}/classes-exam-counts`
+  );
+  return data.data;
+}

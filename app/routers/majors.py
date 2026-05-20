@@ -10,6 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import major as major_crud
 from app.database import get_db
+from app.models.class_ import Class
+from app.models.exam import Exam, ExamStatus
+from app.models.exam_classroom import ExamClassroom
+from app.models.exam_classroom_class import ExamClassroomClass
 from app.models.major import Major
 from app.schemas.major import MajorCreate, MajorResponse, MajorUpdate
 
@@ -62,6 +66,65 @@ async def get_major(
         "code": 0,
         "message": "success",
         "data": MajorResponse.model_validate(major).model_dump(),
+    }
+
+
+@router.get("/{major_id}/classes-exam-counts", response_model=dict)
+async def get_major_classes_exam_counts(
+    major_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """获取专业下所有班级的考试数量（批量接口）"""
+    # 检查专业是否存在
+    major = await major_crud.get_or_404(db, major_id)
+
+    # 获取该专业下所有班级
+    classes_result = await db.execute(
+        select(Class).where(Class.major_id == major_id).order_by(Class.grade, Class.name)
+    )
+    classes = classes_result.scalars().all()
+
+    if not classes:
+        return {
+            "code": 0,
+            "message": "success",
+            "data": {"major_id": major_id, "major_name": major.name, "classes": []},
+        }
+
+    class_ids = [c.id for c in classes]
+
+    # 批量查询每个班级的考试数量
+    count_result = await db.execute(
+        select(ExamClassroomClass.class_id, func.count().label("exam_count"))
+        .join(ExamClassroom, ExamClassroom.id == ExamClassroomClass.exam_classroom_id)
+        .join(Exam, Exam.id == ExamClassroom.exam_id)
+        .where(
+            ExamClassroomClass.class_id.in_(class_ids),
+            Exam.status == ExamStatus.SCHEDULED,
+        )
+        .group_by(ExamClassroomClass.class_id)
+    )
+    count_map = {row.class_id: row.exam_count for row in count_result.all()}
+
+    # 构建返回数据
+    classes_data = []
+    for cls in classes:
+        classes_data.append({
+            "class_id": cls.id,
+            "class_name": cls.name,
+            "grade": cls.grade,
+            "student_count": cls.student_count,
+            "exam_count": count_map.get(cls.id, 0),
+        })
+
+    return {
+        "code": 0,
+        "message": "success",
+        "data": {
+            "major_id": major_id,
+            "major_name": major.name,
+            "classes": classes_data,
+        },
     }
 
 

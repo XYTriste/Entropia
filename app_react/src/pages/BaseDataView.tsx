@@ -567,20 +567,18 @@ export default function BaseDataView() {
       case 'majors':
         return [
           { key: 'id', label: 'ID', width: '60px' },
-          { key: 'code', label: '专业代码', width: '100px' },
           { key: 'name', label: '专业名称' },
-          { key: 'department', label: '所属院系' },
+          { key: 'created_at', label: '创建时间', width: '180px' },
           { key: 'actions', label: '操作', width: '120px' },
         ];
       case 'time-slots':
         return [
           { key: 'id', label: 'ID', width: '60px' },
-          { key: 'code', label: '代码', width: '80px' },
-          { key: 'name', label: '名称' },
-          { key: 'day_of_week', label: '星期', width: '80px' },
+          { key: 'day_name', label: '星期', width: '80px' },
+          { key: 'slot_code', label: '时段', width: '80px' },
           { key: 'start_time', label: '开始时间', width: '100px' },
           { key: 'end_time', label: '结束时间', width: '100px' },
-          { key: 'actions', label: '操作', width: '120px' },
+          { key: 'actions', label: '操作', width: '96px' },
         ];
     }
   };
@@ -698,6 +696,12 @@ export default function BaseDataView() {
         0: '全周', 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六', 7: '周日',
       };
       return dayMap[item[key] as number] ?? String(item[key] ?? '-');
+    }
+    if (key === 'created_at') {
+      const val = item[key];
+      if (!val) return '-';
+      const date = new Date(val as string);
+      return isNaN(date.getTime()) ? String(val) : date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     }
     return String(item[key] ?? '-');
   };
@@ -1099,8 +1103,22 @@ export default function BaseDataView() {
                   </div>
                 </>
               )}
+              {/* 专业：名称 */}
+              {activeTab === 'majors' && (
+                <>
+                  <div>
+                    <label className="block text-sm text-[#8C959F] dark:text-[#8B949E] mb-1.5">专业名称</label>
+                    <input
+                      type="text"
+                      id="edit-major-name"
+                      className="form-input-glass rounded-xl w-full"
+                      defaultValue={editItem ? String(editItem.name ?? '') : ''}
+                    />
+                  </div>
+                </>
+              )}
               {/* 其他类型：动态生成输入框 */}
-              {activeTab !== 'teachers' && activeTab !== 'classrooms' && currentColumns
+              {activeTab !== 'teachers' && activeTab !== 'classrooms' && activeTab !== 'courses' && activeTab !== 'majors' && currentColumns
                 .filter((c) => c.key !== 'actions' && c.key !== 'id')
                 .map((col) => (
                   <div key={col.key}>
@@ -1162,8 +1180,14 @@ export default function BaseDataView() {
                     payload.needs_ab = abSelect?.value === '是';
                   }
 
+                  // 专业：读取专用表单字段（只有名称）
+                  if (activeTab === 'majors') {
+                    const nameInput = document.getElementById('edit-major-name') as HTMLInputElement;
+                    payload.name = nameInput?.value ?? '';
+                  }
+
                   // 其他类型：从动态表单读取（input 已加上 id="edit-{key}"）
-                  if (activeTab !== 'teachers' && activeTab !== 'classrooms' && activeTab !== 'courses') {
+                  if (activeTab !== 'teachers' && activeTab !== 'classrooms' && activeTab !== 'courses' && activeTab !== 'majors') {
                     currentColumns
                       .filter((c) => c.key !== 'actions' && c.key !== 'id')
                       .forEach((col) => {
@@ -1703,10 +1727,33 @@ function ClassDetailDialog({ cls, onClose }: { cls: Record<string, unknown>; onC
 }
 
 function MajorDetailDialog({ major, onClose }: { major: Record<string, unknown>; onClose: () => void }) {
+  const majorId = major.id as number;
   const name = String(major.name || '');
-  const dept = String(major.department || '');
-  const relatedClasses = mockClassesData.filter((c) => c.major === name || c.name.includes(name));
-  const totalStudents = relatedClasses.reduce((s, c) => s + c.studentCount, 0);
+
+  // 调用后端 API 获取该专业下的班级列表（含考试数量）
+  const [classesData, setClassesData] = useState<Array<{
+    class_id: number;
+    class_name: string;
+    grade: number;
+    student_count: number;
+    exam_count: number;
+  }> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    import('@/api/exams').then(({ getMajorClassesExamCounts }) => {
+      getMajorClassesExamCounts(majorId)
+        .then(res => setClassesData(res.classes))
+        .catch(console.error)
+        .finally(() => setIsLoading(false));
+    });
+  }, [majorId]);
+
+  // 计算总人数和总班级数
+  const totalStudents = classesData?.reduce((s, c) => s + (c.student_count ?? 0), 0) ?? 0;
+  const totalClasses = classesData?.length ?? 0;
+  const totalExams = classesData?.reduce((s, c) => s + (c.exam_count ?? 0), 0) ?? 0;
+
   return (
     <>
       <div className="flex items-center justify-between mb-5">
@@ -1717,12 +1764,18 @@ function MajorDetailDialog({ major, onClose }: { major: Record<string, unknown>;
         <div className="w-10 h-10 rounded-xl bg-[#D4A373]/10 flex items-center justify-center"><Award size={18} className="text-[#D4A373]" /></div>
         <div>
           <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3]">{name}</div>
-          <div className="text-xs text-[#8C959F] dark:text-[#8B949E]">总人数: {totalStudents} 人 | 院系: {dept}</div>
+          <div className="text-xs text-[#8C959F] dark:text-[#8B949E]">
+            班级: {totalClasses} 个 | 总人数: {totalStudents} 人 | 考试: {totalExams} 场
+          </div>
         </div>
       </div>
       <div className="glass-card rounded-2xl p-4">
-        <h4 className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3] mb-3">班级列表 ({relatedClasses.length} 个)</h4>
-        {relatedClasses.length === 0 ? (
+        <h4 className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3] mb-3">班级列表 ({totalClasses} 个)</h4>
+        {isLoading ? (
+          <div className="space-y-2 animate-pulse">
+            {[1,2,3].map(i => <div key={i} className="h-12 bg-[#F3F4F6] dark:bg-[#30363D] rounded-lg" />)}
+          </div>
+        ) : totalClasses === 0 || !classesData ? (
           <p className="text-sm text-[#C8CDD3] dark:text-[#484F58] py-4 text-center">暂无班级数据。</p>
         ) : (
           <table className="w-full text-xs">
@@ -1735,15 +1788,14 @@ function MajorDetailDialog({ major, onClose }: { major: Record<string, unknown>;
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F3F4F6]">
-              {relatedClasses.map((rc, i) => {
-                const grade = rc.grade || (rc.name.match(/202\d级/)?.[0] ?? '-');
-                const classExams = examSchedules.filter((e) => e.classNames.some((cn) => cn.includes(rc.name)));
+              {classesData.map((cls, i) => {
+                const gradeLabel = cls.grade === 1 ? '大一' : cls.grade === 2 ? '大二' : cls.grade === 3 ? '大三' : cls.grade === 4 ? '大四' : `${cls.grade}级`;
                 return (
                   <tr key={i} className="data-table-row">
-                    <td className="px-2 py-2 text-[#8C959F] dark:text-[#8B949E]">{grade}</td>
-                    <td className="px-2 py-2 text-[#1F2328] dark:text-[#E6EDF3] font-medium">{rc.name}</td>
-                    <td className="px-2 py-2 text-[#1F2328] dark:text-[#E6EDF3]">{rc.studentCount}</td>
-                    <td className="px-2 py-2 text-[#1F2328] dark:text-[#E6EDF3]">{classExams.length} 场</td>
+                    <td className="px-2 py-2 text-[#8C959F] dark:text-[#8B949E]">{gradeLabel}</td>
+                    <td className="px-2 py-2 text-[#1F2328] dark:text-[#E6EDF3] font-medium">{cls.class_name}</td>
+                    <td className="px-2 py-2 text-[#1F2328] dark:text-[#E6EDF3]">{cls.student_count} 人</td>
+                    <td className="px-2 py-2 text-[#1F2328] dark:text-[#E6EDF3]">{cls.exam_count} 场</td>
                   </tr>
                 );
               })}

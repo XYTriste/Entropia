@@ -9,8 +9,6 @@ import type { Major } from '@/types';
 // 请求/响应类型
 export interface MajorCreate {
   name: string;
-  code: string;
-  department?: string;
 }
 
 export interface MajorUpdate extends Partial<MajorCreate> {}
