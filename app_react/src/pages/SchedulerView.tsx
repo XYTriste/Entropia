@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Play,
   Settings,
@@ -16,13 +16,18 @@ import {
   AlertTriangle,
   Loader2,
   ChevronRight,
+  X,
+  MapPin,
+  GraduationCap,
+  User,
 } from 'lucide-react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import WaveProgress from '@/components/WaveProgress';
 import RollingNumber from '@/components/RollingNumber';
 import { getCourses } from '@/api/courses';
-import { runScheduler, getSchedulerStatus, getSchedulerConfig, saveSchedulerConfig } from '@/api/scheduler';
+import { runScheduler, getSchedulerStatus, getSchedulerConfig, saveSchedulerConfig, applyVersion } from '@/api/scheduler';
+import { getExamOverviewMatrix } from '@/api/results';
 import { useSchedulerStatus } from '@/hooks/useScheduler';
 import type { Course, SchedulerConfig } from '@/types';
 
@@ -40,6 +45,12 @@ export default function SchedulerView() {
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [showResults, setShowResults] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{ open: boolean; versionNo: string; versionTime: string }>({
+    open: false,
+    versionNo: '',
+    versionTime: '',
+  });
   const [filterText, setFilterText] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -77,7 +88,27 @@ export default function SchedulerView() {
     },
   });
 
+  // 应用版本 mutation
+  const applyVersionMutation = useMutation({
+    mutationFn: (versionId: number) => applyVersion(versionId),
+    onSuccess: (data) => {
+      toast.success('版本已应用，排考结果已更新');
+      setShowResults(false);
+      // 可以添加跳转到结果页面等后续操作
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || '应用失败');
+    },
+  });
+
   // 轮询排考状态
+  const [schedulerResult, setSchedulerResult] = useState<{
+    version_id: number;
+    exams_scheduled: number;
+    violations: number;
+    solve_time: string;
+  } | null>(null);
+  
   useSchedulerStatus(jobId || undefined, (status) => {
     if (status.status === 'running') {
       setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] 排考进行中...`]);
@@ -86,12 +117,20 @@ export default function SchedulerView() {
       setIsRunning(false);
       setShowResults(true);
       setProgress(100);
+      // 保存排考结果
       if (status.result) {
+        setSchedulerResult({
+          version_id: status.result.version_id,
+          exams_scheduled: status.result.exams_scheduled,
+          violations: status.result.violations || 0,
+          solve_time: status.result.solve_time,
+        });
         setLogs((prev) => [
           ...prev,
           `[${new Date().toLocaleTimeString()}] 排考完成!`,
           `[${new Date().toLocaleTimeString()}] 已安排 ${status.result.exams_scheduled} 场考试`,
           `[${new Date().toLocaleTimeString()}] 耗时 ${status.result.solve_time}`,
+          ...(status.result.violations ? [`[${new Date().toLocaleTimeString()}] ${status.result.violations} 项冲突已自动修复`] : []),
         ]);
       }
     } else if (status.status === 'failed') {
@@ -454,17 +493,21 @@ export default function SchedulerView() {
                         </div>
                         <div>
                           <div className="text-xs text-[#8C959F] dark:text-[#8B949E]">排考状态</div>
-                          <div className="text-sm font-medium text-[#6B9B8A]">成功完成</div>
+                          <div className="text-sm font-medium text-[#6B9B8A]">
+                            {schedulerResult && schedulerResult.violations > 0 ? '部分完成' : '成功完成'}
+                          </div>
                         </div>
                       </div>
 
                       <div className="bg-[#F9FAFB] dark:bg-[#21262D] rounded-xl p-3 flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-[#C27A63]/10 flex items-center justify-center">
-                          <AlertTriangle size={16} className="text-[#C27A63]" />
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${schedulerResult && schedulerResult.violations > 0 ? 'bg-[#C27A63]/10' : 'bg-[#6B9B8A]/10'}`}>
+                          <AlertTriangle size={16} className={schedulerResult && schedulerResult.violations > 0 ? 'text-[#C27A63]' : 'text-[#6B9B8A]'} />
                         </div>
                         <div>
                           <div className="text-xs text-[#8C959F] dark:text-[#8B949E]">冲突错误</div>
-                          <div className="text-sm font-medium text-[#C27A63]">3 项冲突已自动修复</div>
+                          <div className={`text-sm font-medium ${schedulerResult && schedulerResult.violations > 0 ? 'text-[#C27A63]' : 'text-[#6B9B8A]'}`}>
+                            {schedulerResult ? (schedulerResult.violations > 0 ? `${schedulerResult.violations} 项冲突已自动修复` : '无冲突') : '-'}
+                          </div>
                         </div>
                       </div>
 
@@ -474,7 +517,9 @@ export default function SchedulerView() {
                         </div>
                         <div>
                           <div className="text-xs text-[#8C959F] dark:text-[#8B949E]">求解耗时</div>
-                          <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3]">41.2 秒</div>
+                          <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3]">
+                            {schedulerResult?.solve_time || '-'}
+                          </div>
                         </div>
                       </div>
 
@@ -484,7 +529,9 @@ export default function SchedulerView() {
                         </div>
                         <div>
                           <div className="text-xs text-[#8C959F] dark:text-[#8B949E]">安排场次</div>
-                          <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3]">156 / 156 场</div>
+                          <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3]">
+                            {schedulerResult ? `${schedulerResult.exams_scheduled} 场` : '-'}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -632,18 +679,358 @@ export default function SchedulerView() {
 
                 {/* Result Actions */}
                 <div className="flex gap-3">
-                  <button className="flex-1 btn-amber text-sm flex items-center justify-center gap-2">
+                  <button
+                    className="flex-1 btn-amber text-sm flex items-center justify-center gap-2"
+                    onClick={() => setShowDetailModal(true)}
+                  >
                     <BarChart3 size={14} />
                     查看详细结果
                   </button>
-                  <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-white/60 dark:bg-[#21262D]/80 hover:bg-[#6B9B8A]/10 text-[#8C959F] dark:text-[#8B949E] hover:text-[#6B9B8A] rounded-xl text-sm font-medium transition-all">
-                    <CheckCircle2 size={14} />
+                  <button
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-white/60 dark:bg-[#21262D]/80 hover:bg-[#6B9B8A]/10 text-[#8C959F] dark:text-[#8B949E] hover:text-[#6B9B8A] rounded-xl text-sm font-medium transition-all"
+                    onClick={() => {
+                      if (schedulerResult?.version_id) {
+                        // 获取当前中国时区时间
+                        const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+                        setConfirmModal({
+                          open: true,
+                          versionNo: `V${schedulerResult.version_id}`,
+                          versionTime: now,
+                        });
+                      }
+                    }}
+                    disabled={applyVersionMutation.isPending || !schedulerResult?.version_id}
+                  >
+                    {applyVersionMutation.isPending ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <CheckCircle2 size={14} />
+                    )}
                     应用此版本
                   </button>
                 </div>
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* 确认应用版本对话框 */}
+      {confirmModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setConfirmModal({ ...confirmModal, open: false })} />
+          <div className="relative glass-card rounded-3xl p-6 w-[400px] max-w-[90vw]">
+            <h3 className="font-display text-lg font-medium text-[#1F2328] dark:text-[#E6EDF3] mb-4">
+              确认应用版本
+            </h3>
+            <p className="text-sm text-[#8C959F] dark:text-[#8B949E] mb-6">
+              确定要应用此版本 <span className="font-medium text-[#1F2328] dark:text-[#E6EDF3]">{confirmModal.versionNo}</span> 吗？<br />
+              排考时间：{confirmModal.versionTime}
+            </p>
+            <p className="text-xs text-[#C27A63] mb-6">
+              应用后，当前排考结果将被覆盖。
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmModal({ ...confirmModal, open: false })}
+                className="flex-1 px-4 py-2.5 bg-white/60 dark:bg-[#21262D]/80 text-[#8C959F] dark:text-[#8B949E] rounded-xl text-sm font-medium transition-all hover:bg-[#F3F4F6] dark:hover:bg-[#30363D]"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmModal({ ...confirmModal, open: false });
+                  if (schedulerResult?.version_id) {
+                    applyVersionMutation.mutate(schedulerResult.version_id);
+                  }
+                }}
+                className="flex-1 px-4 py-2.5 bg-[#6B9B8A] hover:bg-[#5A8A79] text-white rounded-xl text-sm font-medium transition-all"
+              >
+                确认应用
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 详细结果对话框 */}
+      <ScheduleDetailModal
+        open={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+      />
+    </div>
+  );
+}
+
+// 详细结果对话框组件
+function ScheduleDetailModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [expandedSlots, setExpandedSlots] = useState<Set<string>>(new Set());
+
+  const { data: matrixData, isLoading } = useQuery({
+    queryKey: ['scheduleDetailMatrix'],
+    queryFn: getExamOverviewMatrix,
+    enabled: open,
+  });
+
+  // 按日期和时段组织数据
+  const slotsData = useMemo(() => {
+    if (!matrixData?.matrix) return [];
+
+    const slots: Array<{
+      key: string;
+      dayName: string;
+      slotCode: string;
+      timeRange: string;
+      exams: Array<{
+        courseName: string;
+        courseType: string;
+        examLabel: string;
+        classroomName: string;
+        capacity: number;
+        totalStudents: number;
+        classNames: string[];
+        teacherNames: string[];
+      }>;
+    }> = [];
+
+    const dayOrder = ['周一', '周二', '周三', '周四', '周五'];
+    const slotOrder = ['T1', 'T2', 'T3', 'T4'];
+
+    dayOrder.forEach((day) => {
+      if (!matrixData.matrix[day]) return;
+      slotOrder.forEach((slot) => {
+        const exams = matrixData.matrix[day]?.[slot] || [];
+        if (exams.length > 0) {
+          // 将所有考试按教室分组
+          const classroomMap = new Map<string, typeof exams[0]>();
+
+          exams.forEach((exam) => {
+            exam.classrooms?.forEach((cr) => {
+              const key = cr.classroom_name;
+              if (!classroomMap.has(key)) {
+                // 筛选该教室的固定监考老师：role=fixed 且 classroom_name 匹配
+                const fixedTeachers = (exam.teachers || [])
+                  .filter((t: any) => t.role === 'fixed' && t.classroom_name === cr.classroom_name)
+                  .map((t: any) => t.teacher_name);
+                
+                classroomMap.set(key, {
+                  ...exam,
+                  courseName: exam.course_name,
+                  classroomName: cr.classroom_name,
+                  capacity: cr.capacity,
+                  totalStudents: cr.total_students,
+                  classNames: cr.classes?.map((c) => c.class_name) || [],
+                  teacherNames: fixedTeachers,
+                });
+              }
+            });
+          });
+
+          const slotKey = `${day}-${slot}`;
+          const slotExams = Array.from(classroomMap.values()).sort((a, b) =>
+            a.classroomName.localeCompare(b.classroomName, 'zh-CN')
+          );
+
+          // 获取时段的时间范围（从第一条考试记录推断）
+          const timeRange = exams[0]?.classrooms?.[0] ? `${slot}` : slot;
+
+          slots.push({
+            key: slotKey,
+            dayName: day,
+            slotCode: slot,
+            timeRange,
+            exams: slotExams,
+          });
+        }
+      });
+    });
+
+    return slots;
+  }, [matrixData]);
+
+  const toggleSlot = (key: string) => {
+    setExpandedSlots((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Modal */}
+      <div className="relative w-full max-w-4xl max-h-[85vh] mx-4 glass-card rounded-3xl overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#F3F4F6] dark:border-[#30363D]">
+          <h2 className="font-display text-lg font-medium text-[#1F2328] dark:text-[#E6EDF3]">
+            排考详细结果
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-[#F3F4F6] dark:hover:bg-[#30363D] transition-colors"
+          >
+            <X size={20} className="text-[#8C959F]" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12 text-[#8C959F]">
+              <Loader2 size={24} className="animate-spin mr-2" />
+              加载中...
+            </div>
+          ) : slotsData.length === 0 ? (
+            <div className="text-center py-12 text-[#8C959F]">暂无排考数据</div>
+          ) : (
+            <div className="space-y-3">
+              {slotsData.map((slot) => {
+                const isExpanded = expandedSlots.has(slot.key);
+                return (
+                  <div
+                    key={slot.key}
+                    className="glass-card rounded-2xl overflow-hidden"
+                  >
+                    {/* Slot Header */}
+                    <button
+                      onClick={() => toggleSlot(slot.key)}
+                      className="w-full px-4 py-3 flex items-center justify-between hover:bg-[#F9FAFB] dark:hover:bg-[#21262D]/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="px-3 py-1 bg-[#D4A373]/10 text-[#D4A373] rounded-lg text-sm font-medium">
+                          {slot.dayName} {slot.slotCode}
+                        </span>
+                        <span className="text-sm text-[#8C959F] dark:text-[#8B949E]">
+                          {slot.exams.length} 场考试
+                        </span>
+                      </div>
+                      <ChevronRight
+                        size={16}
+                        className={`text-[#8C959F] transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                      />
+                    </button>
+
+                    {/* Slot Content */}
+                    {isExpanded && (
+                      <div className="border-t border-[#F3F4F6] dark:border-[#30363D]">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-[#F9FAFB] dark:bg-[#21262D]/50">
+                              <th className="px-4 py-2 text-left text-xs font-medium text-[#8C959F] dark:text-[#8B949E]">
+                                <div className="flex items-center gap-1">
+                                  <MapPin size={12} /> 教室
+                                </div>
+                              </th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-[#8C959F] dark:text-[#8B949E]">
+                                <div className="flex items-center gap-1">
+                                  <BookOpen size={12} /> 课程
+                                </div>
+                              </th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-[#8C959F] dark:text-[#8B949E]">
+                                <div className="flex items-center gap-1">
+                                  <GraduationCap size={12} /> 班级
+                                </div>
+                              </th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-[#8C959F] dark:text-[#8B949E]">
+                                <div className="flex items-center gap-1">
+                                  <Users size={12} /> 人数/容量
+                                </div>
+                              </th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-[#8C959F] dark:text-[#8B949E]">
+                                <div className="flex items-center gap-1">
+                                  <User size={12} /> 监考
+                                </div>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {slot.exams.map((exam, idx) => (
+                              <tr
+                                key={idx}
+                                className="border-t border-[#F3F4F6] dark:border-[#30363D] hover:bg-[#F9FAFB] dark:hover:bg-[#21262D]/30"
+                              >
+                                <td className="px-4 py-2.5">
+                                  <span className="font-medium text-[#1F2328] dark:text-[#E6EDF3]">
+                                    {exam.classroomName}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[#1F2328] dark:text-[#E6EDF3]">
+                                      {exam.courseName}
+                                    </span>
+                                    {exam.examLabel && (
+                                      <span className="px-1.5 py-0.5 bg-[#6395C3]/10 text-[#6395C3] rounded text-[10px]">
+                                        {exam.examLabel}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex flex-wrap gap-1">
+                                    {exam.classNames.slice(0, 3).map((name, i) => (
+                                      <span
+                                        key={i}
+                                        className="px-2 py-0.5 bg-[#6B9B8A]/10 text-[#6B9B8A] rounded text-xs"
+                                      >
+                                        {name}
+                                      </span>
+                                    ))}
+                                    {exam.classNames.length > 3 && (
+                                      <span className="px-2 py-0.5 text-[#8C959F] text-xs">
+                                        +{exam.classNames.length - 3}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2.5 text-[#1F2328] dark:text-[#E6EDF3]">
+                                  <div className="flex items-center gap-1">
+                                    <span>{exam.totalStudents}</span>
+                                    <span className="text-[#8C959F]">/</span>
+                                    <span className="text-[#8C959F]">{exam.capacity}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  {exam.teacherNames && exam.teacherNames.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {exam.teacherNames.slice(0, 2).map((name, i) => (
+                                        <span
+                                          key={i}
+                                          className="px-2 py-0.5 bg-[#9C81AF]/10 text-[#9C81AF] rounded text-xs"
+                                        >
+                                          {name}
+                                        </span>
+                                      ))}
+                                      {exam.teacherNames.length > 2 && (
+                                        <span className="px-2 py-0.5 text-[#8C959F] text-xs">
+                                          +{exam.teacherNames.length - 2}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-[#8C959F]">-</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

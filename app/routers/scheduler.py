@@ -607,6 +607,80 @@ async def rollback_schedule_version(
 
 
 # ============================================================
+# 删除排考版本
+# ============================================================
+
+
+@router.delete("/versions/{version_id}", response_model=dict)
+async def delete_schedule_version(
+    version_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """删除排考版本
+
+    - 如果是草稿版本(DRAFT)：直接删除版本记录
+    - 如果是已发布版本(PUBLISHED)：同时删除相关的 exams 表数据
+    - 已归档版本(ARCHIVED)：直接删除版本记录
+    """
+    version = await db.get(ScheduleVersion, version_id)
+    if not version:
+        raise HTTPException(status_code=404, detail=f"排考版本(id={version_id})不存在")
+
+    deleted_exams = 0
+
+    # 如果是已发布版本，需要同时删除关联的考试数据
+    if version.status == ScheduleVersionStatus.PUBLISHED:
+        # 先获取该版本关联的考试数据（通过快照中的exam_id）
+        snapshot = {}
+        if version.data_snapshot:
+            try:
+                snapshot = json.loads(version.data_snapshot)
+            except json.JSONDecodeError:
+                snapshot = {}
+
+        # 清除关联的 ExamTeacher、ExamClassroomClass、ExamClassroom、PatrolTeacher
+        exam_ids = [er.get("exam_id") for er in snapshot.get("exams", []) if er.get("exam_id")]
+        if exam_ids:
+            # 删除 ExamTeacher
+            await db.execute(
+                delete(ExamTeacher).where(ExamTeacher.exam_id.in_(exam_ids))
+            )
+            # 获取所有相关的 ExamClassroom
+            result = await db.execute(
+                select(ExamClassroom.id).where(ExamClassroom.exam_id.in_(exam_ids))
+            )
+            exam_classroom_ids = [ec.id for ec in result.scalars().all()]
+            # 删除 ExamClassroomClass
+            if exam_classroom_ids:
+                await db.execute(
+                    delete(ExamClassroomClass).where(ExamClassroomClass.exam_classroom_id.in_(exam_classroom_ids))
+                )
+            # 删除 ExamClassroom
+            await db.execute(
+                delete(ExamClassroom).where(ExamClassroom.exam_id.in_(exam_ids))
+            )
+            # 删除 Exam
+            await db.execute(delete(Exam).where(Exam.id.in_(exam_ids)))
+            deleted_exams = len(exam_ids)
+
+        # 删除所有 PatrolTeacher（因为PUBLISHED版本的流动监考会写入数据库）
+        await db.execute(delete(PatrolTeacher))
+
+        # 重置教师的 current_slots
+        await db.execute(update(Teacher).values(current_slots=0))
+
+    # 删除版本记录
+    await db.delete(version)
+    await db.commit()
+
+    return {
+        "code": 0,
+        "message": f"版本已删除{'，同时删除了 ' + str(deleted_exams) + ' 条考试记录' if deleted_exams > 0 else ''}",
+        "data": {"deleted_exams": deleted_exams}
+    }
+
+
+# ============================================================
 # 排考配置管理
 # ============================================================
 

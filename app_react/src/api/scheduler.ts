@@ -95,3 +95,15 @@ export async function saveSchedulerConfig(config: Partial<SchedulerConfig>): Pro
   const { data } = await apiClient.put<ApiResponse<SchedulerConfig>>('/scheduler/config', config);
   return data.data;
 }
+
+/**
+ * 删除排考版本
+ * - draft: 直接删除版本记录
+ * - published: 同时删除关联的考试数据
+ */
+export async function deleteScheduleVersion(versionId: number): Promise<{ deleted_exams: number }> {
+  const { data } = await apiClient.delete<ApiResponse<{ deleted_exams: number }>>(
+    `/scheduler/versions/${versionId}`
+  );
+  return data.data;
+}
