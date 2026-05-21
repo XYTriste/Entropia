@@ -1157,12 +1157,12 @@ function TeacherPanel({
                         </div>
                         {exam.role === 'fixed' ? (
                           // 固定监考：显示班级信息
-                          <div className="text-[#C8CDD3] dark:text-[#484F58] pt-1 border-t border-[#F3F4F6] dark:border-[#30363D]">
+                          <div className="mt-1.5 px-2 py-1 bg-[#EBF4FF] dark:bg-[#1E3A5F] text-[#1D4ED8] dark:text-[#93C5FD] rounded-lg">
                             班级: {exam.class_names?.join(', ')}
                           </div>
                         ) : (
                           // 流动监考：显示巡场教室
-                          <div className="text-[#6395C3] dark:text-[#6395C3] pt-1 border-t border-[#F3F4F6] dark:border-[#30363D]">
+                          <div className="mt-1.5 px-2 py-1 bg-[#FEF9E7] dark:bg-[#3D3020] text-[#B45309] dark:text-[#FCD34D] rounded-lg">
                             巡场: {exam.classrooms?.join('、')}
                           </div>
                         )}
