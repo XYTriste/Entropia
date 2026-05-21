@@ -2918,6 +2918,8 @@ const App = {
           body.innerHTML = this._renderClassroomTable(data);
         } else if (toolName === 'query_teacher_assignments') {
           body.innerHTML = this._renderTeacherAssignments(data);
+        } else if (toolName === 'query_class_exams') {
+          body.innerHTML = this._renderClassExams(data);
         } else {
           body.textContent = JSON.stringify(data, null, 2);
         }
@@ -3118,6 +3120,96 @@ const App = {
         // 如果该教师没有任何安排
         if (!hasAssignments) {
           html += '<div class="text-sm text-gray-400 py-4 text-center"><i class="fas fa-inbox text-xl mb-2"></i><p>暂无监考安排</p></div>';
+        }
+      }
+
+      html += `</div>`;
+      return html;
+    },
+
+    /** 渲染班级考试安排（返回 HTML 字符串） */
+    _renderClassExams(data) {
+      if (!data.found) {
+        return `<div class="text-sm text-gray-400 py-6 text-center"><i class="fas fa-user-slash text-2xl mb-2"></i><p>${data.message || '未找到班级'}</p></div>`;
+      }
+
+      const query = data.query || {};
+      const dayLabel = query.day_name || '全部';
+
+      let html = `<div class="mb-4">`;
+
+      // 匹配到多个班级时显示汇总
+      if (data.matched_count > 1) {
+        html += `<div class="flex items-center gap-3 mb-3">`;
+        html += `<span class="text-sm font-medium text-gray-600">共找到 ${data.matched_count} 个班级，总计 ${data.total_exams || 0} 场考试（${dayLabel}）</span>`;
+        html += `</div>`;
+      }
+
+      const classes = data.classes || [];
+      for (let i = 0; i < classes.length; i++) {
+        const cls = classes[i];
+        const exams = cls.exams || [];
+
+        if (i > 0) {
+          html += `<hr class="my-4 border-gray-200">`;
+        }
+
+        // 班级信息卡片
+        html += `<div class="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-100">`;
+        html += `<div class="flex flex-wrap gap-4 text-sm">`;
+        html += `<span class="inline-flex items-center gap-1 text-gray-600"><i class="fas fa-users"></i> ${this.escapeHtml(cls.name)}</span>`;
+        html += `<span class="inline-flex items-center gap-1 text-gray-600"><i class="fas fa-graduation-cap"></i> ${cls.grade}级</span>`;
+        html += `<span class="inline-flex items-center gap-1 text-gray-600"><i class="fas fa-book"></i> ${this.escapeHtml(cls.major || '')}</span>`;
+        html += `<span class="inline-flex items-center gap-1 text-gray-600"><i class="fas fa-user-friends"></i> ${cls.student_count}人</span>`;
+        html += `</div>`;
+        html += `</div>`;
+
+        // 考试安排表格
+        if (exams.length > 0) {
+          html += `<div class="mb-4">`;
+          html += `<div class="text-sm font-semibold text-blue-700 mb-2 flex items-center gap-1"><i class="fas fa-clipboard-list"></i> 考试安排（共 ${exams.length} 场）</div>`;
+          html += `<div class="overflow-x-auto rounded-lg border border-blue-200">`;
+          html += `<table class="w-full text-sm">`;
+          html += `<thead><tr class="bg-blue-50 text-blue-700">`;
+          html += `<th class="px-4 py-2 text-left font-semibold">考试课程</th>`;
+          html += `<th class="px-4 py-2 text-left font-semibold" style="width: 170px;">时间</th>`;
+          html += `<th class="px-4 py-2 text-left font-semibold">教室</th>`;
+          html += `<th class="px-4 py-2 text-center font-semibold" style="width: 80px;">人数</th>`;
+          html += `<th class="px-4 py-2 text-left font-semibold">固定监考</th>`;
+          html += `<th class="px-4 py-2 text-left font-semibold">流动监考</th>`;
+          html += `</tr></thead><tbody>`;
+
+          for (const exam of exams) {
+            const labelBadge = exam.exam_label
+              ? ` <span class="font-medium ${exam.exam_label === 'A' ? 'text-blue-600' : 'text-orange-600'}">(${exam.exam_label})</span>`
+              : '';
+            const classroomsText = exam.classrooms && exam.classrooms.length > 0
+              ? exam.classrooms.map(c => {
+                  const name = this.escapeHtml(c.name || c);
+                  const students = c.students || 0;
+                  return name + '@' + students + '人';
+                }).join('、')
+              : '<span class="text-gray-400">-</span>';
+            const fixedTeachersText = exam.fixed_teachers && exam.fixed_teachers.length > 0
+              ? exam.fixed_teachers.map(t => this.escapeHtml(t)).join('、')
+              : '<span class="text-gray-400">-</span>';
+            const patrolTeachersText = exam.patrol_teachers && exam.patrol_teachers.length > 0
+              ? exam.patrol_teachers.map(t => this.escapeHtml(t)).join('、')
+              : '<span class="text-gray-400">-</span>';
+
+            html += `<tr class="border-t border-blue-100 hover:bg-blue-50/50">`;
+            html += `<td class="px-4 py-2.5 font-medium text-gray-800">${this.escapeHtml(exam.course_name)}${labelBadge}</td>`;
+            html += `<td class="px-4 py-2.5 text-sm text-gray-600">${this.escapeHtml(exam.day_name || '')} ${this.escapeHtml(exam.time_str || '')}</td>`;
+            html += `<td class="px-4 py-2.5 text-sm text-gray-600">${classroomsText}</td>`;
+            html += `<td class="px-4 py-2.5 text-center text-sm text-gray-500">${exam.student_count ? exam.student_count + '人' : '<span class="text-gray-400">-</span>'}</td>`;
+            html += `<td class="px-4 py-2.5 text-sm text-gray-800">${fixedTeachersText}</td>`;
+            html += `<td class="px-4 py-2.5 text-sm text-gray-800">${patrolTeachersText}</td>`;
+            html += `</tr>`;
+          }
+
+          html += `</tbody></table></div></div>`;
+        } else {
+          html += '<div class="text-sm text-gray-400 py-4 text-center"><i class="fas fa-inbox text-xl mb-2"></i><p>暂无已排考的考试安排</p></div>';
         }
       }
 

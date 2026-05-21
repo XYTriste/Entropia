@@ -108,6 +108,61 @@ def detect_all_classroom_query(message: str) -> bool:
     return "所有" in msg or "全部" in msg or "有多少" in msg
 
 
+def detect_class_exam_query(message: str) -> bool:
+    """检测是否在询问班级考试安排"""
+    msg = message.lower()
+    # 明确包含"班"字且包含考试相关关键词
+    class_keywords = ["班", "班级"]
+    exam_keywords = [
+        "考试", "安排", "哪天", "几号", "考什么", "时间表",
+        "日程", "排考", "监考", "教室",
+    ]
+    has_class = any(k in msg for k in class_keywords)
+    has_exam = any(k in msg for k in exam_keywords)
+    # 特殊模式:"xx班"+疑问词
+    if has_class and has_exam:
+        return True
+    # 如"软件工程2301有什么考试"
+    if re.search(r'\d+班', msg) and ("什么" in msg or "哪些" in msg):
+        return True
+    return False
+
+
+def parse_class_name_from_message(message: str) -> Optional[str]:
+    """从消息中提取班级名称"""
+    msg = message.strip()
+
+    # 模式1: "XX班" → 去掉末尾的"班"
+    patterns = [
+        r'([\u4e00-\u9fa5]+\d{4})班',  # 如"软件工程2301班"
+        r'([\u4e00-\u9fa5]+\d+)班',     # 如"计算机1班"
+        r'(\d{4}级?[\u4e00-\u9fa5]+)班', # 如"2023级软件工程班"
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, msg)
+        if match:
+            return match.group(1)
+
+    # 模式2: 引号中的内容
+    match = re.search(r'[\"\']([^\"\']+)[\"\']', msg)
+    if match:
+        name = match.group(1).strip()
+        if name:
+            return name.rstrip("班")
+
+    # 模式3: 如果消息中包含"班"字,提取"班"字前面的连续中文字符+数字作为班级名
+    match = re.search(r'([\u4e00-\u9fa5\d]+)班', msg)
+    if match:
+        return match.group(1)
+
+    # 兜底:取消息中前 10 个非空格字符作为班级名尝试
+    cleaned = re.sub(r'[?:？：，,。!！]*$', '', msg).strip()
+    if len(cleaned) <= 15:
+        return cleaned
+
+    return None
+
+
 # ============================================================
 # 通用回复模板
 # ============================================================
@@ -159,13 +214,27 @@ async def process_message_basic(user_message: str) -> dict | str:
 
         return {"type": "tool", "tool": "query_classrooms", "data": data}
 
-    # 2. 通用模板回复
+    # 2. 检查是否查询班级考试安排
+    if detect_class_exam_query(user_message):
+        from app.tools.class_tools import query_class_exams
+
+        class_name = parse_class_name_from_message(user_message)
+        day_of_week = parse_day_from_message(user_message)
+
+        if class_name:
+            data = await query_class_exams(
+                class_name=class_name,
+                day_of_week=day_of_week,
+            )
+            return {"type": "tool", "tool": "query_class_exams", "data": data}
+
+    # 3. 通用模板回复
     message_lower = user_message.lower()
     for keyword, template in GENERAL_TEMPLATES.items():
         if keyword in message_lower:
             return template
 
-    # 3. 默认回复
+    # 4. 默认回复
     return WELCOME_MESSAGE
 
 

@@ -134,6 +134,34 @@ TOOLS = [
                 "required": ["teacher_names"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_class_exams",
+            "description": (
+                "查询班级的考试安排,包括考试时间、课程、教室、监考教师等信息。"
+                "当用户询问某班、某年级、某专业的考试安排,或'哪天考试'、'考什么'时调用此工具。"
+                "支持模糊匹配班级名称(如'软件'可匹配'软件工程2301')。"
+                "参数规则:(1)class_name:用户提到的班级名称,如'软件工程2301'、'计算机1班'。"
+                "(2)day_of_week:指定某天时传入(如'周一'→1),未指定则不传。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "class_name": {
+                        "type": "string",
+                        "description": "班级名称,支持模糊匹配。如'软件工程2301'、'计算机1班'。"
+                    },
+                    "day_of_week": {
+                        "type": "integer",
+                        "description": "可选,过滤星期几(1=星期一, ..., 5=星期五)。用户指定某天时传入,未指定时不传。",
+                        "enum": [1, 2, 3, 4, 5]
+                    }
+                },
+                "required": ["class_name"]
+            }
+        }
     }
 ]
 
@@ -204,9 +232,11 @@ def init_tools():
     """初始化所有工具函数"""
     from app.tools.classroom_tools import query_classrooms
     from app.tools.teacher_tools import query_teacher_assignments, check_teacher_conflicts
+    from app.tools.class_tools import query_class_exams
     register_tool("query_classrooms", query_classrooms)
     register_tool("query_teacher_assignments", query_teacher_assignments)
     register_tool("check_teacher_conflicts", check_teacher_conflicts)
+    register_tool("query_class_exams", query_class_exams)
 
 
 # ============================================================
