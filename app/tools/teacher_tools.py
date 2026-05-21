@@ -23,6 +23,130 @@ from app.models.classroom import Classroom
 DAY_NAMES_ZH = {1: "星期一", 2: "星期二", 3: "星期三", 4: "星期四", 5: "星期五"}
 
 
+async def check_teacher_conflicts(
+    teacher_names: list[str],
+) -> dict:
+    """
+    检测多位教师之间的监考时间冲突。
+
+    Args:
+        teacher_names: 教师姓名列表,支持模糊匹配,如 ["梅鹏飞", "李婷"]
+
+    Returns:
+        dict: 结构化的冲突检测结果,包含每位教师的安排及冲突详情
+    """
+    async with AsyncSessionLocal() as db:
+        # 1. 对每个教师名进行模糊匹配
+        all_teachers_result = await db.execute(
+            select(Teacher).where(Teacher.is_active == True)
+        )
+        all_teachers = all_teachers_result.scalars().all()
+
+        matched_teachers = []
+        not_found = []
+
+        for name in teacher_names:
+            pattern = name.strip().lower().replace(" ", "")
+            found = []
+            for t in all_teachers:
+                t_name = t.name.lower().replace(" ", "")
+                if pattern == t_name or pattern in t_name or t_name in pattern:
+                    found.append(t)
+            if found:
+                matched_teachers.extend(found)
+            else:
+                not_found.append(name)
+
+        # 去重(同一教师可能被多个名字匹配到)
+        seen_ids = set()
+        unique_teachers = []
+        for t in matched_teachers:
+            if t.id not in seen_ids:
+                seen_ids.add(t.id)
+                unique_teachers.append(t)
+        matched_teachers = unique_teachers
+
+        # 2. 查询每位教师的监考安排
+        teacher_data_list = []
+        for teacher in matched_teachers:
+            data = await _query_single_teacher(db, teacher)
+            teacher_data_list.append(data)
+
+        # 3. 构建 (day_of_week, slot_code) → 教师列表 的映射,检测冲突
+        # 冲突定义: 同一天、同一个时间段(slot_code),有两位及以上教师有安排
+        slot_teachers: dict[tuple, list[dict]] = {}
+
+        for td in teacher_data_list:
+            t_name = td["teacher"]["name"]
+            # 固定/流动监考安排 (ExamTeacher)
+            for a in td["assignments"]:
+                key = (a["day_of_week"], a["slot_code"])
+                entry = {
+                    "teacher_name": t_name,
+                    "type": a["role"],
+                    "classroom": a["classroom"],
+                    "course_name": a["course_name"],
+                    "time_str": a["time_str"],
+                }
+                if key not in slot_teachers:
+                    slot_teachers[key] = []
+                slot_teachers[key].append(entry)
+            # 流动监考 (PatrolTeacher)
+            for p in td["patrol_slots"]:
+                key = (p["day_of_week"], p["slot_code"])
+                entry = {
+                    "teacher_name": t_name,
+                    "type": "流动巡考",
+                    "classroom": None,
+                    "course_name": None,
+                    "time_str": p["time_str"],
+                }
+                if key not in slot_teachers:
+                    slot_teachers[key] = []
+                slot_teachers[key].append(entry)
+
+        # 4. 筛选出冲突(同 key 下有 ≥2 位不同教师)
+        conflicts = []
+        for (day, slot), entries in sorted(slot_teachers.items()):
+            teacher_names_in_slot = set(e["teacher_name"] for e in entries)
+            if len(teacher_names_in_slot) >= 2:
+                conflicts.append({
+                    "day_of_week": day,
+                    "day_name": DAY_NAMES_ZH.get(day, ""),
+                    "slot_code": slot,
+                    "details": entries,
+                })
+
+        # 5. 构建每位教师的安排摘要(用于展示)
+        teacher_summaries = []
+        for td in teacher_data_list:
+            t = td["teacher"]
+            teacher_summaries.append({
+                "name": t["name"],
+                "teacher_type": t["teacher_type"],
+                "assignments_count": td["total_assignments"],
+                "assignments": td["assignments"],
+                "patrol_slots": td["patrol_slots"],
+            })
+
+        # 6. 组装结果
+        result = {
+            "has_conflict": len(conflicts) > 0,
+            "conflict_count": len(conflicts),
+            "teachers_checked": len(matched_teachers),
+            "teacher_names_input": teacher_names,
+            "not_found": not_found if not_found else None,
+            "teacher_summaries": teacher_summaries,
+            "conflicts": conflicts if conflicts else [],
+            "conclusion": (
+                f"检测到 {len(conflicts)} 个时间冲突" if conflicts
+                else "未检测到时间冲突,以上教师的监考安排没有重叠。"
+            ),
+        }
+
+        return result
+
+
 async def query_teacher_assignments(
     teacher_name: str,
     day_of_week: Optional[int] = None,

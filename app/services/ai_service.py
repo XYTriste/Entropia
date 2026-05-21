@@ -88,11 +88,12 @@ TOOLS = [
         "function": {
             "name": "query_teacher_assignments",
             "description": (
-                "查询教师的监考安排,包括固定监考和流动监考。支持模糊匹配,匹配到多位教师时返回所有匹配教师的完整数据(teachers 数组)。"
+                "查询教师的监考安排,包括固定监考和流动监考。支持模糊匹配。"
                 "当用户询问某位老师、某姓老师或所有匹配老师的监考安排时调用此工具。"
                 "参数规则:(1)teacher_name:'张老师'→'张','李明'→'李明','所有李姓老师'→'李'。"
                 "(2)day_of_week:指定某天时传入(如'周一'→1),未指定则不传。"
-                "返回格式:匹配多位教师时返回 'teachers' 数组,请基于每位教师的实际数据分别说明,不得推断或编造。"
+                "注意:匹配多位教师时工具返回 teachers 数组,你必须基于每位教师的实际数据分别说明,不得推断或编造。"
+                "示例:用户问'查所有李姓老师'→参数 teacher_name='李'→工具返回 teachers 数组→逐个教师回答,有安排则列出,无安排则说明。"
             ),
             "parameters": {
                 "type": "object",
@@ -108,6 +109,29 @@ TOOLS = [
                     }
                 },
                 "required": ["teacher_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_teacher_conflicts",
+            "description": (
+                "检测多位教师之间的监考时间冲突。"
+                "当用户询问两位及以上教师的监考是否有冲突、时间是否重叠、是否撞车时调用此工具。"
+                "输入教师姓名列表(支持模糊匹配),返回结构化的冲突检测结果。"
+                "注意:单个教师查询冲突(如'查张老师的冲突')无意义,请改用 query_teacher_assignments。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "teacher_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "教师姓名列表,如 [\"梅鹏飞\", \"李婷\"]。支持模糊匹配。"
+                    }
+                },
+                "required": ["teacher_names"]
             }
         }
     }
@@ -179,9 +203,10 @@ def register_tool(name: str, func):
 def init_tools():
     """初始化所有工具函数"""
     from app.tools.classroom_tools import query_classrooms
-    from app.tools.teacher_tools import query_teacher_assignments
+    from app.tools.teacher_tools import query_teacher_assignments, check_teacher_conflicts
     register_tool("query_classrooms", query_classrooms)
     register_tool("query_teacher_assignments", query_teacher_assignments)
+    register_tool("check_teacher_conflicts", check_teacher_conflicts)
 
 
 # ============================================================
@@ -210,33 +235,13 @@ async def stream_chat(
     try:
         system_message = {
             "role": "system",
-            "content": """你是考试安排管理系统的智能助手,你的名字叫做小白，只能回答与考试安排、教室查询、教师监考安排相关的问题。
+            "content": """你是考试安排管理系统的智能助手,你的名字叫做小白。
 
-工具使用:
-- 用户询问教室状态、空闲教室、教室监考安排 → 调用 query_classrooms 工具
-- 用户询问某位老师的监考安排 → 调用 query_teacher_assignments 工具
-- 无相关工具时,诚实告知不支持该功能
-
-重要:
+规则:
 - 必须基于工具返回的数据回答,不得编造任何教师姓名、教室名称、课程名称或监考信息
-- 工具返回 "teachers" 数组时,对每位教师分别说明情况,不得推断
 - 如果用户只是闲聊,简短回应即可
-- 如果用户询问你的名称，可以告诉他你叫小白
-
-【多教师查询示例】
-用户问:"查询所有李姓老师的监考情况"
-→ 调用 query_teacher_assignments,参数 teacher_name="李"
-→ 工具返回 "teachers" 数组,包含每位李姓教师的完整数据
-→ 基于数组中每位教师的实际数据分别回答,有安排则列出,无安排则说明
-
-输出格式要求:
-- 涉及多条记录时(如多个教室、多场监考安排等),必须使用标准 Markdown 表格展示
-- 表格格式示例:
-  | 时间 | 教室 | 课程 | 班级 |
-  |------|------|------|------|
-  | 10:20-12:00 | 5-205 | 《XXX》 | 24数媒3班(24人) |
-- 单条记录可以用列表或简洁文字描述,不必强制表格
-- 其他内容正常使用 Markdown 格式(加粗、列表等)"""
+- 如果用户询问你的名称,可以告诉他你叫小白
+- 不支持的功能,诚实告知即可"""
         }
 
         full_messages = [system_message] + messages
@@ -248,70 +253,97 @@ async def stream_chat(
 
         # ── 第 2 步:如有 tool_call,执行工具 ────────────────
         if assistant_msg.get("tool_calls"):
-            tool_call = assistant_msg["tool_calls"][0]
-            func_name = tool_call["function"]["name"]
-            func_args = json.loads(tool_call["function"]["arguments"])
+            tool_calls = assistant_msg["tool_calls"]
+            tool_results: list[dict] = []  # 收集所有工具结果
+            has_error = False
+            all_empty = True  # 是否所有结果都为空
 
-            # 容错:统一参数名(AI 可能返回 class_room 而非 classroom)
-            if "class_room" in func_args and "classroom" not in func_args:
-                func_args["classroom"] = func_args.pop("class_room")
+            for tc in tool_calls:
+                func_name = tc["function"]["name"]
+                func_args = json.loads(tc["function"]["arguments"])
 
-            # 向前端发送"正在查询"提示
-            yield sse({"type": "text", "content": f"[正在查询{func_name}...]\n"})
+                # 容错:统一参数名(AI 可能返回 class_room 而非 classroom)
+                if "class_room" in func_args and "classroom" not in func_args:
+                    func_args["classroom"] = func_args.pop("class_room")
 
-            tool_func = TOOL_FUNCTIONS.get(func_name)
-            if not tool_func:
-                yield sse({"type": "error", "content": f"未知工具: {func_name}"})
-                yield sse({"type": "done"})
-                return
+                # 向前端发送"正在查询"提示
+                yield sse({"type": "text", "content": f"[正在查询{func_name}...]\n"})
 
-            # 执行工具函数
-            try:
-                result = await tool_func(**func_args)
-            except Exception as tool_e:
-                yield sse({"type": "error", "content": f"工具执行失败: {tool_e}"})
-                yield sse({"type": "done"})
-                return
+                tool_func = TOOL_FUNCTIONS.get(func_name)
+                if not tool_func:
+                    yield sse({"type": "error", "content": f"未知工具: {func_name}"})
+                    has_error = True
+                    continue
 
-            # 向前端发送 tool_result 事件(前端渲染成表格卡片)
-            print(f"[DEBUG] Sending tool_result: tool={func_name}, data keys={list(result.keys()) if isinstance(result, dict) else type(result)}")
-            yield sse({"type": "tool_result", "tool": func_name, "data": result})
+                # 执行工具函数
+                try:
+                    result = await tool_func(**func_args)
+                except Exception as tool_e:
+                    yield sse({"type": "error", "content": f"工具执行失败: {tool_e}"})
+                    has_error = True
+                    continue
 
-            # ── 反幻觉:空结果直接返回,不经过 LLM 生成 ────────────
-            # 当工具返回未找到或空数据时,直接返回标准回复,不给 LLM 编造数据的机会
-            is_empty_teacher = func_name == "query_teacher_assignments" and (
-                not result.get("found", True) or
-                (not result.get("assignments") and not result.get("patrol_slots"))
-            )
+                # 向前端发送 tool_result 事件
+                print(f"[DEBUG] Sending tool_result: tool={func_name}, data keys={list(result.keys()) if isinstance(result, dict) else type(result)}")
+                yield sse({"type": "tool_result", "tool": func_name, "data": result})
 
-            if is_empty_teacher:
-                teacher_name = func_args.get("teacher_name", "该教师")
-                if not result.get("found", True):
-                    reply = f"未找到名为「{teacher_name}」的教师,请确认姓名是否正确。"
+                # 反幻觉判断:教师查询空结果
+                is_empty_teacher = func_name == "query_teacher_assignments" and (
+                    not result.get("found", True) or
+                    (not result.get("assignments") and not result.get("patrol_slots"))
+                )
+
+                if is_empty_teacher:
+                    teacher_name = func_args.get("teacher_name", "该教师")
+                    if not result.get("found", True):
+                        yield sse({"type": "text", "content": f"未找到名为「{teacher_name}」的教师,请确认姓名是否正确。\n"})
+                    else:
+                        yield sse({"type": "text", "content": f"{result['teacher']['name']}老师暂无监考安排。\n"})
+                    # 空结果仍需追加到消息历史,否则 OpenAI 格式校验会报错
+                    tool_results.append({"tc": tc, "result": result})
                 else:
-                    reply = f"{result['teacher']['name']}老师暂无监考安排。"
-                yield sse({"type": "text", "content": reply})
+                    all_empty = False
+                    tool_results.append({"tc": tc, "result": result})
+
+            # 如果出现严重错误且无有效结果,直接结束
+            if has_error and not tool_results:
                 yield sse({"type": "done"})
                 return
 
-            # 将 tool_call 和 tool_result 追加到消息历史(严格按照 OpenAI 格式)
-            # 注意:role 必须是 "assistant"(不能拼错！),content 为 None 时要省略该字段
+            # 如果所有结果都为空(教师查询未找到),直接结束,不经过 LLM
+            if all_empty and tool_results:
+                yield sse({"type": "done"})
+                return
+
+            # 将 tool_calls 和所有 tool_results 追加到消息历史(严格按照 OpenAI 格式)
             assistant_content = assistant_msg.get("content")
             tool_call_msg = {
                 "role": "assistant",
-                "tool_calls": assistant_msg["tool_calls"]
+                "tool_calls": tool_calls
             }
             if assistant_content is not None:
                 tool_call_msg["content"] = assistant_content
             full_messages.append(tool_call_msg)
 
-            full_messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call["id"],
-                "content": json.dumps(result, ensure_ascii=False)
-            })
+            for tr in tool_results:
+                full_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tr["tc"]["id"],
+                    "content": json.dumps(tr["result"], ensure_ascii=False)
+                })
 
             # ── 第 3 步:非流式获取最终回复,然后手动 SSE 输出 ─────────
+            # 注入格式提示到消息末尾,确保上下文较长时仍遵守输出格式
+            format_hint = {
+                "role": "user",
+                "content": (
+                    "请基于以上工具返回的数据整理回复。"
+                    "涉及多条记录时使用 Markdown 表格,格式:| 时间 | 教室 | 课程 | 班级 |"
+                    "单条记录用简洁文字描述即可。"
+                    "不要暴露工具调用的技术细节。"
+                )
+            }
+            full_messages.append(format_hint)
             # 使用低 temperature 避免模型在基于工具结果回答时自由发挥/编造数据
             final_resp = await client.chat_non_stream(full_messages, tools=None, temperature=0.1)
             final_content = final_resp["choices"][0]["message"].get("content", "")
