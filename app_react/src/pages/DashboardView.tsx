@@ -18,6 +18,13 @@ import { chat, type ChatMessage as ChatMsgType } from '@/api/chat';
 import type { ChatMessage } from '@/types';
 import MarkdownIt from 'markdown-it';
 
+// Markdown 渲染器（组件外部单例，避免重复创建）
+const md = new MarkdownIt({
+  html: true,
+  breaks: true,
+  linkify: true,
+});
+
 const kpiColors: Record<string, { bg: string; text: string; glow?: string }> = {
   blue: { bg: 'rgba(99, 149, 195, 0.08)', text: '#6395C3' },
   green: { bg: 'rgba(107, 155, 138, 0.08)', text: '#6B9B8A' },
@@ -44,13 +51,6 @@ export default function DashboardView() {
   const [isBackendOnline, setIsBackendOnline] = useState(true);  // 后端服务状态
   const chatEndRef = useRef<HTMLDivElement>(null);
   const { kpiData, loading: kpiLoading } = useKPIData();
-
-  // Markdown 渲染器
-  const md = new MarkdownIt({
-    html: true,
-    breaks: true,
-    linkify: true,
-  });
 
   // 检测后端服务状态
   const checkBackendStatus = useCallback(async () => {
@@ -287,7 +287,10 @@ export default function DashboardView() {
                     }
                   >
                     {msg.role === 'assistant' ? (
-                      <div dangerouslySetInnerHTML={{ __html: md.render(msg.content || '') }} />
+                      <div
+                        className="markdown-body"
+                        dangerouslySetInnerHTML={{ __html: md.render(msg.content || '') }}
+                      />
                     ) : (
                       msg.content
                     )}

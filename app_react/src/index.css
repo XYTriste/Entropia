@@ -278,3 +278,44 @@
   0%, 100% { box-shadow: 0 0 0 0 rgba(194, 122, 99, 0.3); }
   50% { box-shadow: 0 0 16px 4px rgba(194, 122, 99, 0.15); }
 }
+
+/* 聊天助手 Markdown 表格样式 */
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.markdown-body thead th {
+  background-color: var(--table-header-bg);
+  font-weight: 600;
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 2px solid var(--border-strong);
+  color: var(--text-primary);
+}
+
+.markdown-body tbody td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.markdown-body tbody tr:hover {
+  background-color: var(--table-row-hover);
+}
+
+.markdown-body tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown-body p {
+  margin: 4px 0;
+}
+
+.markdown-body ul, .markdown-body ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
