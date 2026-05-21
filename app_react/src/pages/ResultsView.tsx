@@ -1160,13 +1160,16 @@ function TeacherPanel({
                           {exam.room_details?.map((room, idx) => (
                             <div
                               key={idx}
-                              className={`text-xs px-2 py-1 rounded-lg ${
+                              className={`flex items-center text-xs px-2 py-1 rounded-lg ${
                                 exam.role === 'fixed'
                                   ? 'bg-[#EBF4FF] dark:bg-[#1E3A5F] text-[#1D4ED8] dark:text-[#93C5FD]'
                                   : 'bg-[#FEF9E7] dark:bg-[#3D3020] text-[#B45309] dark:text-[#FCD34D]'
                               }`}
                             >
-                              {room.classroom} {room.class_names?.join('、')}（{room.student_count}人）
+                              <span className="flex-1">
+                                {room.class_names?.join('、')}（{room.student_count}人）
+                              </span>
+                              <span className="flex-shrink-0 font-medium">{room.classroom}</span>
                             </div>
                           ))}
                         </div>

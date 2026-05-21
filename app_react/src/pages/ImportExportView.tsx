@@ -10,9 +10,22 @@ import {
   FileCheck,
   AlertCircle,
   CheckCircle2,
+  Loader2,
+  X,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  downloadTemplate,
+  downloadAllInOneTemplate,
+  importExcelData,
+  exportExcel,
+  exportJson,
+  exportSql,
+  clearAllData,
+  type ImportEntity,
+} from '@/api/importExport';
 
-const importTypes = [
+const importTypes: Array<{ key: ImportEntity; label: string }> = [
   { key: 'teachers', label: '教师' },
   { key: 'classrooms', label: '教室' },
   { key: 'courses', label: '课程' },
@@ -24,32 +37,165 @@ const importTypes = [
 ];
 
 export default function ImportExportView() {
-  const [importType, setImportType] = useState('teachers');
+  const [importType, setImportType] = useState<ImportEntity>('teachers');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [importResult, setImportResult] = useState<{ success: number; errors: number } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    success_count: number;
+    error_count: number;
+    errors: string[];
+    warnings: string[];
+  } | null>(null);
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [exporting, setExporting] = useState<'excel' | 'json' | 'sql' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 拖拽上传
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (file && file.name.endsWith('.xlsx')) {
       setUploadedFile(file);
+      setImportResult(null);
     }
   };
 
+  // 文件选择
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setUploadedFile(file);
+      setImportResult(null);
     }
   };
 
-  const handleImport = () => {
-    setImportResult({ success: 48, errors: 0 });
+  // 下载模板
+  const handleDownloadTemplate = (type: ImportEntity) => {
+    downloadTemplate(type);
+  };
+
+  // 下载全量模板
+  const handleDownloadAllInOne = () => {
+    downloadAllInOneTemplate();
+  };
+
+  // 开始导入
+  const handleImport = async () => {
+    if (!uploadedFile) return;
+    setImporting(true);
+    try {
+      const result = await importExcelData(importType, uploadedFile);
+      setImportResult(result);
+      if (result.error_count === 0) {
+        toast.success(`成功导入 ${result.success_count} 条数据`);
+      } else {
+        toast.warning(`导入完成：成功 ${result.success_count} 条，失败 ${result.error_count} 条`);
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || '导入失败，请重试');
+      setImportResult({
+        success_count: 0,
+        error_count: 1,
+        errors: [err?.response?.data?.detail || '未知错误'],
+        warnings: [],
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // 清除全部数据
+  const handleClearData = async () => {
+    setClearing(true);
+    try {
+      const result = await clearAllData(true, true);
+      setShowClearModal(false);
+      toast.success('数据已清除', { description: '基础数据已全部清空' });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || '清除失败');
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  // 导出 Excel
+  const handleExportExcel = async () => {
+    setExporting('excel');
+    try {
+      await exportExcel();
+      toast.success('Excel 导出成功');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || '导出失败');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // 导出 JSON
+  const handleExportJson = async () => {
+    setExporting('json');
+    try {
+      await exportJson();
+      toast.success('JSON 导出成功');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || '导出失败');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // 导出 SQL
+  const handleExportSql = async () => {
+    setExporting('sql');
+    try {
+      await exportSql();
+      toast.success('SQL 导出成功');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || '导出失败');
+    } finally {
+      setExporting(null);
+    }
   };
 
   return (
     <div className="page-container px-4 md:px-6">
+      {/* 清除确认弹窗 */}
+      {showClearModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="glass-card rounded-2xl p-6 w-[420px] space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[#C27A63]/10 flex items-center justify-center">
+                <AlertCircle size={20} className="text-[#C27A63]" />
+              </div>
+              <h3 className="text-base font-medium text-[#1F2328] dark:text-[#E6EDF3]">
+                确认清除全部数据
+              </h3>
+            </div>
+            <p className="text-sm text-[#8C959F] dark:text-[#8B949E]">
+              此操作将清空所有基础数据（教师、教室、课程、班级、学生、专业、课程-班级关联），
+              <strong className="text-[#C27A63]">不可逆</strong>，操作日志将保留。
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowClearModal(false)}
+                className="flex-1 btn-secondary text-sm"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleClearData}
+                disabled={clearing}
+                className="flex-1 btn-red text-sm flex items-center justify-center gap-2"
+              >
+                {clearing ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                确认清除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         {/* Left: Import */}
         <div className="glass-card rounded-3xl overflow-hidden">
@@ -66,10 +212,11 @@ export default function ImportExportView() {
                 选择要导入的数据类型并下载模板
               </div>
 
+              {/* 下拉选择 */}
               <div className="relative mb-4">
                 <select
                   value={importType}
-                  onChange={(e) => setImportType(e.target.value)}
+                  onChange={(e) => setImportType(e.target.value as ImportEntity)}
                   className="form-input-glass rounded-xl appearance-none w-full pr-10 text-sm"
                 >
                   {importTypes.map((t) => (
@@ -79,24 +226,31 @@ export default function ImportExportView() {
                 <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#C8CDD3] dark:text-[#484F58] pointer-events-none" />
               </div>
 
+              {/* 模板按钮 */}
               <div className="grid grid-cols-3 gap-2">
                 {importTypes.map((t) => (
                   <button
                     key={t.key}
-                    onClick={() => setImportType(t.key)}
+                    onClick={() => handleDownloadTemplate(t.key)}
                     className={`px-3 py-2 rounded-xl text-xs transition-all ${
                       importType === t.key
                         ? 'bg-[#D4A373]/10 text-[#D4A373]'
-                        : 'bg-white/60 dark:bg-[#21262D]/80 text-[#8C959F] dark:text-[#8B949E] hover:bg-[#F9FAFB] dark:bg-[#21262D]'
+                        : 'bg-white/60 dark:bg-[#21262D]/80 text-[#8C959F] dark:text-[#8B949E] hover:bg-[#F9FAFB] dark:hover:bg-[#21262D]'
                     }`}
                   >
                     {t.label}模板
                   </button>
                 ))}
-                <button className="px-3 py-2 rounded-xl text-xs bg-white/60 dark:bg-[#21262D]/80 text-[#8C959F] dark:text-[#8B949E] hover:bg-[#F9FAFB] dark:bg-[#21262D] transition-all">
+                <button
+                  onClick={handleDownloadAllInOne}
+                  className="px-3 py-2 rounded-xl text-xs bg-white/60 dark:bg-[#21262D]/80 text-[#8C959F] dark:text-[#8B949E] hover:bg-[#F9FAFB] dark:hover:bg-[#21262D] transition-all"
+                >
                   全量模板
                 </button>
-                <button className="px-3 py-2 rounded-xl text-xs bg-[#C27A63]/5 text-[#C27A63] hover:bg-[#C27A63]/10 transition-all">
+                <button
+                  onClick={() => setShowClearModal(true)}
+                  className="px-3 py-2 rounded-xl text-xs bg-[#C27A63]/5 text-[#C27A63] hover:bg-[#C27A63]/10 transition-all"
+                >
                   清除全部数据
                 </button>
               </div>
@@ -143,15 +297,25 @@ export default function ImportExportView() {
                     onClick={() => { setUploadedFile(null); setImportResult(null); }}
                     className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#C27A63]/10 text-[#C8CDD3] dark:text-[#484F58] hover:text-[#C27A63] transition-colors"
                   >
-                    <Trash2 size={14} />
+                    <X size={14} />
                   </button>
                 </div>
                 <button
                   onClick={handleImport}
+                  disabled={importing}
                   className="w-full btn-amber flex items-center justify-center gap-2 text-sm"
                 >
-                  <Upload size={14} />
-                  开始导入
+                  {importing ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      导入中...
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={14} />
+                      开始导入
+                    </>
+                  )}
                 </button>
               </div>
             )}
@@ -159,21 +323,30 @@ export default function ImportExportView() {
             {/* Import Result */}
             {importResult && (
               <div className="space-y-2">
-                {importResult.errors === 0 ? (
+                {importResult.error_count === 0 ? (
                   <div className="flex items-center gap-2 p-3 bg-[#6B9B8A]/10 text-[#6B9B8A] rounded-xl text-sm">
                     <CheckCircle2 size={16} />
-                    成功导入 {importResult.success} 条数据
+                    成功导入 {importResult.success_count} 条数据
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 p-3 bg-[#6B9B8A]/10 text-[#6B9B8A] rounded-xl text-sm">
-                      <CheckCircle2 size={16} />
-                      成功导入 {importResult.success} 条
-                    </div>
+                    {importResult.success_count > 0 && (
+                      <div className="flex items-center gap-2 p-3 bg-[#6B9B8A]/10 text-[#6B9B8A] rounded-xl text-sm">
+                        <CheckCircle2 size={16} />
+                        成功导入 {importResult.success_count} 条
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 p-3 bg-[#C27A63]/10 text-[#C27A63] rounded-xl text-sm">
                       <AlertCircle size={16} />
-                      导入失败 {importResult.errors} 条
+                      导入失败 {importResult.error_count} 条
                     </div>
+                    {importResult.errors.length > 0 && (
+                      <div className="bg-[#F9FAFB] dark:bg-[#21262D] rounded-xl p-3 text-xs text-[#8C959F] dark:text-[#8B949E] max-h-32 overflow-y-auto">
+                        {importResult.errors.map((err, i) => (
+                          <div key={i} className="mb-1">• {err}</div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -190,9 +363,17 @@ export default function ImportExportView() {
 
           <div className="p-6 space-y-4">
             {/* Excel Export */}
-            <button className="w-full glass-card rounded-2xl p-5 flex items-center gap-4 text-left hover:-translate-y-0.5 transition-all group cursor-pointer">
+            <button
+              onClick={handleExportExcel}
+              disabled={exporting !== null}
+              className="w-full glass-card rounded-2xl p-5 flex items-center gap-4 text-left hover:-translate-y-0.5 transition-all group cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               <div className="w-12 h-12 rounded-xl bg-[#6B9B8A]/10 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                <FileSpreadsheet size={22} className="text-[#6B9B8A]" />
+                {exporting === 'excel' ? (
+                  <Loader2 size={22} className="text-[#6B9B8A] animate-spin" />
+                ) : (
+                  <FileSpreadsheet size={22} className="text-[#6B9B8A]" />
+                )}
               </div>
               <div className="flex-1">
                 <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3] group-hover:text-[#6B9B8A] transition-colors">
@@ -206,9 +387,17 @@ export default function ImportExportView() {
             </button>
 
             {/* JSON Export */}
-            <button className="w-full glass-card rounded-2xl p-5 flex items-center gap-4 text-left hover:-translate-y-0.5 transition-all group cursor-pointer">
+            <button
+              onClick={handleExportJson}
+              disabled={exporting !== null}
+              className="w-full glass-card rounded-2xl p-5 flex items-center gap-4 text-left hover:-translate-y-0.5 transition-all group cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               <div className="w-12 h-12 rounded-xl bg-[#6395C3]/10 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                <FileJson size={22} className="text-[#6395C3]" />
+                {exporting === 'json' ? (
+                  <Loader2 size={22} className="text-[#6395C3] animate-spin" />
+                ) : (
+                  <FileJson size={22} className="text-[#6395C3]" />
+                )}
               </div>
               <div className="flex-1">
                 <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3] group-hover:text-[#6395C3] transition-colors">
@@ -222,9 +411,17 @@ export default function ImportExportView() {
             </button>
 
             {/* SQL Export */}
-            <button className="w-full glass-card rounded-2xl p-5 flex items-center gap-4 text-left hover:-translate-y-0.5 transition-all group cursor-pointer">
+            <button
+              onClick={handleExportSql}
+              disabled={exporting !== null}
+              className="w-full glass-card rounded-2xl p-5 flex items-center gap-4 text-left hover:-translate-y-0.5 transition-all group cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               <div className="w-12 h-12 rounded-xl bg-[#9C81AF]/10 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                <FileCode size={22} className="text-[#9C81AF]" />
+                {exporting === 'sql' ? (
+                  <Loader2 size={22} className="text-[#9C81AF] animate-spin" />
+                ) : (
+                  <FileCode size={22} className="text-[#9C81AF]" />
+                )}
               </div>
               <div className="flex-1">
                 <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3] group-hover:text-[#9C81AF] transition-colors">
