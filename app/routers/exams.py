@@ -407,7 +407,36 @@ async def get_teacher_gantt(
 
         exam = et.exam
         if exam and exam.time_slot:
-            # 固定监考只显示该教师被分配的教室及对应班级
+            # 构建按教室分组的详细信息（监考教室 + 班级 + 人数）
+            room_details = []
+            if et.role.value == "fixed" and et.classroom_id:
+                # 固定监考：只显示被分配的教室
+                for ec in exam.classroom_assignments:
+                    if ec.classroom_id == et.classroom_id:
+                        room_class_names = []
+                        for ca in ec.class_assignments:
+                            if ca.class_ and ca.class_.name and ca.class_.name not in room_class_names:
+                                room_class_names.append(ca.class_.name)
+                        room_details.append({
+                            "classroom": ec.classroom.name if ec.classroom else "",
+                            "class_names": room_class_names[:4],
+                            "student_count": ec.total_students or 0,
+                        })
+                        break
+            else:
+                # 流动监考：显示所有教室
+                for ec in exam.classroom_assignments:
+                    room_class_names = []
+                    for ca in ec.class_assignments:
+                        if ca.class_ and ca.class_.name and ca.class_.name not in room_class_names:
+                            room_class_names.append(ca.class_.name)
+                    room_details.append({
+                        "classroom": ec.classroom.name if ec.classroom else "",
+                        "class_names": room_class_names[:4],
+                        "student_count": ec.total_students or 0,
+                    })
+
+            # 保留原有字段以兼容前端（后续可移除）
             classrooms = []
             class_names = []
             assigned_classroom = None
@@ -422,7 +451,6 @@ async def get_teacher_gantt(
                                 class_names.append(ca.class_.name)
                         break
             else:
-                # 流动监考：收集所有教室信息
                 for ec in exam.classroom_assignments:
                     if ec.classroom:
                         classrooms.append(ec.classroom.name)
@@ -430,15 +458,7 @@ async def get_teacher_gantt(
                         if ca.class_ and ca.class_.name and ca.class_.name not in class_names:
                             class_names.append(ca.class_.name)
 
-            # 计算该教师在此考试中的学生人数
-            if et.role.value == "fixed" and et.classroom_id:
-                student_count = 0
-                for ec in exam.classroom_assignments:
-                    if ec.classroom_id == et.classroom_id:
-                        student_count = ec.total_students or 0
-                        break
-            else:
-                student_count = sum(ec.total_students or 0 for ec in exam.classroom_assignments)
+            student_count = sum(ec.total_students or 0 for ec in exam.classroom_assignments)
 
             teacher_events[tid]["events"].append({
                 "exam_id": exam.id,
@@ -453,6 +473,7 @@ async def get_teacher_gantt(
                 "assigned_classroom": assigned_classroom,
                 "class_names": class_names[:4],
                 "student_count": student_count,
+                "room_details": room_details,
             })
 
     return {

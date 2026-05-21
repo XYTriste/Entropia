@@ -64,6 +64,11 @@ export interface TeacherGanttItem {
     assigned_classroom?: string;
     class_names: string[];
     student_count: number;
+    room_details: Array<{
+      classroom: string;
+      class_names: string[];
+      student_count: number;
+    }>;
   }>;
 }
 

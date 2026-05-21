@@ -1155,17 +1155,21 @@ function TeacherPanel({
                           <span>{exam.time_range}</span>
                           <span>{exam.exam_label || ''}</span>
                         </div>
-                        {exam.role === 'fixed' ? (
-                          // 固定监考：显示班级信息
-                          <div className="mt-1.5 px-2 py-1 bg-[#EBF4FF] dark:bg-[#1E3A5F] text-[#1D4ED8] dark:text-[#93C5FD] rounded-lg">
-                            班级: {exam.class_names?.join(', ')}
-                          </div>
-                        ) : (
-                          // 流动监考：显示巡场教室
-                          <div className="mt-1.5 px-2 py-1 bg-[#FEF9E7] dark:bg-[#3D3020] text-[#B45309] dark:text-[#FCD34D] rounded-lg">
-                            巡场: {exam.classrooms?.join('、')}
-                          </div>
-                        )}
+                        {/* 监考教室 + 班级 + 人数 */}
+                        <div className="space-y-1">
+                          {exam.room_details?.map((room, idx) => (
+                            <div
+                              key={idx}
+                              className={`text-xs px-2 py-1 rounded-lg ${
+                                exam.role === 'fixed'
+                                  ? 'bg-[#EBF4FF] dark:bg-[#1E3A5F] text-[#1D4ED8] dark:text-[#93C5FD]'
+                                  : 'bg-[#FEF9E7] dark:bg-[#3D3020] text-[#B45309] dark:text-[#FCD34D]'
+                              }`}
+                            >
+                              {room.classroom} {room.class_names?.join('、')}（{room.student_count}人）
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
