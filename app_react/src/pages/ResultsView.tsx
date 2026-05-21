@@ -953,12 +953,32 @@ function OverviewCellModal({ date, slot, matrixData, onClose }: { date: string; 
 
 /* ==================== Sub Panels ==================== */
 
-// 周排序映射，确保周一到周五按顺序
-const DAY_ORDER: Record<string, number> = { '周一': 1, '周二': 2, '周三': 3, '周四': 4, '周五': 5 };
+// 辅助函数：格式化日期列标题
+function formatDateColumn(dateKey: string, matrix: any): string {
+  // 尝试从矩阵数据中获取 day_name
+  const slots = ['T1', 'T2', 'T3', 'T4'];
+  for (const slot of slots) {
+    const exams = matrix[dateKey]?.[slot];
+    if (exams && exams.length > 0 && exams[0].day_name) {
+      const dateLabel = exams[0].date_label;
+      return dateLabel ? `${dateLabel} ${exams[0].day_name}` : `${dateKey} ${exams[0].day_name}`;
+    }
+  }
+  // 回退：尝试解析 ISO 日期
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    const d = new Date(dateKey);
+    const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${month}-${day} ${dayNames[d.getDay()]}`;
+  }
+  return dateKey;
+}
 
 function OverviewPanel({ searchQuery: _searchQuery, matrixData, onCellClick }: { searchQuery: string; matrixData?: any; onCellClick?: (date: string, slot: string) => void }) {
   const matrix = matrixData?.matrix || {};
-  const dates = Object.keys(matrix).sort((a, b) => (DAY_ORDER[a] || 99) - (DAY_ORDER[b] || 99));
+  // ISO 日期字符串可直接字典序排序
+  const dates = Object.keys(matrix).sort();
   const slots = ['T1', 'T2', 'T3', 'T4'];
 
   // 计算统计数据
@@ -997,7 +1017,7 @@ function OverviewPanel({ searchQuery: _searchQuery, matrixData, onCellClick }: {
               <th className="px-4 py-3 text-left text-xs font-medium text-[#8C959F] dark:text-[#8B949E]">时段 \ 日期</th>
                 {dates.slice(0, 10).map((date) => (
                   <th key={date} className="px-3 py-3 text-center text-xs font-medium text-[#8C959F] dark:text-[#8B949E] whitespace-nowrap">
-                    {date}
+                    {formatDateColumn(date, matrix)}
                   </th>
                 ))}
             </tr>
@@ -1141,7 +1161,7 @@ function TeacherPanel({
                     {teacherExams.map((exam, i) => (
                       <div key={i} className="text-xs bg-[#F9FAFB] dark:bg-[#21262D] rounded-xl p-3 space-y-1.5">
                         <div className="flex justify-between">
-                          <span className="text-[#1F2328] dark:text-[#E6EDF3] font-medium">{exam.day_name} {exam.time_range}</span>
+                          <span className="text-[#1F2328] dark:text-[#E6EDF3] font-medium">{exam.date_label ? `${exam.date_label} ${exam.day_name}` : exam.day_name} {exam.time_range}</span>
                           <span className={`px-1.5 py-0.5 rounded text-[10px] ${
                             exam.role === 'fixed'
                               ? 'bg-[#D4A373]/10 text-[#D4A373]'
@@ -1308,9 +1328,11 @@ function ClassroomPanel({
         {filtered.map((roomName) => {
           const roomData = matrix[roomName] || {};
           const roomExams = Object.values(roomData).flat().sort((a, b) => {
-            // 按日期排序（周一在前），再按时间排序（早的在前）
-            if (a.day_of_week !== b.day_of_week) {
-              return a.day_of_week - b.day_of_week;
+            // 按考试日期排序，再按时间排序（早的在前）
+            const dateA = a.exam_date || `week${a.day_of_week}`;
+            const dateB = b.exam_date || `week${b.day_of_week}`;
+            if (dateA !== dateB) {
+              return dateA.localeCompare(dateB);
             }
             return a.time_range.localeCompare(b.time_range);
           });
@@ -1352,7 +1374,7 @@ function ClassroomPanel({
                         <div className="text-[#1F2328] dark:text-[#E6EDF3] font-medium">{exam.course_name}</div>
                         <div className="flex items-center justify-between gap-2">
                           <span className="px-2 py-1 rounded bg-[#10B981]/10 text-[#10B981] font-medium text-[11px]">
-                            星期{exam.day_name.replace('周', '')} {exam.time_range}
+                            {exam.date_label ? `${exam.date_label} 星期${exam.day_name.replace('周', '')}` : `星期${exam.day_name.replace('周', '')}`} {exam.time_range}
                           </span>
                           <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#D4A373]/10 text-[#D4A373]">
                             {exam.exam_label || '-'}
@@ -1397,7 +1419,8 @@ function PatrolPanel({ activeVersionId }: { activeVersionId: number | null }) {
 
   const matrix = data?.matrix || {};
   const groupColors = data?.group_colors || {};
-  const days = ['周一', '周二', '周三', '周四', '周五'];
+  // 动态获取日期键（ISO 日期字符串），并排序
+  const days = Object.keys(matrix).sort();
   const slots = ['T1', 'T2', 'T3', 'T4'];
 
   // 计算总人次
@@ -1424,7 +1447,9 @@ function PatrolPanel({ activeVersionId }: { activeVersionId: number | null }) {
             <tr className="bg-[#F9FAFB] dark:bg-[#21262D]/80">
               <th className="px-4 py-3 text-left text-xs font-medium text-[#8C959F] dark:text-[#8B949E]">时段</th>
               {days.map((d) => (
-                <th key={d} className="px-3 py-3 text-center text-xs font-medium text-[#8C959F] dark:text-[#8B949E]">{d}</th>
+                <th key={d} className="px-3 py-3 text-center text-xs font-medium text-[#8C959F] dark:text-[#8B949E]">
+                  {formatDateColumn(d, matrix)}
+                </th>
               ))}
             </tr>
           </thead>
@@ -1546,7 +1571,7 @@ function ClassPanel({
                   {previewExams.map((exam, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs bg-[#F9FAFB] dark:bg-[#21262D] rounded-lg p-2">
                       <Clock size={12} className="text-[#8C959F] dark:text-[#8B949E] flex-shrink-0" />
-                      <span className="text-[#8C959F] dark:text-[#8B949E]">{exam.day_name} {exam.time_range}</span>
+                      <span className="text-[#8C959F] dark:text-[#8B949E]">{exam.date_label ? `${exam.date_label} ${exam.day_name}` : exam.day_name} {exam.time_range}</span>
                       <span className="text-[#1F2328] dark:text-[#E6EDF3] font-medium truncate">{exam.course_name}</span>
                       <span className="text-[#C8CDD3] dark:text-[#484F58]">{exam.classroom_name}</span>
                     </div>
@@ -1571,7 +1596,7 @@ function ClassPanel({
                         <div className="text-[#1F2328] dark:text-[#E6EDF3] font-medium">{exam.course_name}</div>
                         <div className="flex justify-between items-center">
                           <span className="text-[#8C959F] dark:text-[#8B949E]">
-                            {exam.day_name} {exam.time_range}
+                            {exam.date_label ? `${exam.date_label} ${exam.day_name}` : exam.day_name} {exam.time_range}
                           </span>
                           <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#D4A373]/10 text-[#D4A373]">
                             {exam.exam_label || '-'}
@@ -1731,7 +1756,7 @@ function CourseExamDetail({ courseId }: { courseId: number }) {
               {/* 标题行 - 加大显示 */}
               <div className="flex items-center gap-3 mb-2 text-sm">
                 <Clock size={14} className="text-[#D4A373]" />
-                <span className="font-semibold text-[#1F2328] dark:text-[#E6EDF3]">{exam.day_name}</span>
+                <span className="font-semibold text-[#1F2328] dark:text-[#E6EDF3]">{exam.date_label ? `${exam.date_label} ${exam.day_name}` : exam.day_name}</span>
                 <span className="text-[#8C959F] dark:text-[#8B949E]">{exam.time_range}</span>
                 <span className="px-2 py-0.5 rounded bg-[#D4A373]/10 text-[#D4A373] font-medium">
                   {exam.exam_label || '-'}

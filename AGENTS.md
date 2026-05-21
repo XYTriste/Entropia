@@ -231,7 +231,7 @@ make clean       # 停止并清理容器和卷
 | `courses` | 课程（含公共课/专业课、是否 AB 卷、教务处指定时段） |
 | `classes` | 班级（含专业、年级、学生人数） |
 | `students` | 学生 |
-| `time_slots` | 考试时段（周一到周五，每天 4 场） |
+| `time_slots` | 考试时段（周一到周五，每天 4 场；支持 `exam_date` 多周排考） |
 | `course_classes` | 课程-班级关联（多对多） |
 | `exams` | 考试安排（时段、AB 卷标签、状态） |
 | `exam_classrooms` | 考试-教室关联（支持一个考试多个教室） |
@@ -252,7 +252,7 @@ make clean       # 停止并清理容器和卷
 1. **数据加载**：从数据库读取教师、教室、课程、班级、学生、时段。
 2. **AB 卷分组**：`ab_split.py` 使用动态规划最小化两组人数差，班级不可拆分。
 3. **公共课排考**：按教务处指定的 `dept_assigned_date` + `dept_assigned_time_slot_id` 确定性分配。
-4. **专业课排考**：贪心 + 约束传播填充空闲时段。
+4. **专业课排考**：贪心 + 约束传播填充空闲时段（支持多周时段）。
 5. **教室分配**：`classroom_alloc.py` 根据人数智能匹配教室容量，支持班级拆分到多个教室（极端情况支持拆到 3 个教室）。
 6. **教师分配**：`teacher_alloc.py` 每考场分配 2 名固定监考（优先专任教师），每时段分配 3 名流动监考。
 7. **结果持久化**：生成快照 JSON 保存到 `schedule_versions` 表，需调用 `/apply/{id}` 才写入 `exams` 等表。
@@ -372,7 +372,7 @@ Makefile 中已封装：`make lint` 和 `make format`。
 2. **前端中文乱码**：部分接口返回中文偶尔出现乱码（控制台正常），可能与编码配置有关。
 3. **排考同步执行**：当前排考引擎在请求线程中同步运行，大数量级时应改为后台 Celery 任务（P3 待优化）。
 4. **排考结果必须先应用**：自动排考生成的是 `schedule_versions` 草稿，必须调用 **"应用此排考结果"**（`/api/scheduler/apply/{id}`）才会将数据写入 `exams` / `exam_classrooms` / `exam_teachers` / `patrol_teachers` 表。否则排考结果页面和导出 Excel 将为空。
-5. **时段数据是前置条件**：`time_slots` 表必须有 20 条标准数据（周一到周五每天 4 场）。如果时段被误删，可通过前端 "导入导出" 页面重置，或调用 `POST /api/import-export/init-time-slots`。
+5. **时段数据是前置条件**：`time_slots` 表必须有 20 条模板数据（`exam_date IS NULL`，周一到周五每天 4 场）。排考前需根据起始日期生成具体考试时段（调用 `POST /api/time-slots/generate`）。如果模板被误删，可通过前端 "导入导出" 页面重置，或调用 `POST /api/import-export/init-time-slots`。
 6. **CONTEXT.md 与 PROGRESS.md**：这两个文件是前一轮会话留下的上下文备忘录，记录了特定 bug 的修复过程和数据库实际数据。修改排考引擎前应优先阅读 `CONTEXT.md`。
 
 ---

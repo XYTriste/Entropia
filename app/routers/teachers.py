@@ -272,6 +272,7 @@ async def get_teacher_exams(
         if not exam:
             continue
         slot = exam.time_slot
+        date_label = slot.exam_date.strftime("%m-%d") if slot and slot.exam_date else None
         exam_info = {
             "exam_id": exam.id,
             "course_id": exam.course_id,
@@ -284,6 +285,8 @@ async def get_teacher_exams(
             "day_name": f"周{'一二三四五'[(slot.day_of_week or 1) - 1]}" if slot else "",
             "slot_code": slot.slot_code if slot else "",
             "time_range": f"{slot.start_time}-{slot.end_time}" if slot else "",
+            "exam_date": slot.exam_date.isoformat() if slot and slot.exam_date else None,
+            "date_label": date_label,
             "classrooms": [
                 {
                     "classroom_id": ec.classroom_id,

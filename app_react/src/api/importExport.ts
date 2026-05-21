@@ -72,6 +72,35 @@ export async function importExcelData(
   return data.data;
 }
 
+/**
+ * 全量数据级联导入（单文件多 Sheet）
+ */
+export async function importAllInOne(file: File): Promise<{
+  success: boolean;
+  overall_summary: string;
+  sheets: Array<{
+    sheet_name: string;
+    entity: string;
+    label: string;
+    success: boolean;
+    success_count: number;
+    error_count: number;
+    errors: string[];
+    warnings: string[];
+  }>;
+}> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await apiClient.post<ApiResponse<any>>(
+    '/import-export/import-excel-all',
+    formData,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }
+  );
+  return data.data;
+}
+
 // ============================================================
 // 数据导出
 // ============================================================

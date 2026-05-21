@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from ortools.sat.python import cp_model
@@ -131,6 +132,8 @@ class SchedulingEngine:
         teachers: list[Teacher],
         time_slots: list[TimeSlot],
         existing_schedule: dict | None = None,
+        exam_start_date: date | None = None,
+        exam_weeks: int = 1,
     ) -> SchedulingResult:
         """
         执行排考。
@@ -139,8 +142,10 @@ class SchedulingEngine:
             courses: 课程列表（含公共课和专业课）
             classrooms: 教室列表
             teachers: 教师列表
-            time_slots: 时段列表（共20个）
+            time_slots: 时段列表（支持多周）
             existing_schedule: 已有排考计划（用于增量排考），可选
+            exam_start_date: 考试起始日期
+            exam_weeks: 考试周数
 
         返回:
             SchedulingResult: 排考结果

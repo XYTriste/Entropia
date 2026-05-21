@@ -22,6 +22,7 @@ export default function TransferView() {
   const [slotB, setSlotB] = useState<number | ''>('');
   const [reason, setReason] = useState('');
   const [validationResult, setValidationResult] = useState<string | null>(null);
+  const [showSameSlotDialog, setShowSameSlotDialog] = useState(false);
   const [operations, setOperations] = useState<Array<{
     id: string;
     type: string;
@@ -72,18 +73,24 @@ export default function TransferView() {
     const schedules: Array<{
       examId: number;
       date: string;
+      dateLabel?: string;
+      examDate?: string;
       timeSlot: string;
       courseName: string;
       classroomName: string;
       examPaper: string;
       isPatrol: boolean;  // 是否流动监考
     }> = [];
-    
+
     // 固定监考 - 使用 assigned_classroom（单教室）
     teacherAExamsData.fixed_exams?.forEach((exam: any) => {
+      const dayName = exam.day_name || exam.date;
+      const dateLabel = exam.date_label;
       schedules.push({
         examId: exam.exam_id,
-        date: exam.day_name || exam.date,
+        date: dateLabel ? `${dateLabel} ${dayName}` : dayName,
+        dateLabel,
+        examDate: exam.exam_date,
         timeSlot: exam.time_range || exam.time_slot,
         courseName: exam.course_name,
         classroomName: exam.assigned_classroom || '-',
@@ -91,16 +98,20 @@ export default function TransferView() {
         isPatrol: false,
       });
     });
-    
+
     // 流动监考 - 使用 classrooms 数组
     teacherAExamsData.patrol_exams?.forEach((exam: any) => {
+      const dayName = exam.day_name || exam.date;
+      const dateLabel = exam.date_label;
       // 流动监考显示所有教室
       const classrooms = exam.classrooms || [];
       if (classrooms.length > 0) {
         classrooms.forEach((room: any) => {
           schedules.push({
             examId: exam.exam_id,
-            date: exam.day_name || exam.date,
+            date: dateLabel ? `${dateLabel} ${dayName}` : dayName,
+            dateLabel,
+            examDate: exam.exam_date,
             timeSlot: exam.time_range || exam.time_slot,
             courseName: exam.course_name,
             classroomName: room.classroom_name || '-',
@@ -111,7 +122,9 @@ export default function TransferView() {
       } else {
         schedules.push({
           examId: exam.exam_id,
-          date: exam.day_name || exam.date,
+          date: dateLabel ? `${dateLabel} ${dayName}` : dayName,
+          dateLabel,
+          examDate: exam.exam_date,
           timeSlot: exam.time_range || exam.time_slot,
           courseName: exam.course_name,
           classroomName: '-',
@@ -120,7 +133,7 @@ export default function TransferView() {
         });
       }
     });
-    
+
     return schedules;
   }, [teacherAExamsData]);
 
@@ -129,18 +142,24 @@ export default function TransferView() {
     const schedules: Array<{
       examId: number;
       date: string;
+      dateLabel?: string;
+      examDate?: string;
       timeSlot: string;
       courseName: string;
       classroomName: string;
       examPaper: string;
       isPatrol: boolean;
     }> = [];
-    
+
     // 固定监考 - 使用 assigned_classroom（单教室）
     teacherBExamsData.fixed_exams?.forEach((exam: any) => {
+      const dayName = exam.day_name || exam.date;
+      const dateLabel = exam.date_label;
       schedules.push({
         examId: exam.exam_id,
-        date: exam.day_name || exam.date,
+        date: dateLabel ? `${dateLabel} ${dayName}` : dayName,
+        dateLabel,
+        examDate: exam.exam_date,
         timeSlot: exam.time_range || exam.time_slot,
         courseName: exam.course_name,
         classroomName: exam.assigned_classroom || '-',
@@ -148,15 +167,19 @@ export default function TransferView() {
         isPatrol: false,
       });
     });
-    
+
     // 流动监考 - 使用 classrooms 数组
     teacherBExamsData.patrol_exams?.forEach((exam: any) => {
+      const dayName = exam.day_name || exam.date;
+      const dateLabel = exam.date_label;
       const classrooms = exam.classrooms || [];
       if (classrooms.length > 0) {
         classrooms.forEach((room: any) => {
           schedules.push({
             examId: exam.exam_id,
-            date: exam.day_name || exam.date,
+            date: dateLabel ? `${dateLabel} ${dayName}` : dayName,
+            dateLabel,
+            examDate: exam.exam_date,
             timeSlot: exam.time_range || exam.time_slot,
             courseName: exam.course_name,
             classroomName: room.classroom_name || '-',
@@ -167,7 +190,9 @@ export default function TransferView() {
       } else {
         schedules.push({
           examId: exam.exam_id,
-          date: exam.day_name || exam.date,
+          date: dateLabel ? `${dateLabel} ${dayName}` : dayName,
+          dateLabel,
+          examDate: exam.exam_date,
           timeSlot: exam.time_range || exam.time_slot,
           courseName: exam.course_name,
           classroomName: '-',
@@ -176,7 +201,7 @@ export default function TransferView() {
         });
       }
     });
-    
+
     return schedules;
   }, [teacherBExamsData]);
 
@@ -218,6 +243,13 @@ export default function TransferView() {
     if (transferType === 'swap') {
       if (!slotA || !slotB) {
         setValidationResult('请选择双方需要交换的场次');
+        return;
+      }
+      // 检测是否同一日期同一时段
+      const examA = teacherAExams.find(e => e.examId === slotA);
+      const examB = teacherBExams.find(e => e.examId === slotB);
+      if (examA && examB && examA.examDate && examB.examDate && examA.examDate === examB.examDate && examA.timeSlot === examB.timeSlot) {
+        setShowSameSlotDialog(true);
         return;
       }
       try {
@@ -639,6 +671,84 @@ export default function TransferView() {
           </div>
         </div>
       </div>
+
+      {/* 同一时段冲突提示弹窗 */}
+      {showSameSlotDialog && (() => {
+        const examA = teacherAExams.find(e => e.examId === slotA);
+        const examB = teacherBExams.find(e => e.examId === slotB);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSameSlotDialog(false)} />
+            <div className="relative glass-card rounded-3xl p-6 w-[480px] max-w-full animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-[#C27A63]/10 flex items-center justify-center">
+                  <AlertCircle size={20} className="text-[#C27A63]" />
+                </div>
+                <h3 className="font-display text-lg font-medium text-[#1F2328] dark:text-[#E6EDF3]">
+                  同一时段冲突
+                </h3>
+              </div>
+              <p className="text-sm text-[#8C959F] dark:text-[#8B949E] mb-4">
+                两位老师在同一日期同一时段已有监考安排，只能交换教室（考试科目和教室绑定）。
+              </p>
+              <div className="space-y-3 mb-4">
+                <div className="p-3 bg-[#F9FAFB] dark:bg-[#21262D] rounded-xl">
+                  <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3] mb-1">
+                    {getTeacherName(teacherA as number)}
+                  </div>
+                  <div className="text-sm">
+                    <span className="font-bold text-[#C27A63]">{examA?.date} {examA?.timeSlot}</span>
+                    <span className="text-[#8C959F] dark:text-[#8B949E] ml-2">{examA?.courseName} — {examA?.classroomName}</span>
+                  </div>
+                </div>
+                <div className="p-3 bg-[#F9FAFB] dark:bg-[#21262D] rounded-xl">
+                  <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3] mb-1">
+                    {getTeacherName(teacherB as number)}
+                  </div>
+                  <div className="text-sm">
+                    <span className="font-bold text-[#C27A63]">{examB?.date} {examB?.timeSlot}</span>
+                    <span className="text-[#8C959F] dark:text-[#8B949E] ml-2">{examB?.courseName} — {examB?.classroomName}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="p-3 bg-[#C27A63]/10 border border-[#C27A63]/20 rounded-xl text-sm text-[#C27A63] mb-5">
+                <strong>提示：</strong>交换教室后，两位老师监考的科目也会随之交换（考试科目与教室绑定）。
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowSameSlotDialog(false)}
+                  className="flex-1 btn-secondary text-sm"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={async () => {
+                    setShowSameSlotDialog(false);
+                    try {
+                      await swapExams({
+                        teacher_a_id: teacherA as number,
+                        teacher_b_id: teacherB as number,
+                        exam_a_id: slotA as number,
+                        exam_b_id: slotB as number,
+                        reason: reason || '同一时段交换教室',
+                      });
+                      setValidationResult('交换成功！');
+                      setSlotA('');
+                      setSlotB('');
+                      refreshData();
+                    } catch (error: any) {
+                      setValidationResult(`交换失败: ${error.message || '未知错误'}`);
+                    }
+                  }}
+                  className="flex-1 btn-amber text-sm"
+                >
+                  确认交换教室
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

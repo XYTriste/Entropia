@@ -73,6 +73,8 @@ export interface TimeSlot {
   startTime: string;
   endTime: string;
   dayOfWeek: number;
+  examDate?: string;
+  dateLabel?: string;
 }
 
 export interface ExamSchedule {
@@ -178,4 +180,8 @@ export interface SchedulerConfig {
   enable_day_continuity_constraint: boolean;
   // 最大监考天数上限
   max_days: number;
+  // 考试起始日期
+  examStartDate?: string;
+  // 考试周数
+  examWeeks?: number;
 }

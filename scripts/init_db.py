@@ -121,6 +121,7 @@ def create_tables_sync(sync_engine) -> None:
                     start_time VARCHAR(10) NOT NULL,
                     end_time VARCHAR(10) NOT NULL,
                     is_continuous BOOLEAN DEFAULT TRUE,
+                    exam_date DATE,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )

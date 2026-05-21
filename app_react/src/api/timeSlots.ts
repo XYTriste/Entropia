@@ -66,3 +66,14 @@ export async function bulkCreateTimeSlots(payloads: TimeSlotCreate[]): Promise<T
   const { data } = await apiClient.post<ApiResponse<TimeSlot[]>>('/time-slots/bulk', payloads);
   return data.data;
 }
+
+/**
+ * 根据起始日期和周数生成考试时段
+ */
+export async function generateTimeSlots(startDate: string, weeks: number): Promise<TimeSlot[]> {
+  const { data } = await apiClient.post<ApiResponse<{ total: number; items: TimeSlot[] }>>('/time-slots/generate', {
+    start_date: startDate,
+    weeks,
+  });
+  return data.data.items;
+}

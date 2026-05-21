@@ -18,6 +18,7 @@ import {
   downloadTemplate,
   downloadAllInOneTemplate,
   importExcelData,
+  importAllInOne,
   exportExcel,
   exportJson,
   exportSql,
@@ -25,7 +26,8 @@ import {
   type ImportEntity,
 } from '@/api/importExport';
 
-const importTypes: Array<{ key: ImportEntity; label: string }> = [
+const importTypes: Array<{ key: ImportEntity | 'all-in-one'; label: string }> = [
+  { key: 'all-in-one', label: '全量级联导入' },
   { key: 'teachers', label: '教师' },
   { key: 'classrooms', label: '教室' },
   { key: 'courses', label: '课程' },
@@ -85,12 +87,32 @@ export default function ImportExportView() {
     if (!uploadedFile) return;
     setImporting(true);
     try {
-      const result = await importExcelData(importType, uploadedFile);
-      setImportResult(result);
-      if (result.error_count === 0) {
-        toast.success(`成功导入 ${result.success_count} 条数据`);
+      if (importType === 'all-in-one') {
+        const result = await importAllInOne(uploadedFile);
+        const totalSuccess = result.sheets.reduce((sum, s) => sum + s.success_count, 0);
+        const totalErrors = result.sheets.reduce((sum, s) => sum + s.error_count, 0);
+        const allErrors = result.sheets.flatMap((s) =>
+          s.errors.map((e) => `[${s.label}] ${e}`)
+        );
+        setImportResult({
+          success_count: totalSuccess,
+          error_count: totalErrors,
+          errors: allErrors,
+          warnings: result.sheets.flatMap((s) => s.warnings),
+        });
+        if (totalErrors === 0) {
+          toast.success(`全量导入成功：共 ${totalSuccess} 条数据`);
+        } else {
+          toast.warning(`导入完成：成功 ${totalSuccess} 条，失败 ${totalErrors} 条`);
+        }
       } else {
-        toast.warning(`导入完成：成功 ${result.success_count} 条，失败 ${result.error_count} 条`);
+        const result = await importExcelData(importType, uploadedFile);
+        setImportResult(result);
+        if (result.error_count === 0) {
+          toast.success(`成功导入 ${result.success_count} 条数据`);
+        } else {
+          toast.warning(`导入完成：成功 ${result.success_count} 条，失败 ${result.error_count} 条`);
+        }
       }
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || '导入失败，请重试');

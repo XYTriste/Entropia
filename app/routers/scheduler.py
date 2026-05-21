@@ -12,8 +12,8 @@
 
 import json
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Any
+from datetime import date, datetime, timezone, timedelta
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -57,6 +57,8 @@ class ScheduleRunRequest(BaseModel):
     enable_max_days_constraint: bool | None = Field(None, description="是否启用最大监考天数约束 (None=使用数据库配置)")
     enable_day_continuity_constraint: bool | None = Field(None, description="是否启用日期连续性约束 (None=使用数据库配置)")
     max_days: int | None = Field(None, ge=1, le=5, description="最大监考天数上限 (None=使用数据库配置或引擎自动计算)")
+    exam_start_date: Optional[date] = Field(None, description="考试起始日期 (None=使用数据库配置)")
+    exam_weeks: Optional[int] = Field(None, ge=1, le=4, description="考试周数 (None=使用数据库配置)")
 
 
 # ============================================================
@@ -132,6 +134,36 @@ async def run_scheduler(
             _scheduler_jobs[job_id]["error"] = "没有可用的时段"
             return {"code": 0, "message": "success", "data": _scheduler_jobs[job_id]}
 
+        # 校验/确定考试起始日期和周数
+        exam_start_date = req.exam_start_date
+        exam_weeks = req.exam_weeks
+        if exam_start_date is None:
+            exam_start_date = config.exam_start_date if config else None
+        if exam_weeks is None:
+            exam_weeks = config.exam_weeks if config else 1
+
+        # 过滤出带 exam_date 的生成记录（排除模板记录）
+        generated_slots = [ts for ts in time_slots if ts.exam_date is not None]
+        expected_count = exam_weeks * 20
+
+        if len(generated_slots) != expected_count:
+            _scheduler_jobs[job_id]["status"] = "failed"
+            _scheduler_jobs[job_id]["error"] = (
+                f"考试时段未正确生成。当前有 {len(generated_slots)} 个生成时段，"
+                f"但期望 {expected_count} 个（{exam_weeks} 周）。"
+                f"请先调用 /time-slots/generate 生成时段。"
+            )
+            return {"code": 0, "message": "success", "data": _scheduler_jobs[job_id]}
+
+        # 构建模板 -> 生成时段的映射（用于公共课映射）
+        template_slots = {ts.id: ts for ts in time_slots if ts.exam_date is None}
+        # 按 (day_of_week, slot_code) 分组生成记录，取 exam_date 最小者（第一周）
+        generated_slot_map: dict[tuple[int, str], TimeSlot] = {}
+        for ts in sorted(generated_slots, key=lambda x: x.exam_date):
+            key = (ts.day_of_week, ts.slot_code)
+            if key not in generated_slot_map:
+                generated_slot_map[key] = ts
+
         if req.strategy == "public_only":
             courses = [c for c in courses if c.course_type.value == "public"]
         elif req.strategy == "major_only":
@@ -181,13 +213,28 @@ async def run_scheduler(
 
         engine_courses = []
         for c in courses:
+            dept_slot_id = c.dept_assigned_time_slot_id or 0
+            # 如果公共课指定了模板时段，映射到第一周的对应生成时段
+            if dept_slot_id and dept_slot_id in template_slots:
+                tmpl = template_slots[dept_slot_id]
+                mapped = generated_slot_map.get((tmpl.day_of_week, tmpl.slot_code))
+                if mapped:
+                    dept_slot_id = mapped.id
+                else:
+                    _scheduler_jobs[job_id]["status"] = "failed"
+                    _scheduler_jobs[job_id]["error"] = (
+                        f"公共课 '{c.name}' 指定的时段 ({tmpl.day_of_week} {tmpl.slot_code}) "
+                        f"在生成的考试时段中不存在。请检查起始日期和周数设置。"
+                    )
+                    return {"code": 0, "message": "success", "data": _scheduler_jobs[job_id]}
+
             ec = EngineCourse(
                 id=c.id,
                 name=c.name,
                 course_type=c.course_type.value,
                 needs_ab=c.needs_ab,
                 dept_assigned_date=c.dept_assigned_date,
-                dept_assigned_time_slot_id=c.dept_assigned_time_slot_id or 0,
+                dept_assigned_time_slot_id=dept_slot_id,
             )
             for cc in c.class_links:
                 if cc.class_:
@@ -225,8 +272,9 @@ async def run_scheduler(
                 id=ts.id, day_of_week=ts.day_of_week,
                 slot_code=ts.slot_code, start_time=ts.start_time,
                 end_time=ts.end_time, is_continuous=ts.is_continuous,
+                exam_date=ts.exam_date.isoformat() if ts.exam_date else None,
             )
-            for ts in time_slots
+            for ts in generated_slots
         ]
 
         schedule_result = engine.run(
@@ -234,6 +282,8 @@ async def run_scheduler(
             classrooms=engine_classrooms,
             teachers=engine_teachers,
             time_slots=engine_time_slots,
+            exam_start_date=exam_start_date,
+            exam_weeks=exam_weeks,
         )
 
         version_no = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -245,6 +295,18 @@ async def run_scheduler(
                     "course_id": exam.course_id,
                     "course_name": exam.course.name if exam.course else "",
                     "time_slot_id": exam.time_slot_id,
+                    "exam_date": next(
+                        (ts.exam_date.isoformat() for ts in generated_slots if ts.id == exam.time_slot_id),
+                        None
+                    ),
+                    "day_of_week": next(
+                        (ts.day_of_week for ts in generated_slots if ts.id == exam.time_slot_id),
+                        None
+                    ),
+                    "slot_code": next(
+                        (ts.slot_code for ts in generated_slots if ts.id == exam.time_slot_id),
+                        None
+                    ),
                     "exam_label": exam.exam_label,
                     "classrooms": [
                         {
@@ -697,6 +759,8 @@ class ScheduleConfigUpdate(BaseModel):
     enable_max_days_constraint: bool = Field(True, description="是否启用最大监考天数约束")
     enable_day_continuity_constraint: bool = Field(True, description="是否启用日期连续性约束")
     max_days: int = Field(3, ge=1, le=5, description="最大监考天数上限")
+    exam_start_date: Optional[date] = Field(None, description="考试起始日期")
+    exam_weeks: int = Field(1, ge=1, le=4, description="考试周数")
 
 
 @router.get("/config", response_model=dict)
@@ -724,6 +788,8 @@ async def get_schedule_config(
                 "enable_max_days_constraint": True,
                 "enable_day_continuity_constraint": True,
                 "max_days": 3,
+                "exam_start_date": None,
+                "exam_weeks": 1,
             },
         }
     import json
@@ -738,6 +804,8 @@ async def get_schedule_config(
             "enable_max_days_constraint": config.enable_max_days_constraint,
             "enable_day_continuity_constraint": config.enable_day_continuity_constraint,
             "max_days": config.max_days,
+            "exam_start_date": config.exam_start_date.isoformat() if config.exam_start_date else None,
+            "exam_weeks": config.exam_weeks,
         },
     }
 
@@ -762,6 +830,8 @@ async def update_schedule_config(
     config.enable_max_days_constraint = req.enable_max_days_constraint
     config.enable_day_continuity_constraint = req.enable_day_continuity_constraint
     config.max_days = req.max_days
+    config.exam_start_date = req.exam_start_date
+    config.exam_weeks = req.exam_weeks
 
     await db.commit()
     await db.refresh(config)
@@ -777,38 +847,9 @@ async def update_schedule_config(
             "enable_max_days_constraint": config.enable_max_days_constraint,
             "enable_day_continuity_constraint": config.enable_day_continuity_constraint,
             "max_days": config.max_days,
+            "exam_start_date": config.exam_start_date.isoformat() if config.exam_start_date else None,
+            "exam_weeks": config.exam_weeks,
         },
     }
 
 
-# ============================================================
-# 排考版本列表
-# ============================================================
-
-
-@router.get("/versions", response_model=dict)
-async def list_schedule_versions(
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """获取排考版本列表"""
-    result = await db.execute(
-        select(ScheduleVersion)
-        .order_by(ScheduleVersion.created_at.desc())
-    )
-    versions = result.scalars().all()
-
-    items = []
-    for v in versions:
-        items.append({
-            "id": v.id,
-            "version_no": v.version_no,
-            "status": v.status.value,
-            "description": v.description,
-            "created_at": v.created_at.isoformat() if v.created_at else None,
-        })
-
-    return {
-        "code": 0,
-        "message": "success",
-        "data": {"items": items},
-    }

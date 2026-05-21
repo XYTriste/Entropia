@@ -14,6 +14,8 @@ export interface SchedulerRunRequest {
   max_solve_time?: number;
   max_proctor_days?: number;
   no_cross_day?: boolean;
+  exam_start_date?: string;
+  exam_weeks?: number;
 }
 
 export interface SchedulerRunResponse {

@@ -23,6 +23,8 @@ export interface AdjustmentExam {
     day_name: string;    // "周一" | "周二" | ...
     slot_code: string;  // "T1" | "T2" | "T3" | "T4"
     time_range: string;  // "08:00-10:00"
+    exam_date?: string;  // ISO 日期，如 "2026-06-02"
+    date_label?: string; // "06-02"
   };
   classrooms: Array<{
     classroom_id: number;
@@ -214,11 +216,10 @@ export async function getAvailableClassrooms(params: {
 
 /**
  * 获取可用的教师列表（用于换教师）
- * @param params date: 周一/周二/周三/周四/周五, time_slot_code: T1/T2/T3/T4, exclude_teacher_id?: 排除的教师ID
+ * @param params time_slot_id: 时段ID, exclude_teacher_id?: 排除的教师ID
  */
 export async function getAvailableTeachers(params: {
-  date: string;
-  time_slot_code: string;
+  time_slot_id: number;
   exclude_teacher_id?: number;
 }): Promise<{
   teachers: Array<{
@@ -234,11 +235,12 @@ export async function getAvailableTeachers(params: {
     day_name: string;
     slot_code: string;
     time_range: string;
+    exam_date?: string;
+    date_label?: string;
   };
 }> {
   const queryParams: Record<string, unknown> = {
-    date: params.date,
-    time_slot_code: params.time_slot_code,
+    time_slot_id: params.time_slot_id,
   };
   if (params.exclude_teacher_id) {
     queryParams.exclude_teacher_id = params.exclude_teacher_id;
@@ -258,6 +260,8 @@ export async function getAvailableTeachers(params: {
       day_name: string;
       slot_code: string;
       time_range: string;
+      exam_date?: string;
+      date_label?: string;
     };
   }>>('/adjustments/available-teachers', { params: queryParams });
   return data.data;

@@ -118,32 +118,83 @@ async def swap_exams(
     if exam_b_id not in exam_ids_found:
         raise HTTPException(status_code=404, detail=f"考试 {exam_b_id} 不存在")
 
-    # 时段冲突校验
-    # 教师A 将获得 exam_b，需要检查教师A在 exam_b 时段是否有其他安排（排除 exam_a，因为交换后教师A不再有 exam_a）
-    conflict_a = await check_time_slot_conflict(teacher_a_id, exam_b_id, db, exclude_exam_ids=[exam_a_id])
-    if conflict_a:
-        raise HTTPException(status_code=400, detail=f"教师A {conflict_a}，无法交换")
-    
-    # 教师B 将获得 exam_a，需要检查教师B在 exam_a 时段是否有其他安排（排除 exam_b，因为交换后教师B不再有 exam_b）
-    conflict_b = await check_time_slot_conflict(teacher_b_id, exam_a_id, db, exclude_exam_ids=[exam_b_id])
-    if conflict_b:
-        raise HTTPException(status_code=400, detail=f"教师B {conflict_b}，无法交换")
-
-    # 交换 teacher_a 在 exam_a 中的记录
-    await db.execute(
-        update(ExamTeacher)
+    # 获取两条监考记录
+    result = await db.execute(
+        select(ExamTeacher)
         .where(ExamTeacher.teacher_id == teacher_a_id)
         .where(ExamTeacher.exam_id == exam_a_id)
-        .values(teacher_id=teacher_b_id)
     )
+    record_a = result.scalar_one_or_none()
+    if not record_a:
+        raise HTTPException(status_code=404, detail="教师A的监考记录不存在")
 
-    # 交换 teacher_b 在 exam_b 中的记录
-    await db.execute(
-        update(ExamTeacher)
+    result = await db.execute(
+        select(ExamTeacher)
         .where(ExamTeacher.teacher_id == teacher_b_id)
         .where(ExamTeacher.exam_id == exam_b_id)
-        .values(teacher_id=teacher_a_id)
     )
+    record_b = result.scalar_one_or_none()
+    if not record_b:
+        raise HTTPException(status_code=404, detail="教师B的监考记录不存在")
+
+    if exam_a_id == exam_b_id:
+        # 同一场考试：只需交换 classroom_id，teacher_id 不变
+        await db.execute(
+            update(ExamTeacher)
+            .where(ExamTeacher.teacher_id == teacher_a_id)
+            .where(ExamTeacher.exam_id == exam_a_id)
+            .values(classroom_id=record_b.classroom_id)
+        )
+        await db.execute(
+            update(ExamTeacher)
+            .where(ExamTeacher.teacher_id == teacher_b_id)
+            .where(ExamTeacher.exam_id == exam_b_id)
+            .values(classroom_id=record_a.classroom_id)
+        )
+    else:
+        # 不同考试：先检查目标教师是否已在目标考试中有同角色安排
+        result = await db.execute(
+            select(ExamTeacher).where(
+                (ExamTeacher.teacher_id == teacher_b_id)
+                & (ExamTeacher.exam_id == exam_a_id)
+                & (ExamTeacher.role == record_a.role)
+            )
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="教师B已在目标考试中有同角色安排，无法交换")
+
+        result = await db.execute(
+            select(ExamTeacher).where(
+                (ExamTeacher.teacher_id == teacher_a_id)
+                & (ExamTeacher.exam_id == exam_b_id)
+                & (ExamTeacher.role == record_b.role)
+            )
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="教师A已在目标考试中有同角色安排，无法交换")
+
+        # 时段冲突校验
+        conflict_a = await check_time_slot_conflict(teacher_a_id, exam_b_id, db, exclude_exam_ids=[exam_a_id])
+        if conflict_a:
+            raise HTTPException(status_code=400, detail=f"教师A {conflict_a}，无法交换")
+
+        conflict_b = await check_time_slot_conflict(teacher_b_id, exam_a_id, db, exclude_exam_ids=[exam_b_id])
+        if conflict_b:
+            raise HTTPException(status_code=400, detail=f"教师B {conflict_b}，无法交换")
+
+        # 交换 teacher_id
+        await db.execute(
+            update(ExamTeacher)
+            .where(ExamTeacher.teacher_id == teacher_a_id)
+            .where(ExamTeacher.exam_id == exam_a_id)
+            .values(teacher_id=teacher_b_id)
+        )
+        await db.execute(
+            update(ExamTeacher)
+            .where(ExamTeacher.teacher_id == teacher_b_id)
+            .where(ExamTeacher.exam_id == exam_b_id)
+            .values(teacher_id=teacher_a_id)
+        )
 
     await db.commit()
 

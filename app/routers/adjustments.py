@@ -264,16 +264,10 @@ async def undo_last_endpoint(
 # ============================================================
 
 
-DAY_NAME_TO_NUMBER = {
-    "周一": 1, "周二": 2, "周三": 3, "周四": 4, "周五": 5
-}
-
-
 @router.get("/available-teachers", response_model=dict)
 async def get_available_teachers(
     db: AsyncSession = Depends(get_db),
-    date: str = Query(..., description="日期: 周一/周二/周三/周四/周五"),
-    time_slot_code: str = Query(..., description="时段代码: T1/T2/T3/T4"),
+    time_slot_id: int = Query(..., description="时段ID"),
     exclude_teacher_id: int | None = Query(None, description="排除的教师ID（如当前监考）"),
 ) -> dict:
     """获取可用教师列表（用于换教师对话框）
@@ -283,23 +277,10 @@ async def get_available_teachers(
     - current_slots: 当前总场次
     - max_slots: 最大可安排场次
     """
-    # 转换日期为 day_of_week
-    day_of_week = DAY_NAME_TO_NUMBER.get(date)
-    if not day_of_week:
-        raise HTTPException(status_code=400, detail=f"无效的日期: {date}，应为 周一/周二/周三/周四/周五")
-
-    # 查询指定时段的时段ID
-    time_slot_result = await db.execute(
-        select(TimeSlot).where(
-            TimeSlot.day_of_week == day_of_week,
-            TimeSlot.slot_code == time_slot_code
-        )
-    )
-    time_slot = time_slot_result.scalar_one_or_none()
+    # 查询指定时段
+    time_slot = await db.get(TimeSlot, time_slot_id)
     if not time_slot:
-        raise HTTPException(status_code=404, detail=f"未找到时段: {date} {time_slot_code}")
-
-    time_slot_id = time_slot.id
+        raise HTTPException(status_code=404, detail=f"未找到时段: {time_slot_id}")
 
     # 查询该时段已有监考任务的教师ID列表
     conflict_result = await db.execute(
@@ -352,6 +333,7 @@ async def get_available_teachers(
             "has_conflict": has_conflict,
         })
 
+    date_label = time_slot.exam_date.strftime("%m-%d") if time_slot.exam_date else None
     return {
         "code": 0,
         "message": "success",
@@ -359,9 +341,11 @@ async def get_available_teachers(
             "teachers": teachers_data,
             "time_slot": {
                 "id": time_slot_id,
-                "day_name": date,
-                "slot_code": time_slot_code,
+                "day_name": DAY_NAMES.get(time_slot.day_of_week, ""),
+                "slot_code": time_slot.slot_code,
                 "time_range": f"{time_slot.start_time}-{time_slot.end_time}",
+                "exam_date": time_slot.exam_date.isoformat() if time_slot.exam_date else None,
+                "date_label": date_label,
             }
         }
     }

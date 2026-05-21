@@ -317,7 +317,7 @@ async def move_exam_time(
     # 记录旧状态
     old_data = {
         "time_slot_id": old_time_slot_id,
-        "time_slot_str": f"{exam.time_slot.day_of_week}-{exam.time_slot.slot_code}" if exam.time_slot else None,
+        "time_slot_str": f"{exam.time_slot.exam_date.isoformat() if exam.time_slot.exam_date else str(exam.time_slot.day_of_week)}-{exam.time_slot.slot_code}" if exam.time_slot else None,
     }
 
     # 更新
@@ -329,7 +329,7 @@ async def move_exam_time(
     new_ts = await db.get(TimeSlot, new_time_slot_id)
     new_data = {
         "time_slot_id": new_time_slot_id,
-        "time_slot_str": f"{new_ts.day_of_week}-{new_ts.slot_code}" if new_ts else None,
+        "time_slot_str": f"{new_ts.exam_date.isoformat() if new_ts.exam_date else str(new_ts.day_of_week)}-{new_ts.slot_code}" if new_ts else None,
     }
 
     # 记录撤销操作

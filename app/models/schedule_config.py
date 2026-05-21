@@ -8,10 +8,10 @@
 - 教师分配软约束
 """
 
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Integer, Text
+from sqlalchemy import Boolean, Date, DateTime, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -84,6 +84,21 @@ class ScheduleConfig(Base):
         nullable=False,
         default=True,
         comment="是否启用日期连续性约束",
+    )
+
+    # 考试起始日期 (多周排考支持)
+    exam_start_date: Mapped[Optional[date]] = mapped_column(
+        Date,
+        nullable=True,
+        comment="考试起始日期",
+    )
+
+    # 考试周数 (默认1周, 最多4周)
+    exam_weeks: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment="考试周数 (1-4)",
     )
 
     created_at: Mapped[datetime] = mapped_column(

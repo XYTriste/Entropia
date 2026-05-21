@@ -280,10 +280,8 @@ async def get_exam_overview_matrix(
     time_slots = time_slot_result.scalars().all()
     time_slot_map = {ts.id: ts for ts in time_slots}
     
-    # 3. 初始化矩阵
+    # 3. 初始化矩阵 (键为 ISO 日期字符串或星期名称)
     matrix: dict[str, dict[str, list[dict]]] = {}
-    for day in range(1, 6):
-        matrix[DAY_NAMES[day]] = {"T1": [], "T2": [], "T3": [], "T4": []}
     
     # 4. 从快照构建矩阵
     for er in snapshot.get("exams", []):
@@ -292,10 +290,12 @@ async def get_exam_overview_matrix(
             continue
         
         ts = time_slot_map[ts_id]
-        day_name = DAY_NAMES.get(ts.day_of_week)
+        date_key = ts.exam_date.isoformat() if ts.exam_date else DAY_NAMES.get(ts.day_of_week, str(ts.day_of_week))
         slot_code = ts.slot_code
-        if not day_name or not slot_code:
+        if not date_key or not slot_code:
             continue
+        if date_key not in matrix:
+            matrix[date_key] = {"T1": [], "T2": [], "T3": [], "T4": []}
         
         # 获取课程名称
         course_id = er.get("course_id")
@@ -355,7 +355,8 @@ async def get_exam_overview_matrix(
                 "patrol_group_name": tr.get("patrol_group_name"),
             })
         
-        matrix[day_name][slot_code].append({
+        date_label = ts.exam_date.strftime("%m-%d") if ts.exam_date else None
+        matrix[date_key][slot_code].append({
             "exam_id": er.get("exam_id", 0),
             "course_id": course_id,
             "course_name": course_name,
@@ -364,6 +365,8 @@ async def get_exam_overview_matrix(
             "classrooms": classrooms_detail,
             "teachers": teachers_detail,
             "total_students": total_students,
+            "exam_date": ts.exam_date.isoformat() if ts.exam_date else None,
+            "date_label": date_label,
         })
     
     return {"code": 0, "message": "success", "data": {"matrix": matrix}}
@@ -407,6 +410,7 @@ async def get_teacher_gantt(
 
         exam = et.exam
         if exam and exam.time_slot:
+            ts = exam.time_slot
             # 构建按教室分组的详细信息（监考教室 + 班级 + 人数）
             room_details = []
             if et.role.value == "fixed" and et.classroom_id:
@@ -460,14 +464,17 @@ async def get_teacher_gantt(
 
             student_count = sum(ec.total_students or 0 for ec in exam.classroom_assignments)
 
+            date_label = ts.exam_date.strftime("%m-%d") if ts.exam_date else None
             teacher_events[tid]["events"].append({
                 "exam_id": exam.id,
                 "course_name": exam.course.name if exam.course else "",
                 "exam_label": exam.exam_label.value if exam.exam_label else "",
-                "day_of_week": exam.time_slot.day_of_week,
-                "day_name": DAY_NAMES.get(exam.time_slot.day_of_week, ""),
-                "slot_code": exam.time_slot.slot_code,
-                "time_range": f"{exam.time_slot.start_time}-{exam.time_slot.end_time}",
+                "day_of_week": ts.day_of_week,
+                "day_name": DAY_NAMES.get(ts.day_of_week, ""),
+                "slot_code": ts.slot_code,
+                "time_range": f"{ts.start_time}-{ts.end_time}",
+                "exam_date": ts.exam_date.isoformat() if ts.exam_date else None,
+                "date_label": date_label,
                 "role": et.role.value,
                 "classrooms": classrooms,
                 "assigned_classroom": assigned_classroom,
@@ -515,7 +522,9 @@ async def get_classroom_matrix(
 
         exam = ec.exam
         if exam and exam.time_slot:
-            slot_key = f"{DAY_NAMES.get(exam.time_slot.day_of_week, '')}-{exam.time_slot.slot_code}"
+            ts = exam.time_slot
+            date_key = ts.exam_date.isoformat() if ts.exam_date else DAY_NAMES.get(ts.day_of_week, str(ts.day_of_week))
+            slot_key = f"{date_key}-{ts.slot_code}"
             if slot_key not in matrix[room_name]:
                 matrix[room_name][slot_key] = []
             # 收集班级名称
@@ -530,6 +539,7 @@ async def get_classroom_matrix(
                 and et.teacher
                 and et.role.value == "fixed"
             ]
+            date_label = ts.exam_date.strftime("%m-%d") if ts.exam_date else None
             matrix[room_name][slot_key].append({
                 "exam_id": exam.id,
                 "course_name": exam.course.name if exam.course else "",
@@ -537,9 +547,11 @@ async def get_classroom_matrix(
                 "total_students": ec.total_students,
                 "class_names": class_names,
                 "teacher_names": teacher_names,
-                "day_of_week": exam.time_slot.day_of_week,
-                "day_name": DAY_NAMES.get(exam.time_slot.day_of_week, ""),
-                "time_range": f"{exam.time_slot.start_time}-{exam.time_slot.end_time}",
+                "day_of_week": ts.day_of_week,
+                "day_name": DAY_NAMES.get(ts.day_of_week, ""),
+                "time_range": f"{ts.start_time}-{ts.end_time}",
+                "exam_date": date_key,
+                "date_label": date_label,
             })
 
     return {"code": 0, "message": "success", "data": {"matrix": matrix}}
@@ -569,9 +581,6 @@ async def get_patrol_matrix(
     # 按 (time_slot_id, teacher_id) 去重，保留 patrol_group_name
     seen: set[tuple[int, int]] = set()
     matrix: dict[str, dict[str, list[dict]]] = {}
-    for day in range(1, 6):
-        matrix[DAY_NAMES[day]] = {"T1": [], "T2": [], "T3": [], "T4": []}
-
     group_names: set[str] = set()
 
     for et, teacher, ts in result.unique():
@@ -580,23 +589,28 @@ async def get_patrol_matrix(
             continue
         seen.add(key)
 
-        day_name = DAY_NAMES.get(ts.day_of_week)
+        date_key = ts.exam_date.isoformat() if ts.exam_date else DAY_NAMES.get(ts.day_of_week, str(ts.day_of_week))
         slot_code = ts.slot_code
-        if day_name and slot_code:
-            matrix[day_name][slot_code].append({
+        if date_key and slot_code:
+            if date_key not in matrix:
+                matrix[date_key] = {"T1": [], "T2": [], "T3": [], "T4": []}
+            matrix[date_key][slot_code].append({
                 "teacher_id": et.teacher_id,
                 "teacher_name": teacher.name if teacher else f"教师{et.teacher_id}",
                 "patrol_group_name": et.patrol_group_name,
+                "day_of_week": ts.day_of_week,
+                "day_name": DAY_NAMES.get(ts.day_of_week, ""),
+                "date_label": ts.exam_date.strftime("%m-%d") if ts.exam_date else None,
             })
             if et.patrol_group_name:
                 group_names.add(et.patrol_group_name)
 
     # 补充同 slot_pair 的空白时段（T2复用T1，T4复用T3）
-    for day_name in matrix:
-        if not matrix[day_name]["T2"] and matrix[day_name]["T1"]:
-            matrix[day_name]["T2"] = [dict(p) for p in matrix[day_name]["T1"]]
-        if not matrix[day_name]["T4"] and matrix[day_name]["T3"]:
-            matrix[day_name]["T4"] = [dict(p) for p in matrix[day_name]["T3"]]
+    for date_key in matrix:
+        if not matrix[date_key]["T2"] and matrix[date_key]["T1"]:
+            matrix[date_key]["T2"] = [dict(p) for p in matrix[date_key]["T1"]]
+        if not matrix[date_key]["T4"] and matrix[date_key]["T3"]:
+            matrix[date_key]["T4"] = [dict(p) for p in matrix[date_key]["T3"]]
 
     # 为每个分组分配一个柔和的背景色（用于前端高亮）
     palette = [
@@ -680,21 +694,25 @@ async def get_class_schedule(
             if et.role.value == "fixed" and et.classroom_id == classroom_id:
                 teacher_names.append(et.teacher.name if et.teacher else f"教师{et.teacher_id}")
 
+        ts = exam.time_slot
+        date_label = ts.exam_date.strftime("%m-%d") if ts.exam_date else None
         schedule.append({
             "exam_id": exam.id,
             "course_name": exam.course.name if exam.course else "",
             "course_type": exam.course.course_type.value if exam.course else "",
             "exam_label": exam.exam_label.value if exam.exam_label else "",
-            "day_of_week": exam.time_slot.day_of_week,
-            "day_name": DAY_NAMES.get(exam.time_slot.day_of_week, ""),
-            "slot_code": exam.time_slot.slot_code,
-            "time_range": f"{exam.time_slot.start_time}-{exam.time_slot.end_time}",
+            "day_of_week": ts.day_of_week,
+            "day_name": DAY_NAMES.get(ts.day_of_week, ""),
+            "slot_code": ts.slot_code,
+            "time_range": f"{ts.start_time}-{ts.end_time}",
+            "exam_date": ts.exam_date.isoformat() if ts.exam_date else None,
+            "date_label": date_label,
             "status": exam.status.value,
             "classroom_name": classroom_name,
             "teacher_names": teacher_names,
         })
 
-    schedule.sort(key=lambda x: (x["day_of_week"], x["slot_code"]))
+    schedule.sort(key=lambda x: (x.get("exam_date") or f"week{x['day_of_week']}", x["slot_code"]))
 
     return {
         "code": 0,
@@ -753,8 +771,8 @@ async def get_course_exam_detail(
                 "a_student_count": a_students,
                 "b_student_count": b_students,
                 "balance": "均衡" if abs(a_students - b_students) <= 5 else "不均衡",
-                "a_time_slot": f"{DAY_NAMES.get(a_exam.time_slot.day_of_week, '')}-{a_exam.time_slot.slot_code}" if a_exam.time_slot else None,
-                "b_time_slot": f"{DAY_NAMES.get(b_exam.time_slot.day_of_week, '')}-{b_exam.time_slot.slot_code}" if b_exam.time_slot else None,
+                "a_time_slot": f"{a_exam.time_slot.exam_date.isoformat() if a_exam.time_slot.exam_date else DAY_NAMES.get(a_exam.time_slot.day_of_week, '')}-{a_exam.time_slot.slot_code}" if a_exam.time_slot else None,
+                "b_time_slot": f"{b_exam.time_slot.exam_date.isoformat() if b_exam.time_slot.exam_date else DAY_NAMES.get(b_exam.time_slot.day_of_week, '')}-{b_exam.time_slot.slot_code}" if b_exam.time_slot else None,
             }
 
     return {
@@ -782,12 +800,15 @@ def _format_exam_detail(exam: Exam) -> dict:
 
     # 时段信息
     if exam.time_slot:
+        date_label = exam.time_slot.exam_date.strftime("%m-%d") if exam.time_slot.exam_date else None
         item["time_slot"] = {
             "id": exam.time_slot.id,
             "day_of_week": exam.time_slot.day_of_week,
             "day_name": DAY_NAMES.get(exam.time_slot.day_of_week, ""),
             "slot_code": exam.time_slot.slot_code,
             "time_range": f"{exam.time_slot.start_time}-{exam.time_slot.end_time}",
+            "exam_date": exam.time_slot.exam_date.isoformat() if exam.time_slot.exam_date else None,
+            "date_label": date_label,
         }
 
     # 教室信息
@@ -850,20 +871,29 @@ def _format_exam_from_snapshot(exam_record: dict, time_slot: TimeSlot | None) ->
     # 时段信息
     time_slot_info = {}
     if time_slot:
+        date_label = time_slot.exam_date.strftime("%m-%d") if time_slot.exam_date else None
         time_slot_info = {
             "id": time_slot.id,
             "day_of_week": time_slot.day_of_week,
             "day_name": DAY_NAMES.get(time_slot.day_of_week, ""),
             "slot_code": time_slot.slot_code,
             "time_range": f"{time_slot.start_time}-{time_slot.end_time}",
+            "exam_date": time_slot.exam_date.isoformat() if time_slot.exam_date else None,
+            "date_label": date_label,
         }
     else:
+        # 尝试从快照中读取日期信息
+        snap_date = exam_record.get("exam_date")
+        snap_dow = exam_record.get("day_of_week", 0)
+        snap_slot = exam_record.get("slot_code", "")
         time_slot_info = {
-            "id": None,
-            "day_of_week": 0,
-            "day_name": "",
-            "slot_code": "",
+            "id": exam_record.get("time_slot_id"),
+            "day_of_week": snap_dow,
+            "day_name": DAY_NAMES.get(snap_dow, ""),
+            "slot_code": snap_slot,
             "time_range": "",
+            "exam_date": snap_date,
+            "date_label": snap_date[5:10] if isinstance(snap_date, str) and len(snap_date) >= 10 else None,
         }
 
     # 教室信息

@@ -40,6 +40,7 @@ export default function AdjustmentsView() {
     date: string;
     timeSlot: string;
     slotCode: string;
+    timeSlotId: number;
     courseName: string;
     currentTeachers: Array<{ id: number; name: string }>;
   } | null>(null);
@@ -92,15 +93,13 @@ export default function AdjustmentsView() {
   const { data: availableTeachers } = useQuery({
     queryKey: [
       'availableTeachers',
-      showChangeTeacher?.date,
-      showChangeTeacher?.slotCode,
+      showChangeTeacher?.timeSlotId,
     ],
     queryFn: () => {
       if (!showChangeTeacher) return Promise.resolve(null);
       const firstTeacherId = showChangeTeacher.currentTeachers[0]?.id;
       return getAvailableTeachers({
-        date: showChangeTeacher.date,
-        time_slot_code: showChangeTeacher.slotCode,
+        time_slot_id: showChangeTeacher.timeSlotId,
         exclude_teacher_id: firstTeacherId,
       });
     },
@@ -121,8 +120,11 @@ export default function AdjustmentsView() {
       course_type: string;
       exam_label: string;
       date: string;
+      dateLabel?: string;
+      examDate?: string;
       timeSlot: string;
       slotCode: string;
+      timeSlotId: number;
       classroomId: number;
       classroomName: string;
       capacity: number;
@@ -174,8 +176,11 @@ export default function AdjustmentsView() {
           exam_label: exam.exam_label,
           // 时段信息
           date: exam.time_slot.day_name || '-',
+          dateLabel: exam.time_slot.date_label,
+          examDate: exam.time_slot.exam_date,
           timeSlot: exam.time_slot.time_range || '-',
           slotCode: exam.time_slot.slot_code || 'T1',
+          timeSlotId: exam.time_slot.id || 0,
           // 教室信息（每条记录对应一个教室）
           classroomId: room.classroom_id,
           classroomName: room.classroom_name,
@@ -193,15 +198,24 @@ export default function AdjustmentsView() {
     });
 
     // 按日期和时间排序
-    const dayOrder: Record<string, number> = { '周一': 1, '周二': 2, '周三': 3, '周四': 4, '周五': 5 };
     const slotOrder: Record<string, number> = { 'T1': 1, 'T2': 2, 'T3': 3, 'T4': 4 };
-    
+
     expandedRecords.sort((a, b) => {
-      // 先按日期排序
+      // 先按实际日期排序（ISO 日期字符串可直接比较）
+      if (a.examDate && b.examDate) {
+        const cmp = a.examDate.localeCompare(b.examDate);
+        if (cmp !== 0) return cmp;
+      } else if (a.examDate) {
+        return -1;
+      } else if (b.examDate) {
+        return 1;
+      }
+      // 无 examDate 时回退到按星期名称排序
+      const dayOrder: Record<string, number> = { '周一': 1, '周二': 2, '周三': 3, '周四': 4, '周五': 5 };
       const dayA = dayOrder[a.date] || 0;
       const dayB = dayOrder[b.date] || 0;
       if (dayA !== dayB) return dayA - dayB;
-      
+
       // 再按时段代码排序
       const slotA = slotOrder[a.slotCode] || 0;
       const slotB = slotOrder[b.slotCode] || 0;
@@ -422,7 +436,7 @@ export default function AdjustmentsView() {
                         />
                       </td>
                       <td className="px-3 py-3 text-[#1F2328] dark:text-[#E6EDF3] whitespace-nowrap">
-                        {exam.date}
+                        {exam.dateLabel ? `${exam.dateLabel} ${exam.date}` : exam.date}
                       </td>
                       <td className="px-3 py-3 text-[#8C959F] dark:text-[#8B949E]">
                         {exam.timeSlot}
@@ -470,6 +484,7 @@ export default function AdjustmentsView() {
                                 date: exam.date,
                                 timeSlot: exam.timeSlot,
                                 slotCode: exam.slotCode,
+                                timeSlotId: exam.timeSlotId,
                                 courseName: exam.course_name,
                                 currentTeachers: exam.fixedTeachers,
                               })
@@ -504,19 +519,39 @@ export default function AdjustmentsView() {
                 >
                   <ChevronLeft size={16} />
                 </button>
-                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-all ${
-                      page === currentPage
-                        ? 'bg-[#D4A373] text-white'
-                        : 'text-[#8C959F] dark:text-[#8B949E] hover:bg-[#F9FAFB] dark:bg-[#21262D]'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                ))}
+                {(() => {
+                  const pages: (number | string)[] = [];
+                  if (totalPages <= 7) {
+                    for (let i = 1; i <= totalPages; i++) pages.push(i);
+                  } else {
+                    pages.push(1);
+                    if (currentPage > 3) pages.push('...');
+                    const start = Math.max(2, currentPage - 1);
+                    const end = Math.min(totalPages - 1, currentPage + 1);
+                    for (let i = start; i <= end; i++) pages.push(i);
+                    if (currentPage < totalPages - 2) pages.push('...');
+                    pages.push(totalPages);
+                  }
+                  return pages.map((page, idx) =>
+                    typeof page === 'string' ? (
+                      <span key={`ellipsis-${idx}`} className="px-1 text-sm text-[#8C959F] dark:text-[#8B949E]">
+                        {page}
+                      </span>
+                    ) : (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-all ${
+                          page === currentPage
+                            ? 'bg-[#D4A373] text-white'
+                            : 'text-[#8C959F] dark:text-[#8B949E] hover:bg-[#F9FAFB] dark:bg-[#21262D]'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    )
+                  );
+                })()}
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
@@ -564,7 +599,7 @@ export default function AdjustmentsView() {
                   <div>
                     <div className="text-[10px] text-[#8C959F] dark:text-[#8B949E]">日期</div>
                     <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3]">
-                      {showChangeTeacher.date}
+                      {showChangeTeacher.dateLabel ? `${showChangeTeacher.dateLabel} ${showChangeTeacher.date}` : showChangeTeacher.date}
                     </div>
                   </div>
                 </div>

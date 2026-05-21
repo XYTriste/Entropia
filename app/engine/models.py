@@ -76,7 +76,7 @@ class Course:
 
 
 # ============================================================
-# 时段模型（共20个时段，周一到周五每天4个）
+# 时段模型（支持多周，周一到周五每天4个）
 # ============================================================
 @dataclass
 class TimeSlot:
@@ -87,6 +87,7 @@ class TimeSlot:
     start_time: str  # 08:30
     end_time: str  # 10:10
     is_continuous: bool  # T1与T2连续，T3与T4连续
+    exam_date: str | None = None  # 考试具体日期 (ISO格式，如 "2026-06-02")
 
     # 时段对映射：连续时段对 (T1,T2) -> slot_pair = 1, (T3,T4) -> slot_pair = 2
     @property

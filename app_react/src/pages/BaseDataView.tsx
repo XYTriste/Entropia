@@ -51,7 +51,7 @@ import {
   useDeleteStudent,
 } from '@/hooks/useStudents';
 import { useMajors, useCreateMajor, useUpdateMajor, useDeleteMajor } from '@/hooks/useMajors';
-import { useTimeSlots, useCreateTimeSlot, useUpdateTimeSlot, useDeleteTimeSlot } from '@/hooks/useTimeSlots';
+import { useTimeSlots, useCreateTimeSlot, useUpdateTimeSlot, useDeleteTimeSlot, useGenerateTimeSlots } from '@/hooks/useTimeSlots';
 
 // ── Mock 数据（仅详情弹窗仍使用，后续可替换为真实 API）─────────────
 import {
@@ -316,6 +316,8 @@ export default function BaseDataView() {
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editItem, setEditItem] = useState<Record<string, unknown> | null>(null);
+  const [generateStartDate, setGenerateStartDate] = useState('');
+  const [generateWeeks, setGenerateWeeks] = useState(1);
 
   const current = tabStates[activeTab];
 
@@ -373,6 +375,7 @@ export default function BaseDataView() {
   const createTimeSlot = useCreateTimeSlot();
   const updateTimeSlot = useUpdateTimeSlot();
   const deleteTimeSlot = useDeleteTimeSlot();
+  const generateTimeSlots = useGenerateTimeSlots();
 
   // ── 统一获取当前 Tab 的 query 结果 ───────────────────────────
   const currentQuery = (() => {
@@ -574,6 +577,7 @@ export default function BaseDataView() {
       case 'time-slots':
         return [
           { key: 'id', label: 'ID', width: '60px' },
+          { key: 'exam_date', label: '考试日期', width: '100px' },
           { key: 'day_name', label: '星期', width: '80px' },
           { key: 'slot_code', label: '时段', width: '80px' },
           { key: 'start_time', label: '开始时间', width: '100px' },
@@ -703,6 +707,12 @@ export default function BaseDataView() {
       const date = new Date(val as string);
       return isNaN(date.getTime()) ? String(val) : date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     }
+    if (key === 'exam_date') {
+      const val = item[key];
+      if (!val) return <span className="text-[#8C959F] dark:text-[#8B949E]">模板</span>;
+      const dateLabel = (item['date_label'] as string) || String(val).slice(5);
+      return dateLabel;
+    }
     return String(item[key] ?? '-');
   };
 
@@ -761,20 +771,67 @@ export default function BaseDataView() {
                 </span>
               </div>
               <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  if (activeTab === 'courses') {
-                    alert('课程管理暂不支持单独添加，请通过导入导出模块进行配置');
-                    return;
-                  }
-                  setEditItem(null);
-                  setShowEditDialog(true);
-                }}
-                className="btn-amber flex items-center gap-2 text-sm"
-              >
-                <Plus size={14} />
-                新增
-              </button>
+                {activeTab === 'time-slots' ? (
+                  <>
+                    <input
+                      type="date"
+                      value={generateStartDate}
+                      onChange={(e) => setGenerateStartDate(e.target.value)}
+                      className="form-input-glass rounded-xl text-sm px-3 py-2"
+                      title="考试起始日期（必须是周一）"
+                    />
+                    <select
+                      value={generateWeeks}
+                      onChange={(e) => setGenerateWeeks(Number(e.target.value))}
+                      className="form-input-glass rounded-xl text-sm px-3 py-2"
+                    >
+                      <option value={1}>1 周</option>
+                      <option value={2}>2 周</option>
+                      <option value={3}>3 周</option>
+                      <option value={4}>4 周</option>
+                    </select>
+                    <button
+                      onClick={() => {
+                        if (!generateStartDate) {
+                          alert('请先选择考试起始日期');
+                          return;
+                        }
+                        const d = new Date(generateStartDate);
+                        if (d.getDay() !== 1) {
+                          alert('考试起始日期必须是周一');
+                          return;
+                        }
+                        generateTimeSlots.mutate(
+                          { startDate: generateStartDate, weeks: generateWeeks },
+                          {
+                            onSuccess: () => alert('考试时段生成成功'),
+                            onError: (err: Error) => alert('生成失败：' + err.message),
+                          }
+                        );
+                      }}
+                      disabled={generateTimeSlots.isPending}
+                      className="btn-amber flex items-center gap-2 text-sm disabled:opacity-50"
+                    >
+                      <Plus size={14} />
+                      {generateTimeSlots.isPending ? '生成中...' : '生成考试时段'}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (activeTab === 'courses') {
+                        alert('课程管理暂不支持单独添加，请通过导入导出模块进行配置');
+                        return;
+                      }
+                      setEditItem(null);
+                      setShowEditDialog(true);
+                    }}
+                    className="btn-amber flex items-center gap-2 text-sm"
+                  >
+                    <Plus size={14} />
+                    新增
+                  </button>
+                )}
                 <button
                   onClick={handleRefresh}
                   className={`flex items-center gap-2 px-4 py-2 text-sm text-[#8C959F] dark:text-[#8B949E] hover:text-[#D4A373] bg-white/60 dark:bg-[#21262D]/80 hover:bg-[#D4A373]/5 rounded-xl transition-all ${isFetching ? 'animate-spin' : ''}`}

@@ -73,6 +73,8 @@ services:
       - ./app:/app/app
       # 脚本目录同步（避免每次修改脚本都要重建镜像）
       - ./scripts:/app/scripts
+      # 迁移目录同步（宿主机新建迁移脚本后容器内可见）
+      - ./migrations:/app/migrations
       # 日志持久化
       - api_logs:/app/logs
     # 开发模式启用热重载，生产环境去掉 --reload

@@ -63,3 +63,12 @@ export function useBulkCreateTimeSlots() {
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.all }),
   })
 }
+
+export function useGenerateTimeSlots() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ startDate, weeks }: { startDate: string; weeks: number }) =>
+      api.generateTimeSlots(startDate, weeks),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.all }),
+  })
+}

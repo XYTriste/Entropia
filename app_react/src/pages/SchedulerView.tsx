@@ -28,6 +28,7 @@ import RollingNumber from '@/components/RollingNumber';
 import { getCourses } from '@/api/courses';
 import { runScheduler, getSchedulerStatus, getSchedulerConfig, saveSchedulerConfig, applyVersion } from '@/api/scheduler';
 import { getExamOverviewMatrix, getScheduleVersions } from '@/api/results';
+import { generateTimeSlots } from '@/api/timeSlots';
 import { useSchedulerStatus } from '@/hooks/useScheduler';
 import type { Course, SchedulerConfig } from '@/types';
 
@@ -39,6 +40,8 @@ export default function SchedulerView() {
     maxSolveTime: 300,
     maxProctorDays: 3,
     noCrossDay: true,
+    examStartDate: '',
+    examWeeks: 1,
   });
   const [selectedCourses, setSelectedCourses] = useState<number[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -199,6 +202,17 @@ export default function SchedulerView() {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
+  // 生成时段 mutation
+  const generateSlotsMutation = useMutation({
+    mutationFn: () => generateTimeSlots(config.examStartDate, config.examWeeks),
+    onSuccess: (data) => {
+      toast.success(`成功生成 ${data.length} 个考试时段`);
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '生成时段失败');
+    },
+  });
+
   // 开始排考
   const runSchedulerMutation = useMutation({
     mutationFn: () => runScheduler({
@@ -208,6 +222,8 @@ export default function SchedulerView() {
       enable_max_days_constraint: advancedConfig.enable_max_days_constraint,
       enable_day_continuity_constraint: config.noCrossDay,
       max_days: config.maxProctorDays,
+      exam_start_date: config.examStartDate || undefined,
+      exam_weeks: config.examWeeks,
     }),
     onSuccess: (data) => {
       setJobId(data.job_id);
@@ -243,7 +259,17 @@ export default function SchedulerView() {
       enable_max_days_constraint: advancedConfig.enable_max_days_constraint,
       enable_day_continuity_constraint: config.noCrossDay,
       max_days: config.maxProctorDays,
+      exam_start_date: config.examStartDate || undefined,
+      exam_weeks: config.examWeeks,
     });
+  };
+
+  const handleGenerateSlots = () => {
+    if (!config.examStartDate) {
+      toast.warning('请先选择考试起始日期');
+      return;
+    }
+    generateSlotsMutation.mutate();
   };
 
   const filteredCourses = courses.filter((c) =>
@@ -305,6 +331,48 @@ export default function SchedulerView() {
                       <option value="major_only">只分专业课</option>
                     </select>
                     <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#C8CDD3] dark:text-[#484F58] pointer-events-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-[#8C959F] dark:text-[#8B949E] mb-2">考试起始日期</label>
+                  <input
+                    type="date"
+                    value={config.examStartDate}
+                    onChange={(e) => setConfig({ ...config, examStartDate: e.target.value })}
+                    className="form-input-glass rounded-xl w-full"
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="block text-sm text-[#8C959F] dark:text-[#8B949E] mb-2">考试周数</label>
+                    <div className="relative">
+                      <select
+                        value={config.examWeeks}
+                        onChange={(e) => setConfig({ ...config, examWeeks: Number(e.target.value) })}
+                        className="form-input-glass rounded-xl appearance-none w-full pr-10"
+                      >
+                        {[1, 2, 3, 4].map((n) => (
+                          <option key={n} value={n}>{n} 周</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#C8CDD3] pointer-events-none" />
+                    </div>
+                  </div>
+                  <div className="flex-1 flex items-end">
+                    <button
+                      onClick={handleGenerateSlots}
+                      disabled={generateSlotsMutation.isPending || !config.examStartDate}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white/60 dark:bg-[#21262D]/80 hover:bg-[#D4A373]/10 text-[#8C959F] dark:text-[#8B949E] hover:text-[#D4A373] rounded-xl text-sm font-medium transition-all disabled:opacity-50"
+                    >
+                      {generateSlotsMutation.isPending ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Clock size={14} />
+                      )}
+                      生成时段
+                    </button>
                   </div>
                 </div>
 
@@ -806,6 +874,7 @@ function ScheduleDetailModal({ open, onClose }: { open: boolean; onClose: () => 
       dayName: string;
       slotCode: string;
       timeRange: string;
+      dateLabel?: string;
       exams: Array<{
         courseName: string;
         courseType: string;
@@ -818,52 +887,56 @@ function ScheduleDetailModal({ open, onClose }: { open: boolean; onClose: () => 
       }>;
     }> = [];
 
-    const dayOrder = ['周一', '周二', '周三', '周四', '周五'];
     const slotOrder = ['T1', 'T2', 'T3', 'T4'];
+    // 矩阵键现在是 ISO 日期字符串，按字典序排序即日期序
+    const dateKeys = Object.keys(matrixData.matrix).sort();
 
-    dayOrder.forEach((day) => {
-      if (!matrixData.matrix[day]) return;
+    dateKeys.forEach((dateKey) => {
+      const dayData = matrixData.matrix[dateKey];
+      if (!dayData) return;
       slotOrder.forEach((slot) => {
-        const exams = matrixData.matrix[day]?.[slot] || [];
+        const exams = dayData[slot] || [];
         if (exams.length > 0) {
           // 将所有考试按教室分组
           const classroomMap = new Map<string, typeof exams[0]>();
 
-          exams.forEach((exam) => {
-            exam.classrooms?.forEach((cr) => {
+          exams.forEach((exam: any) => {
+            exam.classrooms?.forEach((cr: any) => {
               const key = cr.classroom_name;
               if (!classroomMap.has(key)) {
                 // 筛选该教室的固定监考老师：role=fixed 且 classroom_name 匹配
                 const fixedTeachers = (exam.teachers || [])
                   .filter((t: any) => t.role === 'fixed' && t.classroom_name === cr.classroom_name)
                   .map((t: any) => t.teacher_name);
-                
+
                 classroomMap.set(key, {
                   ...exam,
                   courseName: exam.course_name,
                   classroomName: cr.classroom_name,
                   capacity: cr.capacity,
                   totalStudents: cr.total_students,
-                  classNames: cr.classes?.map((c) => c.class_name) || [],
+                  classNames: cr.classes?.map((c: any) => c.class_name) || [],
                   teacherNames: fixedTeachers,
                 });
               }
             });
           });
 
-          const slotKey = `${day}-${slot}`;
+          const slotKey = `${dateKey}-${slot}`;
           const slotExams = Array.from(classroomMap.values()).sort((a, b) =>
             a.classroomName.localeCompare(b.classroomName, 'zh-CN')
           );
 
-          // 获取时段的时间范围（从第一条考试记录推断）
-          const timeRange = exams[0]?.classrooms?.[0] ? `${slot}` : slot;
+          // 从考试记录中提取 day_name 和 date_label
+          const dayName = exams[0]?.day_name || '';
+          const dateLabel = exams[0]?.date_label;
 
           slots.push({
             key: slotKey,
-            dayName: day,
+            dayName: `${dateLabel || dateKey} ${dayName}`.trim(),
             slotCode: slot,
-            timeRange,
+            timeRange: slot,
+            dateLabel,
             exams: slotExams,
           });
         }
@@ -932,7 +1005,7 @@ function ScheduleDetailModal({ open, onClose }: { open: boolean; onClose: () => 
                     >
                       <div className="flex items-center gap-3">
                         <span className="px-3 py-1 bg-[#D4A373]/10 text-[#D4A373] rounded-lg text-sm font-medium">
-                          {slot.dayName} {slot.slotCode}
+                          {slot.dateLabel ? `${slot.dateLabel} ` : ''}{slot.dayName} {slot.slotCode}
                         </span>
                         <span className="text-sm text-[#8C959F] dark:text-[#8B949E]">
                           {slot.exams.length} 场考试

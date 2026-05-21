@@ -4,7 +4,7 @@
 
 from typing import Optional
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,6 +18,7 @@ class TimeSlotBase(BaseModel):
     start_time: str = Field(..., max_length=10, description="开始时间 (如 08:30)")
     end_time: str = Field(..., max_length=10, description="结束时间 (如 10:10)")
     is_continuous: bool = Field(default=True, description="是否与下一时段连续")
+    exam_date: Optional[date] = Field(None, description="考试具体日期 (多周排考时使用)")
 
 
 class TimeSlotCreate(TimeSlotBase):
@@ -39,6 +40,7 @@ class TimeSlotUpdate(BaseModel):
 class TimeSlotResponse(TimeSlotBase):
     """时段响应模型"""
     id: int
+    date_label: Optional[str] = Field(None, description="日期标签 (如 06-02)")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
