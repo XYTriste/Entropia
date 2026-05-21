@@ -1207,7 +1207,7 @@ export default function BaseDataView() {
                   } else {
                     // 编辑模式
                     currentMutations.update.mutate(
-                      { id: editItem.id as number, data: payload },
+                      { id: editItem.id as number, payload: payload },
                       {
                         onSuccess: () => {
                           setShowEditDialog(false);
