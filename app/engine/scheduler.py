@@ -55,6 +55,7 @@ from .models import (
 )
 from .objectives import build_total_objective
 from .teacher_alloc import (
+    PickRound,
     TeacherAssignment,
     allocate_teachers_fixed,
     allocate_teachers_patrol,
@@ -120,6 +121,7 @@ class SchedulingEngine:
         self.enable_day_continuity_constraint: bool = enable_day_continuity_constraint
         self.max_days: int | None = max_days
         self._patrol_slot_pairs_used: set[tuple[int, int]] = set()
+        self._teacher_last_picked: dict[int, int] = {}
         self.force_one_teacher_per_room: bool = False
 
     # --------------------------------------------------------
@@ -886,6 +888,9 @@ class SchedulingEngine:
         # 过滤可用教师（排除已满的，排除已在当前时段有任务的）
         from .teacher_alloc import TeacherState
         teacher_states = [TeacherState(t) for t in teachers]
+        # 恢复跨考试持久化的轮询状态
+        for ts in teacher_states:
+            ts.last_picked_round = self._teacher_last_picked.get(ts.teacher.id, 0)
         # 更新已使用场次
         for tid, slots in teacher_usage.items():
             for ts in teacher_states:
@@ -898,6 +903,8 @@ class SchedulingEngine:
         ]
 
         # 2. 固定监考分配
+        start = max(self._teacher_last_picked.values(), default=0)
+        pick_round = PickRound(start=start)
         fixed_teachers = allocate_teachers_fixed(
             exam_id=id_gen.next(),
             classrooms=room_assignments,
@@ -908,6 +915,7 @@ class SchedulingEngine:
             max_days=max_days,
             enable_day_continuity_constraint=self.enable_day_continuity_constraint,
             classroom_map=classroom_map,
+            pick_round=pick_round,
         )
         if not fixed_teachers and room_assignments:
             violations.append(f"课程 {course.name} 固定监考分配失败：无可用教师")
@@ -944,6 +952,7 @@ class SchedulingEngine:
             enable_max_days_constraint=self.enable_max_days_constraint,
             max_days=max_days,
             enable_day_continuity_constraint=self.enable_day_continuity_constraint,
+            pick_round=pick_round,
         )
 
         # 更新教师使用追踪
@@ -1003,6 +1012,10 @@ class SchedulingEngine:
                     patrol_group_name=pt.patrol_group_name,
                 )
             )
+
+        # 同步轮询状态到引擎持久化字典，实现跨考试轮询
+        for ts in teacher_states:
+            self._teacher_last_picked[ts.teacher.id] = ts.last_picked_round
 
         return exam
 

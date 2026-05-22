@@ -49,6 +49,7 @@ class TeacherState:
     teacher: Teacher
     assigned_slots: int = 0  # 已分配场次
     assigned_days: set[int] = field(default_factory=set)  # 已分配的监考日期集合 (day_of_week)
+    last_picked_round: int = 0  # 轮询序号：越小表示越久未被选中（用于平局打破）
 
     @property
     def remaining(self) -> int:
@@ -130,6 +131,17 @@ class TeacherState:
         return score
 
 
+class PickRound:
+    """在固定监考与流动监考之间共享的轮询序号计数器。"""
+
+    def __init__(self, start: int = 0) -> None:
+        self.value = start
+
+    def next(self) -> int:
+        self.value += 1
+        return self.value
+
+
 def _build_teacher_states(teachers: list) -> list[TeacherState]:
     """构建教师状态列表"""
     return [TeacherState(t) for t in teachers]
@@ -161,8 +173,8 @@ def _get_available_by_priority(
 
     def _score(state: TeacherState) -> tuple:
         """
-        计算教师优先级评分，返回 (主要分数, 连续性分数)。
-        主要分数越低越优先（先排满的人靠后），连续性分数越高越优先。
+        计算教师优先级评分，返回 (主要分数, 轮询序号, 连续性分数)。
+        主要分数越低越优先（先排满的人靠后），轮询序号越小越优先（最久未被选中），连续性分数越高越优先。
         """
         primary = state.assigned_slots  # 已分配场次越多越靠后（负载均衡）
 
@@ -177,7 +189,8 @@ def _get_available_by_priority(
             # 连续性分数越低越靠后
             continuity_score = -continuity_score  # 转为越小越优先
 
-        return (primary, continuity_score)
+        # 轮询平局打破：last_picked_round 越小表示越久未被选中，越优先
+        return (primary, state.last_picked_round, continuity_score)
 
     if priority_type == "full_time":
         # 优先专任教师，再兼职教师
@@ -216,6 +229,7 @@ def allocate_teachers_fixed(
     max_days: int | None = None,
     enable_day_continuity_constraint: bool = False,
     classroom_map: dict[int, Any] | None = None,
+    pick_round: PickRound | None = None,
 ) -> list[TeacherAssignment]:
     """
     为固定监考分配教师。
@@ -229,6 +243,7 @@ def allocate_teachers_fixed(
         enable_max_days_constraint: 是否启用最大监考天数约束
         max_days: 最大监考天数上限
         enable_day_continuity_constraint: 是否启用日期连续性约束
+        pick_round: 轮询序号计数器，用于在平局时打破固定顺序偏好（可选）
 
     返回:
         TeacherAssignment列表（即使教师不足，也尽力分配至少1人/考场）
@@ -281,6 +296,8 @@ def allocate_teachers_fixed(
                     ))
                     used_teacher_ids.add(state.teacher.id)
                     assigned = True
+                    if pick_round is not None:
+                        state.last_picked_round = pick_round.next()
                     candidates.remove(state)
                     break
                 else:
@@ -305,6 +322,8 @@ def allocate_teachers_fixed(
                         ))
                         used_teacher_ids.add(state.teacher.id)
                         assigned = True
+                        if pick_round is not None:
+                            state.last_picked_round = pick_round.next()
                         break
 
             # 若完全无法分配，跳过该考场（后续生成警告）
@@ -327,6 +346,7 @@ def allocate_teachers_patrol(
     enable_max_days_constraint: bool = False,
     max_days: int | None = None,
     enable_day_continuity_constraint: bool = False,
+    pick_round: PickRound | None = None,
 ) -> list[TeacherAssignment]:
     """
     为流动监考分配教师。
@@ -344,6 +364,7 @@ def allocate_teachers_patrol(
         enable_max_days_constraint: 是否启用最大监考天数约束
         max_days: 最大监考天数上限
         enable_day_continuity_constraint: 是否启用日期连续性约束
+        pick_round: 轮询序号计数器，用于在平局时打破固定顺序偏好（可选）
 
     返回:
         TeacherAssignment列表，尽量 patrol_count 名流动监考，不足时尽力分配
@@ -392,6 +413,8 @@ def allocate_teachers_patrol(
                 ))
                 used_ids.add(state.teacher.id)
                 assigned = True
+                if pick_round is not None:
+                    state.last_picked_round = pick_round.next()
                 break
 
         if not assigned:
@@ -414,6 +437,8 @@ def allocate_teachers_patrol(
                     ))
                     used_ids.add(state.teacher.id)
                     assigned = True
+                    if pick_round is not None:
+                        state.last_picked_round = pick_round.next()
                     break
 
         if not assigned:
