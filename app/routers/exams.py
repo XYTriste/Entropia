@@ -595,10 +595,26 @@ async def get_teacher_gantt(
             deduped.append(ev)
         data["events"] = deduped
 
+    # 补充没有监考场次的教师（从数据库查询所有活跃教师）
+    all_teachers_result = await db.execute(select(Teacher).where(Teacher.is_active == True))
+    all_teachers = all_teachers_result.scalars().all()
+    for t in all_teachers:
+        if t.id not in teacher_events:
+            teacher_events[t.id] = {
+                "teacher_id": t.id,
+                "teacher_name": t.name,
+                "teacher_type": t.teacher_type.value if t.teacher_type else None,
+                "max_slots": t.max_slots,
+                "events": [],
+            }
+
+    # 按监考场次降序排序（场次多的在前）
+    teachers_list = sorted(teacher_events.values(), key=lambda x: -len(x["events"]))
+
     return {
         "code": 0,
         "message": "success",
-        "data": {"teachers": list(teacher_events.values())},
+        "data": {"teachers": teachers_list},
     }
 
 
@@ -706,7 +722,23 @@ async def get_teacher_day_distribution(
                         "slot_code": ts.slot_code,
                     })
 
-    # 转换为列表并排序（按 unique_days 降序，再按 total_events 降序）
+    # 补充没有监考场次的教师（从数据库查询所有活跃教师）
+    all_teachers_result = await db.execute(select(Teacher).where(Teacher.is_active == True))
+    all_teachers = all_teachers_result.scalars().all()
+    for t in all_teachers:
+        if t.id not in teacher_stats:
+            teacher_stats[t.id] = {
+                "teacher_id": t.id,
+                "teacher_name": t.name,
+                "total_events": 0,
+                "fixed_count": 0,
+                "patrol_count": 0,
+                "unique_days": set(),
+                "day_list": [],
+                "seen_patrol_pairs": set(),
+            }
+
+    # 转换为列表并排序（按 total_events 降序，再按 unique_days_count 降序）
     items = []
     for stat in teacher_stats.values():
         items.append({
@@ -718,7 +750,7 @@ async def get_teacher_day_distribution(
             "unique_days_count": len(stat["unique_days"]),
             "day_list": stat["day_list"],
         })
-    items.sort(key=lambda x: (-x["unique_days_count"], -x["total_events"]))
+    items.sort(key=lambda x: (-x["total_events"], -x["unique_days_count"]))
 
     return {
         "code": 0,
