@@ -23,9 +23,18 @@ export interface TimeSlotUpdate extends Partial<TimeSlotCreate> {}
 export async function getTimeSlots(): Promise<TimeSlot[]> {
   const { data } = await apiClient.get<{
     code: number;
-    data: { total: number; items: TimeSlot[] };
+    data: { total: number; items: any[] };
   }>('/time-slots/');
-  return data.data.items;
+  return data.data.items.map((item) => ({
+    id: item.id,
+    code: item.code,
+    name: item.name,
+    startTime: item.start_time,
+    endTime: item.end_time,
+    dayOfWeek: item.day_of_week,
+    examDate: item.exam_date,
+    dateLabel: item.date_label,
+  }));
 }
 
 /**
@@ -71,9 +80,18 @@ export async function bulkCreateTimeSlots(payloads: TimeSlotCreate[]): Promise<T
  * 根据起始日期和周数生成考试时段
  */
 export async function generateTimeSlots(startDate: string, weeks: number): Promise<TimeSlot[]> {
-  const { data } = await apiClient.post<ApiResponse<{ total: number; items: TimeSlot[] }>>('/time-slots/generate', {
+  const { data } = await apiClient.post<ApiResponse<{ total: number; items: any[] }>>('/time-slots/generate', {
     start_date: startDate,
     weeks,
   });
-  return data.data.items;
+  return data.data.items.map((item) => ({
+    id: item.id,
+    code: item.code,
+    name: item.name,
+    startTime: item.start_time,
+    endTime: item.end_time,
+    dayOfWeek: item.day_of_week,
+    examDate: item.exam_date,
+    dateLabel: item.date_label,
+  }));
 }

@@ -134,16 +134,27 @@ async def run_scheduler(
             _scheduler_jobs[job_id]["error"] = "没有可用的时段"
             return {"code": 0, "message": "success", "data": _scheduler_jobs[job_id]}
 
-        # 校验/确定考试起始日期和周数
-        exam_start_date = req.exam_start_date
-        exam_weeks = req.exam_weeks
-        if exam_start_date is None:
-            exam_start_date = config.exam_start_date if config else None
-        if exam_weeks is None:
-            exam_weeks = config.exam_weeks if config else 1
-
         # 过滤出带 exam_date 的生成记录（排除模板记录）
         generated_slots = [ts for ts in time_slots if ts.exam_date is not None]
+
+        # 读取排考配置
+        config_result = await db.execute(select(ScheduleConfig).order_by(ScheduleConfig.id.desc()).limit(1))
+        config = config_result.scalar_one_or_none()
+
+        # 校验/确定考试起始日期和周数
+        if generated_slots:
+            # 有已生成时段：自动从时段推断起始日期和周数
+            exam_start_date = min(ts.exam_date for ts in generated_slots)
+            exam_weeks = len(generated_slots) // 20
+        else:
+            # 无已生成时段：从请求或配置获取
+            exam_start_date = req.exam_start_date
+            exam_weeks = req.exam_weeks
+            if exam_start_date is None:
+                exam_start_date = config.exam_start_date if config else None
+            if exam_weeks is None:
+                exam_weeks = config.exam_weeks if config else 1
+
         expected_count = exam_weeks * 20
 
         if len(generated_slots) != expected_count:
@@ -178,10 +189,6 @@ async def run_scheduler(
             Teacher as EngineTeacher,
             TimeSlot as EngineTimeSlot,
         )
-
-        # 读取排考配置
-        config_result = await db.execute(select(ScheduleConfig).order_by(ScheduleConfig.id.desc()).limit(1))
-        config = config_result.scalar_one_or_none()
 
         fixed_teachers_per_room = req.fixed_teachers_per_room
         if fixed_teachers_per_room is None:
@@ -286,14 +293,26 @@ async def run_scheduler(
             exam_weeks=exam_weeks,
         )
 
+        # 构建名称映射，用于生成自包含快照
+        from app.models.class_ import Class as ClassModel
+        class_result = await db.execute(select(ClassModel))
+        all_classes = class_result.scalars().all()
+        class_map = {c.id: c for c in all_classes}
+        classroom_map = {c.id: c for c in classrooms}
+        teacher_map = {t.id: t for t in teachers}
+        slot_time_map = {ts.id: (ts.start_time, ts.end_time) for ts in time_slots}
+
         version_no = datetime.now().strftime("%Y%m%d-%H%M%S")
         # 使用原始 Exam 对象生成 snapshot，保留 A/B 卷独立记录及 classroom_id
+        # 快照增加冗余名称/时间字段，使其自包含（后续从快照构建视图无需查库）
         snapshot = {
+            "success": schedule_result.success,
             "exams": [
                 {
                     "exam_id": exam.id,
                     "course_id": exam.course_id,
                     "course_name": exam.course.name if exam.course else "",
+                    "course_type": exam.course.course_type if exam.course else "major",
                     "time_slot_id": exam.time_slot_id,
                     "exam_date": next(
                         (ts.exam_date.isoformat() for ts in generated_slots if ts.id == exam.time_slot_id),
@@ -307,15 +326,26 @@ async def run_scheduler(
                         (ts.slot_code for ts in generated_slots if ts.id == exam.time_slot_id),
                         None
                     ),
+                    "start_time": next(
+                        (ts.start_time for ts in generated_slots if ts.id == exam.time_slot_id),
+                        slot_time_map.get(exam.time_slot_id, (None, None))[0]
+                    ),
+                    "end_time": next(
+                        (ts.end_time for ts in generated_slots if ts.id == exam.time_slot_id),
+                        slot_time_map.get(exam.time_slot_id, (None, None))[1]
+                    ),
                     "exam_label": exam.exam_label,
                     "classrooms": [
                         {
                             "classroom_id": ec.classroom_id,
+                            "classroom_name": classroom_map.get(ec.classroom_id).name if classroom_map.get(ec.classroom_id) else f"教室{ec.classroom_id}",
+                            "capacity": classroom_map.get(ec.classroom_id).capacity if classroom_map.get(ec.classroom_id) else 0,
                             "student_count": ec.total_students,
                             "class_ids": [ca.class_id for ca in ec.class_assignments],
                             "class_assignments": [
                                 {
                                     "class_id": ca.class_id,
+                                    "class_name": class_map.get(ca.class_id).name if class_map.get(ca.class_id) else f"班级{ca.class_id}",
                                     "student_count": ca.student_count,
                                 }
                                 for ca in ec.class_assignments
@@ -326,6 +356,9 @@ async def run_scheduler(
                     "teachers": [
                         {
                             "teacher_id": et.teacher_id,
+                            "teacher_name": teacher_map.get(et.teacher_id).name if teacher_map.get(et.teacher_id) else f"教师{et.teacher_id}",
+                            "teacher_type": teacher_map.get(et.teacher_id).teacher_type.value if teacher_map.get(et.teacher_id) else None,
+                            "max_slots": teacher_map.get(et.teacher_id).max_slots if teacher_map.get(et.teacher_id) else 5,
                             "role": et.role,
                             "classroom_id": et.classroom_id,
                             "patrol_group_name": getattr(et, "patrol_group_name", None),
@@ -339,6 +372,10 @@ async def run_scheduler(
                 {
                     "time_slot_id": pr.time_slot_id,
                     "teacher_ids": pr.teacher_ids,
+                    "teacher_names": [
+                        teacher_map.get(tid).name if teacher_map.get(tid) else f"教师{tid}"
+                        for tid in pr.teacher_ids
+                    ],
                 }
                 for pr in schedule_result.patrol_teachers
             ],
@@ -544,22 +581,49 @@ async def apply_schedule_version(
             ))
 
     # 5. 更新教师 current_slots（统计每个教师被分配的总场次）
-    teacher_slot_counts: dict[int, set[int]] = {}  # teacher_id -> set of time_slot_ids
-    # 在创建 ExamTeacher 时已经遍历过 teachers，直接利用 seen_teachers 和 snapshot 数据
+    # 流动监考按 slot_pair（T1/T2 或 T3/T4）计为 1 场，而非按 time_slot_id 计为 2 场
+    teacher_slot_counts: dict[int, set] = {}  # teacher_id -> set of slot identifiers
+
+    # 构建 time_slot_id -> (day_of_week, slot_pair) 映射
+    slot_pair_map: dict[int, tuple[int, int]] = {}
     for er in snapshot.get("exams", []):
-        time_slot_id = er.get("time_slot_id")
+        ts_id = er.get("time_slot_id")
+        if ts_id and ts_id not in slot_pair_map:
+            dow = er.get("day_of_week")
+            sc = er.get("slot_code")
+            sp = 1 if sc in ("T1", "T2") else 2 if sc in ("T3", "T4") else 0
+            if dow and sp:
+                slot_pair_map[ts_id] = (dow, sp)
+    for pr in snapshot.get("patrol_teachers", []):
+        ts_id = pr.get("time_slot_id")
+        if ts_id and ts_id not in slot_pair_map:
+            dow = pr.get("day_of_week")
+            sc = pr.get("slot_code")
+            sp = 1 if sc in ("T1", "T2") else 2 if sc in ("T3", "T4") else 0
+            if dow and sp:
+                slot_pair_map[ts_id] = (dow, sp)
+
+    # fixed 按 time_slot_id 计数；patrol 按 (day_of_week, slot_pair) 计数
+    for er in snapshot.get("exams", []):
+        ts_id = er.get("time_slot_id")
         for tr in er.get("teachers", []):
             tid = tr["teacher_id"]
             if tid not in teacher_slot_counts:
                 teacher_slot_counts[tid] = set()
-            if time_slot_id:
-                teacher_slot_counts[tid].add(time_slot_id)
-    # 流动监考也计入场次
+            if tr.get("role") == "patrol" and ts_id in slot_pair_map:
+                teacher_slot_counts[tid].add(("patrol", *slot_pair_map[ts_id]))
+            elif ts_id:
+                teacher_slot_counts[tid].add(ts_id)
+
+    # patrol_teachers 补充（覆盖 exams 中可能遗漏的 patrol 记录）
     for pr in snapshot.get("patrol_teachers", []):
+        ts_id = pr.get("time_slot_id")
+        pair_key = ("patrol", *slot_pair_map[ts_id]) if ts_id in slot_pair_map else ts_id
         for tid in pr.get("teacher_ids", []):
             if tid not in teacher_slot_counts:
                 teacher_slot_counts[tid] = set()
-            teacher_slot_counts[tid].add(pr["time_slot_id"])
+            teacher_slot_counts[tid].add(pair_key)
+
     # 先重置所有教师的 current_slots，避免旧版本数据残留
     await db.execute(update(Teacher).values(current_slots=0))
 
@@ -605,6 +669,10 @@ async def list_schedule_versions(
                     "status": v.status.value,
                     "description": v.description,
                     "created_at": v.created_at.isoformat() if v.created_at else None,
+                    "success": (
+                        json.loads(v.data_snapshot).get("success")
+                        if v.data_snapshot else None
+                    ),
                 }
                 for v in versions
             ],

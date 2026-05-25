@@ -16,14 +16,16 @@ import {
   ChevronsUpDown,
   Trash2,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Loader2,
+  CalendarDays,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import RollingNumber from '@/components/RollingNumber';
 import ExportModal, { type ExportFormat } from '@/components/ExportModal';
-import { getExamOverviewMatrix, getPatrolMatrix, getTeacherGanttData, getClassroomMatrix, getBatchClassSchedule, getCourseExams, getScheduleVersions } from '@/api/results';
+import { getExamOverviewMatrix, getPatrolMatrix, getTeacherGanttData, getClassroomMatrix, getBatchClassSchedule, getCourseExams, getScheduleVersions, getTeacherDayDistribution } from '@/api/results';
 import { getCourses } from '@/api/courses';
 import { deleteScheduleVersion, applyVersion } from '@/api/scheduler';
 import apiClient from '@/api/client';
@@ -34,6 +36,7 @@ const navItems: { key: ResultPanelType; label: string; icon: typeof BarChart3 }[
   { key: 'overview', label: '总览矩阵', icon: BarChart3 },
   { key: 'teachers', label: '监考教师', icon: Users },
   { key: 'teacher-load', label: '教师负荷', icon: Gauge },
+  { key: 'teacher-days', label: '教师天数', icon: CalendarDays },
   { key: 'classrooms', label: '教室使用', icon: Building2 },
   { key: 'patrol', label: '流动监考', icon: Route },
   { key: 'classes', label: '班级安排', icon: GraduationCap },
@@ -205,6 +208,7 @@ export default function ResultsView() {
       queryClient.invalidateQueries({ queryKey: ['classroomMatrix'] });
       queryClient.invalidateQueries({ queryKey: ['patrolMatrix'] });
       queryClient.invalidateQueries({ queryKey: ['batchClassSchedule'] });
+      queryClient.invalidateQueries({ queryKey: ['teacherDayDistribution'] });
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.detail || error?.message || '应用失败');
@@ -218,6 +222,7 @@ export default function ResultsView() {
     queryClient.invalidateQueries({ queryKey: ['classroomMatrix'] });
     queryClient.invalidateQueries({ queryKey: ['patrolMatrix'] });
     queryClient.invalidateQueries({ queryKey: ['batchClassSchedule'] });
+    queryClient.invalidateQueries({ queryKey: ['teacherDayDistribution'] });
     queryClient.invalidateQueries({ queryKey: ['courseExams'] });
     toast.success('数据已刷新');
   }, [queryClient]);
@@ -240,7 +245,7 @@ export default function ResultsView() {
 
   // 获取当前选中版本的状态
   const currentVersionStatus = useMemo(() => {
-    if (!activeVersionId || !versionsData) return null;
+    if (activeVersionId == null || !versionsData) return null;
     const version = versionsData.find((v: any) => v.id === activeVersionId);
     return version?.status || null;
   }, [activeVersionId, versionsData]);
@@ -248,30 +253,29 @@ export default function ResultsView() {
   // 获取总览矩阵数据
   const { data: overviewData } = useQuery({
     queryKey: ['examOverviewMatrix', activeVersionId],
-    queryFn: () => getExamOverviewMatrix(),
-    enabled: !!activeVersionId,
+    queryFn: () => getExamOverviewMatrix(activeVersionId),
   });
 
   // 各面板数据查询
   const { data: teacherGanttData } = useQuery({
     queryKey: ['teacherGanttData', activeVersionId],
-    queryFn: () => getTeacherGanttData(),
-    enabled: !!activeVersionId,
+    queryFn: () => getTeacherGanttData(activeVersionId),
   });
   const { data: classroomMatrixData } = useQuery({
     queryKey: ['classroomMatrix', activeVersionId],
-    queryFn: () => getClassroomMatrix(),
-    enabled: !!activeVersionId,
+    queryFn: () => getClassroomMatrix(activeVersionId),
   });
   const { data: patrolMatrixData } = useQuery({
     queryKey: ['patrolMatrix', activeVersionId],
-    queryFn: () => getPatrolMatrix(),
-    enabled: !!activeVersionId,
+    queryFn: () => getPatrolMatrix(activeVersionId),
   });
   const { data: batchClassData } = useQuery({
     queryKey: ['batchClassSchedule', activeVersionId],
-    queryFn: () => getBatchClassSchedule(),
-    enabled: !!activeVersionId,
+    queryFn: () => getBatchClassSchedule(activeVersionId),
+  });
+  const { data: teacherDayData } = useQuery({
+    queryKey: ['teacherDayDistribution', activeVersionId],
+    queryFn: () => getTeacherDayDistribution(activeVersionId),
   });
   const { data: coursesData } = useQuery({
     queryKey: ['courses'],
@@ -386,6 +390,26 @@ export default function ResultsView() {
         ];
       }
 
+      case 'teacher-days': {
+        // 教师天数分布
+        const teachers = teacherDayData?.teachers || [];
+        const totalEvents = teachers.reduce((sum, t) => sum + t.total_events, 0);
+        const avgDays = teachers.length > 0
+          ? teachers.reduce((sum, t) => sum + t.unique_days_count, 0) / teachers.length
+          : 0;
+        const maxDays = teachers.length > 0
+          ? Math.max(...teachers.map(t => t.unique_days_count))
+          : 0;
+        return [
+          { label: '监考教师', value: teachers.length, highlight: true },
+          { label: '总监考人次', value: totalEvents },
+          { label: '平均天数', value: Math.round(avgDays * 10) / 10, isDecimal: true },
+          { label: '最大天数', value: maxDays },
+          { label: '固定监考', value: teachers.reduce((sum, t) => sum + t.fixed_count, 0) },
+          { label: '流动监考', value: teachers.reduce((sum, t) => sum + t.patrol_count, 0) },
+        ];
+      }
+
       case 'classrooms': {
         // 教室使用：显示教室分布
         const matrix = classroomMatrixData?.matrix || {};
@@ -470,7 +494,7 @@ export default function ResultsView() {
           { label: '流动监考人次', value: baseStats.patrolCount },
         ];
     }
-  }, [currentPanel, baseStats, teacherGanttData, classroomMatrixData, patrolMatrixData, batchClassData, coursesData]);
+  }, [currentPanel, baseStats, teacherGanttData, classroomMatrixData, patrolMatrixData, batchClassData, coursesData, teacherDayData]);
 
   const renderPanel = () => {
     switch (currentPanel) {
@@ -480,6 +504,8 @@ export default function ResultsView() {
         return <TeacherPanel searchQuery={searchQuery} expandedTeacher={expandedTeacher} setExpandedTeacher={setExpandedTeacher} activeVersionId={activeVersionId} />;
       case 'teacher-load':
         return <TeacherLoadPanel searchQuery={searchQuery} activeVersionId={activeVersionId} />;
+      case 'teacher-days':
+        return <TeacherDayDistributionPanel searchQuery={searchQuery} activeVersionId={activeVersionId} />;
       case 'classrooms':
         return <ClassroomPanel searchQuery={searchQuery} expandedClassrooms={expandedClassrooms} toggleClassroom={toggleClassroom} collapseAll={collapseAllClassrooms} activeVersionId={activeVersionId} />;
       case 'patrol':
@@ -487,7 +513,7 @@ export default function ResultsView() {
       case 'classes':
         return <ClassPanel searchQuery={searchQuery} expandedClass={expandedClass} setExpandedClass={setExpandedClass} activeVersionId={activeVersionId} />;
       case 'courses':
-        return <CoursePanel searchQuery={searchQuery} expandedCourses={expandedCourses} toggleCourse={toggleCourse} collapseAll={collapseAllCourses} />;
+        return <CoursePanel searchQuery={searchQuery} expandedCourses={expandedCourses} toggleCourse={toggleCourse} collapseAll={collapseAllCourses} activeVersionId={activeVersionId} />;
       default:
         return <OverviewPanel searchQuery={searchQuery} />;
     }
@@ -522,7 +548,7 @@ export default function ResultsView() {
                       : '';
                     return (
                       <option key={v.id} value={v.id}>
-                        {v.version_no} {v.status === 'published' ? '(当前)' : `(${localTime})`}
+                        {v.version_no} {v.status === 'published' ? '(已应用)' : `(${localTime})`}
                       </option>
                     );
                   })
@@ -532,6 +558,31 @@ export default function ResultsView() {
               </select>
               <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#C8CDD3] dark:text-[#484F58] pointer-events-none" />
             </div>
+
+            {/* 失败版本警告 */}
+            {activeVersionId && versionsData && (
+              (() => {
+                const v = versionsData.find((v: any) => v.id === activeVersionId);
+                if (v && v.success === false) {
+                  return (
+                    <div className="mb-4 p-3 bg-[#C27A63]/10 border border-[#C27A63]/20 rounded-xl">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle size={16} className="text-[#C27A63] shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium text-[#C27A63]">
+                            这是一个排考失败的版本
+                          </p>
+                          <p className="text-xs text-[#C27A63]/80 mt-0.5">
+                            结果仅供参考，无任何监考老师
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()
+            )}
 
             {/* 应用此版本按钮 - 仅当选中版本不是已发布状态时显示 */}
             {activeVersionId && currentVersionStatus && currentVersionStatus !== 'published' && (
@@ -705,6 +756,19 @@ export default function ResultsView() {
               <p className="text-xs text-[#C27A63] mb-4 p-2 bg-[#C27A63]/5 rounded-lg">
                 应用后，当前排考结果将被覆盖并归档，后续可在「显示所有版本」中找到并还原为应用版本。
               </p>
+              {applyConfirmModal && versionsData && (
+                (() => {
+                  const v = versionsData.find((v: any) => v.id === applyConfirmModal.versionId);
+                  if (v && v.success === false) {
+                    return (
+                      <p className="text-sm font-bold text-[#C27A63] mb-4 p-3 bg-[#C27A63]/10 border border-[#C27A63]/30 rounded-lg">
+                        ⚠️ 当前版本是一个没有安排监考老师的废弃版本，你确定要使用吗？
+                      </p>
+                    );
+                  }
+                  return null;
+                })()
+              )}
               <div className="flex gap-3">
                 <button
                   onClick={() => setApplyConfirmModal(null)}
@@ -1093,8 +1157,7 @@ function TeacherPanel({
 }) {
   const { data, isLoading } = useQuery({
     queryKey: ['teacherGanttData', activeVersionId],
-    queryFn: () => getTeacherGanttData(activeVersionId!),
-    enabled: !!activeVersionId,
+    queryFn: () => getTeacherGanttData(activeVersionId),
   });
 
   if (isLoading) {
@@ -1209,8 +1272,7 @@ function TeacherPanel({
 function TeacherLoadPanel({ searchQuery, activeVersionId }: { searchQuery: string; activeVersionId: number | null }) {
   const { data, isLoading } = useQuery({
     queryKey: ['teacherGanttData', activeVersionId],
-    queryFn: () => getTeacherGanttData(activeVersionId!),
-    enabled: !!activeVersionId,
+    queryFn: () => getTeacherGanttData(activeVersionId),
   });
 
   if (isLoading) {
@@ -1276,6 +1338,87 @@ function TeacherLoadPanel({ searchQuery, activeVersionId }: { searchQuery: strin
   );
 }
 
+function TeacherDayDistributionPanel({ searchQuery, activeVersionId }: { searchQuery: string; activeVersionId: number | null }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['teacherDayDistribution', activeVersionId],
+    queryFn: () => getTeacherDayDistribution(activeVersionId),
+  });
+
+  if (isLoading) {
+    return <div className="glass-card rounded-3xl p-6 text-center text-[#8C959F]">加载中...</div>;
+  }
+
+  const teachers = data?.teachers || [];
+  const filtered = teachers.filter((t) =>
+    t.teacher_name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <div className="glass-card rounded-3xl p-6">
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="font-display text-lg font-medium text-[#1F2328] dark:text-[#E6EDF3]">教师监考天数分布</h3>
+        <span className="text-xs text-[#8C959F] dark:text-[#8B949E] bg-[#F9FAFB] dark:bg-[#21262D] px-3 py-1 rounded-full">
+          {filtered.length} 位教师
+        </span>
+      </div>
+
+      <div className="space-y-3">
+        {filtered.map((teacher) => {
+          const days = teacher.day_list || [];
+          const dayGroups = days.reduce<Record<string, string[]>>((acc, d) => {
+            const key = d.date || d.day_name;
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(d.slot_code);
+            return acc;
+          }, {});
+
+          return (
+            <div
+              key={teacher.teacher_id}
+              className="flex items-start gap-4 p-4 rounded-xl bg-white/40 dark:bg-[#161B22]/60 hover:bg-[#F9FAFB] dark:hover:bg-[#21262D] transition-colors"
+            >
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium text-white flex-shrink-0"
+                style={{ backgroundColor: '#D4A373' }}
+              >
+                {teacher.teacher_name[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3]">{teacher.teacher_name}</span>
+                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                    teacher.unique_days_count > 3
+                      ? 'bg-[#C27A63]/10 text-[#C27A63]'
+                      : teacher.unique_days_count > 1
+                      ? 'bg-[#C5AC74]/10 text-[#C5AC74]'
+                      : 'bg-[#6B9B8A]/10 text-[#6B9B8A]'
+                  }`}>
+                    {teacher.unique_days_count} 天
+                  </span>
+                  <span className="text-xs text-[#8C959F] dark:text-[#8B949E]">
+                    共 {teacher.total_events} 场（固定 {teacher.fixed_count} / 流动 {teacher.patrol_count}）
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(dayGroups).map(([dayKey, slots]) => (
+                    <span
+                      key={dayKey}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] bg-[#D4A373]/10 text-[#D4A373]"
+                    >
+                      <CalendarDays size={10} />
+                      {dayKey} ({slots.join(', ')})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ClassroomPanel({
   searchQuery,
   expandedClassrooms,
@@ -1291,8 +1434,7 @@ function ClassroomPanel({
 }) {
   const { data, isLoading } = useQuery({
     queryKey: ['classroomMatrix', activeVersionId],
-    queryFn: () => getClassroomMatrix(activeVersionId!),
-    enabled: !!activeVersionId,
+    queryFn: () => getClassroomMatrix(activeVersionId),
   });
 
   if (isLoading) {
@@ -1409,8 +1551,7 @@ function ClassroomPanel({
 function PatrolPanel({ activeVersionId }: { activeVersionId: number | null }) {
   const { data, isLoading } = useQuery({
     queryKey: ['patrolMatrix', activeVersionId],
-    queryFn: () => getPatrolMatrix(activeVersionId!),
-    enabled: !!activeVersionId,
+    queryFn: () => getPatrolMatrix(activeVersionId),
   });
 
   if (isLoading) {
@@ -1518,8 +1659,7 @@ function ClassPanel({
 }) {
   const { data, isLoading } = useQuery({
     queryKey: ['batchClassSchedule', activeVersionId],
-    queryFn: () => getBatchClassSchedule(activeVersionId!),
-    enabled: !!activeVersionId,
+    queryFn: () => getBatchClassSchedule(activeVersionId),
   });
 
   if (isLoading) {
@@ -1630,11 +1770,13 @@ function CoursePanel({
   expandedCourses,
   toggleCourse,
   collapseAll,
+  activeVersionId,
 }: {
   searchQuery: string;
   expandedCourses: Set<number>;
   toggleCourse: (id: number) => void;
   collapseAll: () => void;
+  activeVersionId: number | null;
 }) {
   const { data: coursesData, isLoading } = useQuery({
     queryKey: ['courses'],
@@ -1707,7 +1849,7 @@ function CoursePanel({
               </div>
 
               {isExpanded && (
-                <CourseExamDetail courseId={course.id} />
+                <CourseExamDetail courseId={course.id} activeVersionId={activeVersionId} />
               )}
             </div>
           );
@@ -1717,10 +1859,10 @@ function CoursePanel({
   );
 }
 
-function CourseExamDetail({ courseId }: { courseId: number }) {
+function CourseExamDetail({ courseId, activeVersionId }: { courseId: number; activeVersionId: number | null }) {
   const { data: courseDetailData, isLoading } = useQuery({
-    queryKey: ['courseDetail', courseId],
-    queryFn: () => getCourseExams(courseId),
+    queryKey: ['courseDetail', courseId, activeVersionId],
+    queryFn: () => getCourseExams(courseId, activeVersionId),
   });
 
   if (isLoading) {
@@ -1805,3 +1947,4 @@ function CourseExamDetail({ courseId }: { courseId: number }) {
     </div>
   );
 }
+

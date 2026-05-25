@@ -37,8 +37,9 @@ export interface OverviewMatrixResponse {
 /**
  * 获取总览矩阵 (日期 × 时段)
  */
-export async function getExamOverviewMatrix(): Promise<OverviewMatrixResponse> {
-  const { data } = await apiClient.get<ApiResponse<OverviewMatrixResponse>>('/exams/overview/matrix');
+export async function getExamOverviewMatrix(versionId?: number | null): Promise<OverviewMatrixResponse> {
+  const params = versionId ? `?version_id=${versionId}` : '';
+  const { data } = await apiClient.get<ApiResponse<OverviewMatrixResponse>>(`/exams/overview/matrix${params}`);
   return data.data;
 }
 
@@ -75,8 +76,9 @@ export interface TeacherGanttItem {
 /**
  * 获取教师监考甘特图数据
  */
-export async function getTeacherGanttData(): Promise<{ teachers: TeacherGanttItem[] }> {
-  const { data } = await apiClient.get<ApiResponse<{ teachers: TeacherGanttItem[] }>>('/exams/teachers/gantt');
+export async function getTeacherGanttData(versionId?: number | null): Promise<{ teachers: TeacherGanttItem[] }> {
+  const params = versionId ? `?version_id=${versionId}` : '';
+  const { data } = await apiClient.get<ApiResponse<{ teachers: TeacherGanttItem[] }>>(`/exams/teachers/gantt${params}`);
   return data.data;
 }
 
@@ -101,8 +103,9 @@ export interface ClassroomMatrixResponse {
 /**
  * 获取教室使用矩阵
  */
-export async function getClassroomMatrix(): Promise<ClassroomMatrixResponse> {
-  const { data } = await apiClient.get<ApiResponse<ClassroomMatrixResponse>>('/exams/classrooms/matrix');
+export async function getClassroomMatrix(versionId?: number | null): Promise<ClassroomMatrixResponse> {
+  const params = versionId ? `?version_id=${versionId}` : '';
+  const { data } = await apiClient.get<ApiResponse<ClassroomMatrixResponse>>(`/exams/classrooms/matrix${params}`);
   return data.data;
 }
 
@@ -122,8 +125,9 @@ export interface PatrolMatrixResponse {
 /**
  * 获取流动监考矩阵
  */
-export async function getPatrolMatrix(): Promise<PatrolMatrixResponse> {
-  const { data } = await apiClient.get<ApiResponse<PatrolMatrixResponse>>('/exams/patrol/matrix');
+export async function getPatrolMatrix(versionId?: number | null): Promise<PatrolMatrixResponse> {
+  const params = versionId ? `?version_id=${versionId}` : '';
+  const { data } = await apiClient.get<ApiResponse<PatrolMatrixResponse>>(`/exams/patrol/matrix${params}`);
   return data.data;
 }
 
@@ -154,16 +158,18 @@ export interface ClassScheduleResponse {
 /**
  * 获取单个班级的考试安排
  */
-export async function getClassSchedule(classId: number): Promise<ClassScheduleResponse> {
-  const { data } = await apiClient.get<ApiResponse<ClassScheduleResponse>>(`/exams/classes/${classId}/schedule`);
+export async function getClassSchedule(classId: number, versionId?: number | null): Promise<ClassScheduleResponse> {
+  const params = versionId ? `?version_id=${versionId}` : '';
+  const { data } = await apiClient.get<ApiResponse<ClassScheduleResponse>>(`/exams/classes/${classId}/schedule${params}`);
   return data.data;
 }
 
 /**
  * 获取所有班级的考试安排（批量接口）
  */
-export async function getBatchClassSchedule(): Promise<{ classes: ClassScheduleResponse[] }> {
-  const { data } = await apiClient.get<ApiResponse<{ classes: ClassScheduleResponse[] }>>('/exams/classes/batch-schedule');
+export async function getBatchClassSchedule(versionId?: number | null): Promise<{ classes: ClassScheduleResponse[] }> {
+  const params = versionId ? `?version_id=${versionId}` : '';
+  const { data } = await apiClient.get<ApiResponse<{ classes: ClassScheduleResponse[] }>>(`/exams/classes/batch-schedule${params}`);
   return data.data;
 }
 
@@ -210,8 +216,36 @@ export interface CourseExamsResponse {
  * 获取课程的考试安排
  * 使用 /api/exams/{course_id}/exams 接口
  */
-export async function getCourseExams(courseId: number): Promise<CourseExamsResponse> {
-  const { data } = await apiClient.get<ApiResponse<CourseExamsResponse>>(`/exams/${courseId}/exams`);
+export async function getCourseExams(courseId: number, versionId?: number | null): Promise<CourseExamsResponse> {
+  const params = versionId ? `?version_id=${versionId}` : '';
+  const { data } = await apiClient.get<ApiResponse<CourseExamsResponse>>(`/exams/${courseId}/exams${params}`);
+  return data.data;
+}
+
+// ============================================================
+// 教师监考天数分布
+// ============================================================
+
+export interface TeacherDayDistributionItem {
+  teacher_id: number;
+  teacher_name: string;
+  total_events: number;
+  fixed_count: number;
+  patrol_count: number;
+  unique_days_count: number;
+  day_list: Array<{
+    date: string;
+    day_name: string;
+    slot_code: string;
+  }>;
+}
+
+/**
+ * 获取教师监考天数分布
+ */
+export async function getTeacherDayDistribution(versionId?: number | null): Promise<{ teachers: TeacherDayDistributionItem[] }> {
+  const params = versionId ? `?version_id=${versionId}` : '';
+  const { data } = await apiClient.get<ApiResponse<{ teachers: TeacherDayDistributionItem[] }>>(`/exams/teachers/day-distribution${params}`);
   return data.data;
 }
 
@@ -225,6 +259,7 @@ export interface ScheduleVersion {
   status: string;
   description?: string;
   created_at?: string;
+  success?: boolean;
 }
 
 /**

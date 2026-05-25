@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -122,7 +123,9 @@ class SchedulingEngine:
         self.max_days: int | None = max_days
         self._patrol_slot_pairs_used: set[tuple[int, int]] = set()
         self._teacher_last_picked: dict[int, int] = {}
+        self._time_slot_map: dict[int, Any] = {}
         self.force_one_teacher_per_room: bool = False
+        self._exam_count: int = 0
 
     # --------------------------------------------------------
     # 主入口：运行排考
@@ -157,6 +160,8 @@ class SchedulingEngine:
 
         # 构建辅助索引
         time_slot_map: dict[int, TimeSlot] = {t.id: t for t in time_slots}
+        self._time_slot_map = time_slot_map
+        self._exam_count = 0
         classroom_map: dict[int, Classroom] = {c.id: c for c in classrooms}
         teacher_map: dict[int, Teacher] = {t.id: t for t in teachers}
 
@@ -183,7 +188,7 @@ class SchedulingEngine:
             actual_exam_days: set[int] = set()
             for ts in time_slots:
                 actual_exam_days.add(ts.day_of_week)
-            max_days = max(len(actual_exam_days) - 1, 1)  # 至少为1
+            max_days = max(len(actual_exam_days) - 1, 2)  # 至少为1
         exam_results: list[ExamResult] = []  # 结果
         patrol_results: list[PatrolResult] = []  # 流动监考结果
         violations: list[str] = []  # 违规信息
@@ -466,6 +471,100 @@ class SchedulingEngine:
                     violations.append(f"专业课 {course.name} 找不到可用时段或教室不足")
 
         # =====================================================
+        # 阶段二点五：CP-SAT 全局教师负载均衡（后处理）
+        # =====================================================
+        from .teacher_rebalance import rebalance_fixed_teachers
+        rebalance_fixed_teachers(
+            all_exams=all_exams,
+            teachers=teachers,
+            max_days=max_days if self.enable_max_days_constraint else None,
+            time_limit_seconds=min(30.0, self.max_solve_time / 10),
+        )
+
+        # 同步更新 exam_results 中的 fixed 教师数据
+        exam_by_id = {exam.id: exam for exam in all_exams}
+        exams_by_label: dict[tuple[int, str | None], Any] = {}
+        for exam in all_exams:
+            exams_by_label[(exam.course_id, exam.exam_label)] = exam
+
+        for er in exam_results:
+            exam = exam_by_id.get(er.exam_id)
+            if exam is None:
+                continue
+            # 收集相关 Exam 对象（AB 卷需要 A+B）
+            related_exams = [exam]
+            if exam.exam_label == "A":
+                b_exam = exams_by_label.get((exam.course_id, "B"))
+                if b_exam:
+                    related_exams.append(b_exam)
+            # 更新 fixed 教师列表
+            er.teachers = [
+                TeacherResult(
+                    teacher_id=et.teacher_id,
+                    teacher_name=f"Teacher_{et.teacher_id}",
+                    role="fixed",
+                )
+                for e in related_exams
+                for et in e.teacher_assignments
+                if (et.role.value if hasattr(et.role, "value") else et.role) == "fixed"
+            ]
+
+        # 重新生成 patrol_results（避免与新的 fixed 分配冲突）
+        fixed_by_slot: dict[int, set[int]] = defaultdict(set)
+        for exam in all_exams:
+            for et in exam.teacher_assignments:
+                if (et.role.value if hasattr(et.role, "value") else et.role) == "fixed":
+                    fixed_by_slot[exam.time_slot_id].add(et.teacher_id)
+
+        # 追踪每位教师的总分配场次（fixed + 已分配的 patrol），防止超载
+        teacher_total_load: dict[int, int] = {}
+        for t in teachers:
+            fixed_load = sum(
+                1 for e in all_exams
+                for et in e.teacher_assignments
+                if et.teacher_id == t.id and (et.role.value if hasattr(et.role, "value") else et.role) == "fixed"
+            )
+            teacher_total_load[t.id] = fixed_load
+
+        new_patrol_results: list[PatrolResult] = []
+        used_slot_pairs: set[tuple[int, int]] = set()
+        for ts_id in sorted(used_time_slots):
+            ts = time_slot_map[ts_id]
+            # 同一场次对（T1/T2 或 T3/T4）共享一组流动监考，避免重复生成
+            slot_pair_key = (ts.day_of_week, ts.slot_pair)
+            if slot_pair_key in used_slot_pairs:
+                continue
+            used_slot_pairs.add(slot_pair_key)
+
+            # 收集该场次对下所有时段的 fixed 教师（取并集，避免冲突）
+            fixed_ids: set[int] = set()
+            for sid in used_time_slots:
+                s_ts = time_slot_map.get(sid)
+                if s_ts and s_ts.day_of_week == ts.day_of_week and s_ts.slot_pair == ts.slot_pair:
+                    fixed_ids.update(fixed_by_slot.get(sid, set()))
+
+            # 简单启发式：选择不在 fixed 中且总场次未达上限的教师，按当前总负载升序
+            candidates = []
+            for t in teachers:
+                if t.id not in fixed_ids and teacher_total_load.get(t.id, 0) < t.max_slots:
+                    candidates.append((teacher_total_load[t.id], t.id, t.teacher_type))
+            # 优先 part_time，然后 full_time，按总负载升序
+            candidates.sort(key=lambda x: (0 if x[2] == "part_time" else 1, x[0]))
+            patrol_ids = [tid for _, tid, _ in candidates[:self.patrol_teacher_count]]
+            for tid in patrol_ids:
+                teacher_total_load[tid] = teacher_total_load.get(tid, 0) + 1
+            if patrol_ids:
+                new_patrol_results.append(
+                    PatrolResult(
+                        time_slot_id=ts_id,
+                        day_of_week=ts.day_of_week,
+                        slot_code=ts.slot_code,
+                        teacher_ids=patrol_ids,
+                    )
+                )
+        patrol_results = new_patrol_results
+
+        # =====================================================
         # 阶段三：全局验证与冲突分析
         # =====================================================
         conflict_report = self._build_conflict_report(
@@ -486,10 +585,43 @@ class SchedulingEngine:
         # 验证HC-06：每个有考试的上下午场次对恰好有 patrol_count 名流动监考
         self._verify_patrol_coverage(patrol_results, used_time_slots, time_slot_map, violations)
 
+        # =====================================================
+        # 阶段二点六：同步 patrol 到 all_exams，确保快照数据一致
+        # =====================================================
+        # 1. 清理 all_exams 中所有旧的 patrol 分配
+        for exam in all_exams:
+            exam.teacher_assignments = [
+                ta for ta in exam.teacher_assignments
+                if (ta.role.value if hasattr(ta.role, "value") else ta.role) != "patrol"
+            ]
+
+        # 2. 将最终 patrol_results 写回 all_exams
+        for pr in patrol_results:
+            for exam in all_exams:
+                if exam.time_slot_id == pr.time_slot_id:
+                    for tid in pr.teacher_ids:
+                        exam.teacher_assignments.append(
+                            ExamTeacher(
+                                exam_id=exam.id,
+                                teacher_id=tid,
+                                role="patrol",
+                                classroom_id=None,
+                            )
+                        )
+
         solve_time: float = time.time() - start_time
 
+        # 区分致命错误与约束放宽警告：success 仅基于致命错误判断
+        warning_keywords = [
+            "启用兼任教师 fallback",
+            "被临时放宽",
+            "流动监考警告",
+            "排满策略违规",
+        ]
+        critical_violations = [v for v in violations if not any(w in v for w in warning_keywords)]
+
         return SchedulingResult(
-            success=len(violations) == 0,
+            success=len(critical_violations) == 0,
             exams=exam_results,
             patrol_teachers=patrol_results,
             violations=violations,
@@ -891,11 +1023,12 @@ class SchedulingEngine:
         # 恢复跨考试持久化的轮询状态
         for ts in teacher_states:
             ts.last_picked_round = self._teacher_last_picked.get(ts.teacher.id, 0)
-        # 更新已使用场次
+        # 更新已使用场次和日期
         for tid, slots in teacher_usage.items():
             for ts in teacher_states:
                 if ts.teacher.id == tid:
                     ts.assigned_slots = len(slots)
+                    ts.assigned_days = {self._time_slot_map[s].day_of_week for s in slots if s in self._time_slot_map}
         # 排除已在当前时段被分配的教师（避免同一时段不同考试重复分配同一人）
         teacher_states = [
             ts for ts in teacher_states
@@ -905,6 +1038,7 @@ class SchedulingEngine:
         # 2. 固定监考分配
         start = max(self._teacher_last_picked.values(), default=0)
         pick_round = PickRound(start=start)
+        alloc_log: list[dict] = []
         fixed_teachers = allocate_teachers_fixed(
             exam_id=id_gen.next(),
             classrooms=room_assignments,
@@ -916,6 +1050,8 @@ class SchedulingEngine:
             enable_day_continuity_constraint=self.enable_day_continuity_constraint,
             classroom_map=classroom_map,
             pick_round=pick_round,
+            violations=violations,
+            alloc_log=alloc_log,
         )
         if not fixed_teachers and room_assignments:
             violations.append(f"课程 {course.name} 固定监考分配失败：无可用教师")
@@ -953,6 +1089,8 @@ class SchedulingEngine:
             max_days=max_days,
             enable_day_continuity_constraint=self.enable_day_continuity_constraint,
             pick_round=pick_round,
+            violations=violations,
+            alloc_log=alloc_log,
         )
 
         # 更新教师使用追踪
@@ -973,6 +1111,7 @@ class SchedulingEngine:
             status="scheduled",
             course=course,
         )
+        exam.time_slot = time_slot
 
         # 教室分配
         for ra in room_assignments:
@@ -1016,6 +1155,18 @@ class SchedulingEngine:
         # 同步轮询状态到引擎持久化字典，实现跨考试轮询
         for ts in teacher_states:
             self._teacher_last_picked[ts.teacher.id] = ts.last_picked_round
+
+        # 记录调试日志
+        self._exam_count += 1
+        from .scheduler_logger import log_exam_allocation
+        log_exam_allocation(
+            exam_count=self._exam_count,
+                exam=exam,
+                teacher_states=teacher_states,
+                fixed_teachers=fixed_teachers,
+                patrol_teachers=patrol_teachers or [],
+                alloc_decisions=alloc_log,
+            )
 
         return exam
 

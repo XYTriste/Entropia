@@ -150,7 +150,7 @@ export interface BaseDataNavItem {
 
 export type BaseDataType = 'teachers' | 'classrooms' | 'courses' | 'classes' | 'students' | 'majors' | 'time-slots';
 
-export type ResultPanelType = 'overview' | 'teachers' | 'teacher-load' | 'classrooms' | 'patrol' | 'classes' | 'courses';
+export type ResultPanelType = 'overview' | 'teachers' | 'teacher-load' | 'teacher-days' | 'classrooms' | 'patrol' | 'classes' | 'courses';
 
 export interface TransferOperation {
   id: string;

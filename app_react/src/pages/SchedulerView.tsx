@@ -20,6 +20,7 @@ import {
   MapPin,
   GraduationCap,
   User,
+  Info,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -27,8 +28,8 @@ import WaveProgress from '@/components/WaveProgress';
 import RollingNumber from '@/components/RollingNumber';
 import { getCourses } from '@/api/courses';
 import { runScheduler, getSchedulerStatus, getSchedulerConfig, saveSchedulerConfig, applyVersion } from '@/api/scheduler';
-import { getExamOverviewMatrix, getScheduleVersions } from '@/api/results';
-import { generateTimeSlots } from '@/api/timeSlots';
+import { getExamOverviewMatrix, getScheduleVersions, type OverviewMatrixResponse } from '@/api/results';
+import { generateTimeSlots, getTimeSlots } from '@/api/timeSlots';
 import { useSchedulerStatus } from '@/hooks/useScheduler';
 import type { Course, SchedulerConfig } from '@/types';
 
@@ -57,6 +58,13 @@ export default function SchedulerView() {
   const [filterText, setFilterText] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [dateError, setDateError] = useState(false);
+  const [dateShake, setDateShake] = useState(false);
+  const [errorDialog, setErrorDialog] = useState<{ open: boolean; title: string; message: string }>({
+    open: false,
+    title: '',
+    message: '',
+  });
   const logEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
@@ -121,6 +129,12 @@ export default function SchedulerView() {
     queryFn: getScheduleVersions,
   });
 
+  // 预加载时段数据，用于自动推断日期
+  const { data: timeSlotsData } = useQuery({
+    queryKey: ['timeSlots'],
+    queryFn: getTimeSlots,
+  });
+
   useEffect(() => {
     // 当版本列表为空时，清除 schedulerResult 并刷新课程列表
     if (versionsData && versionsData.length === 0) {
@@ -137,6 +151,21 @@ export default function SchedulerView() {
       }
     }
   }, [versionsData]);
+
+  // 自动推断日期：当有生成时段且日期未设置时，自动填充最早日期
+  useEffect(() => {
+    if (timeSlotsData && timeSlotsData.length > 0 && !config.examStartDate) {
+      const generated = timeSlotsData.filter((ts) => ts.examDate);
+      if (generated.length > 0) {
+        const dates = generated.map((ts) => ts.examDate).filter(Boolean) as string[];
+        if (dates.length > 0) {
+          const minDate = dates.sort()[0];
+          const weeks = Math.max(1, Math.floor(generated.length / 20));
+          setConfig((prev) => ({ ...prev, examStartDate: minDate, examWeeks: weeks }));
+        }
+      }
+    }
+  }, [timeSlotsData]);
   
   useSchedulerStatus(jobId || undefined, (status) => {
     if (status.status === 'running') {
@@ -161,10 +190,25 @@ export default function SchedulerView() {
           `[${new Date().toLocaleTimeString()}] 耗时 ${status.result.solve_time}`,
           ...(status.result.violations ? [`[${new Date().toLocaleTimeString()}] ${status.result.violations} 项冲突已自动修复`] : []),
         ]);
+        // 如果有约束冲突，弹出警告对话框
+        if (status.status === 'completed_with_violations' || !status.result.success) {
+          setErrorDialog({
+            open: true,
+            title: '排考完成但存在约束冲突',
+            message: `排考引擎已完成，但检测到 ${status.result.violations || 0} 项约束冲突（如监考教师不足、教室容量超限等）。请检查排考结果，必要时调整配置后重新排考。`,
+          });
+        }
       }
     } else if (status.status === 'failed') {
       setIsRunning(false);
+      setShowResults(false);
+      setSchedulerResult(null);
       setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] 排考失败: ${status.error}`]);
+      setErrorDialog({
+        open: true,
+        title: '排考失败',
+        message: status.error || '排考过程中发生未知错误，请检查配置或联系管理员。',
+      });
     }
   });
 
@@ -229,20 +273,70 @@ export default function SchedulerView() {
       setJobId(data.job_id);
     },
     onError: (error: any) => {
-      toast.error(error?.toast || '启动排考失败');
       setIsRunning(false);
+      setShowResults(false);
+      setSchedulerResult(null);
+      const msg = error?.response?.data?.message || error?.message || '启动排考失败';
+      setErrorDialog({
+        open: true,
+        title: '排考失败',
+        message: msg,
+      });
     },
   });
 
-  const handleStart = () => {
+  const validateDate = (): boolean => {
+    if (!config.examStartDate) {
+      setDateError(true);
+      setDateShake(true);
+      setTimeout(() => setDateShake(false), 500);
+      toast.error('请先选择考试起始日期');
+      return false;
+    }
+    const d = new Date(config.examStartDate);
+    if (d.getDay() !== 1) {
+      setDateError(true);
+      setDateShake(true);
+      setTimeout(() => setDateShake(false), 500);
+      toast.error('考试起始日期必须是周一');
+      return false;
+    }
+    setDateError(false);
+    return true;
+  };
+
+  const handleStart = async () => {
     if (selectedCourses.length === 0) {
       toast.warning('请先选择要排考的课程');
       return;
     }
+    if (!validateDate()) {
+      return;
+    }
+
     setIsRunning(true);
     setProgress(10);
-    setLogs([[`${new Date().toLocaleTimeString()} 正在启动排考引擎...`]]);
+    setLogs([`${new Date().toLocaleTimeString()} 正在启动排考引擎...`]);
     setShowResults(false);
+
+    // 如果没有生成时段，先自动生成
+    const hasGeneratedSlots = timeSlotsData?.some((ts) => ts.examDate) ?? false;
+    if (!hasGeneratedSlots) {
+      try {
+        await generateTimeSlots(config.examStartDate, config.examWeeks);
+        toast.success('时段生成成功，开始排考...');
+        queryClient.invalidateQueries({ queryKey: ['timeSlots'] });
+      } catch (err: any) {
+        setIsRunning(false);
+        setErrorDialog({
+          open: true,
+          title: '生成时段失败',
+          message: err?.response?.data?.message || '无法生成考试时段，请检查日期配置',
+        });
+        return;
+      }
+    }
+
     runSchedulerMutation.mutate();
   };
 
@@ -339,9 +433,17 @@ export default function SchedulerView() {
                   <input
                     type="date"
                     value={config.examStartDate}
-                    onChange={(e) => setConfig({ ...config, examStartDate: e.target.value })}
-                    className="form-input-glass rounded-xl w-full"
+                    onChange={(e) => {
+                      setConfig({ ...config, examStartDate: e.target.value });
+                      setDateError(false);
+                    }}
+                    className={`form-input-glass rounded-xl w-full transition-all ${
+                      dateError ? 'border-red-400 dark:border-red-500 ring-2 ring-red-200 dark:ring-red-900/50' : ''
+                    } ${dateShake ? 'animate-shake' : ''}`}
                   />
+                  {dateError && (
+                    <p className="mt-1 text-xs text-red-500">起始日期必须是周一</p>
+                  )}
                 </div>
 
                 <div className="flex gap-3">
@@ -439,6 +541,10 @@ export default function SchedulerView() {
                       </span>
                     </label>
                   </div>
+                  <p className="mt-1.5 flex items-start gap-1 text-xs text-[#8C959F] dark:text-[#8B949E]">
+                    <Info size={12} className="shrink-0 mt-0.5" />
+                    限制每位教师的最大监考天数，包含固定监考和流动监考
+                  </p>
                 </div>
 
                 <label className="flex items-center gap-3 cursor-pointer group">
@@ -573,9 +679,9 @@ export default function SchedulerView() {
                   <div className="mt-4 glass-card rounded-2xl p-5 space-y-3">
                     <div className="flex items-center justify-between">
                       <h3 className="font-display text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3]">排考任务结果</h3>
-                      <span className="status-badge-success">
-                        <CheckCircle2 size={12} />
-                        已完成
+                      <span className={schedulerResult && schedulerResult.violations > 0 ? 'status-badge-warning' : 'status-badge-success'}>
+                        {schedulerResult && schedulerResult.violations > 0 ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
+                        {schedulerResult && schedulerResult.violations > 0 ? '存在冲突' : '已完成'}
                       </span>
                     </div>
 
@@ -733,9 +839,9 @@ export default function SchedulerView() {
                     <CheckCircle2 size={16} className="text-[#6B9B8A]" />
                     排考结果
                   </h2>
-                  <span className="status-badge-success">
-                    <CheckCircle2 size={12} />
-                    成功
+                  <span className={schedulerResult && schedulerResult.violations > 0 ? 'status-badge-warning' : 'status-badge-success'}>
+                    {schedulerResult && schedulerResult.violations > 0 ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
+                    {schedulerResult && schedulerResult.violations > 0 ? '部分完成' : '成功'}
                   </span>
                 </div>
 
@@ -808,6 +914,32 @@ export default function SchedulerView() {
         </div>
       </div>
 
+      {/* 错误弹窗 */}
+      {errorDialog.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setErrorDialog({ ...errorDialog, open: false })} />
+          <div className="relative glass-card rounded-3xl p-6 w-[420px] max-w-[90vw]">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-full bg-[#C27A63]/10 flex items-center justify-center">
+                <AlertTriangle size={16} className="text-[#C27A63]" />
+              </div>
+              <h3 className="font-display text-lg font-medium text-[#1F2328] dark:text-[#E6EDF3]">
+                {errorDialog.title}
+              </h3>
+            </div>
+            <p className="text-sm text-[#8C959F] dark:text-[#8B949E] mb-6 leading-relaxed">
+              {errorDialog.message}
+            </p>
+            <button
+              onClick={() => setErrorDialog({ ...errorDialog, open: false })}
+              className="w-full px-4 py-2.5 bg-[#D4A373] hover:bg-[#c49463] text-white rounded-xl text-sm font-medium transition-all"
+            >
+              知道了
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 确认应用版本对话框 */}
       {confirmModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -850,18 +982,19 @@ export default function SchedulerView() {
       <ScheduleDetailModal
         open={showDetailModal}
         onClose={() => setShowDetailModal(false)}
+        versionId={schedulerResult?.version_id}
       />
     </div>
   );
 }
 
 // 详细结果对话框组件
-function ScheduleDetailModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function ScheduleDetailModal({ open, onClose, versionId }: { open: boolean; onClose: () => void; versionId?: number }) {
   const [expandedSlots, setExpandedSlots] = useState<Set<string>>(new Set());
 
-  const { data: matrixData, isLoading } = useQuery({
-    queryKey: ['scheduleDetailMatrix'],
-    queryFn: getExamOverviewMatrix,
+  const { data: matrixData, isLoading } = useQuery<OverviewMatrixResponse>({
+    queryKey: ['scheduleDetailMatrix', versionId],
+    queryFn: () => getExamOverviewMatrix(versionId),
     enabled: open,
   });
 
@@ -898,7 +1031,7 @@ function ScheduleDetailModal({ open, onClose }: { open: boolean; onClose: () => 
         const exams = dayData[slot] || [];
         if (exams.length > 0) {
           // 将所有考试按教室分组
-          const classroomMap = new Map<string, typeof exams[0]>();
+          const classroomMap = new Map<string, any>();
 
           exams.forEach((exam: any) => {
             exam.classrooms?.forEach((cr: any) => {
@@ -928,8 +1061,8 @@ function ScheduleDetailModal({ open, onClose }: { open: boolean; onClose: () => 
           );
 
           // 从考试记录中提取 day_name 和 date_label
-          const dayName = exams[0]?.day_name || '';
-          const dateLabel = exams[0]?.date_label;
+          const dayName = (exams as any)[0]?.day_name || '';
+          const dateLabel = (exams as any)[0]?.date_label;
 
           slots.push({
             key: slotKey,

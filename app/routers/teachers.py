@@ -267,6 +267,7 @@ async def get_teacher_exams(
 
     fixed_exams = []
     patrol_exams = []
+    seen_patrol_pairs = set()
     for et in exam_teachers:
         exam = et.exam
         if not exam:
@@ -320,6 +321,9 @@ async def get_teacher_exams(
             exam_info["assigned_classes"] = assigned_classes
             fixed_exams.append(exam_info)
         else:
+            # 流动监考按 slot_pair 去重计数（T1/T2 或 T3/T4 只算 1 场）
+            sp = 1 if slot.slot_code in ("T1", "T2") else 2 if slot.slot_code in ("T3", "T4") else 0
+            seen_patrol_pairs.add((slot.day_of_week, sp))
             patrol_exams.append(exam_info)
 
     return {
@@ -331,7 +335,7 @@ async def get_teacher_exams(
             "current_slots": teacher.current_slots,
             "max_slots": teacher.max_slots,
             "fixed_count": len(fixed_exams),
-            "patrol_count": len(patrol_exams),
+            "patrol_count": len(seen_patrol_pairs),
             "fixed_exams": sorted(fixed_exams, key=lambda x: (x["day_of_week"] or 0, x["slot_code"] or "")),
             "patrol_exams": sorted(patrol_exams, key=lambda x: (x["day_of_week"] or 0, x["slot_code"] or "")),
         },

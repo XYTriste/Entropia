@@ -178,10 +178,6 @@ def _get_available_by_priority(
         """
         primary = state.assigned_slots  # 已分配场次越多越靠后（负载均衡）
 
-        # 约束A：超过最大天数 → 大幅降分（但不禁用，因为是软约束）
-        if max_days is not None and state.would_exceed_max_days(candidate_day, max_days):
-            primary += 1000  # 惩罚项：超过天数的教师优先级大幅降低
-
         # 约束B：日期连续性
         continuity_score = 0.0
         if prefer_continuous and candidate_day is not None:
@@ -193,24 +189,22 @@ def _get_available_by_priority(
         return (primary, state.last_picked_round, continuity_score)
 
     if priority_type == "full_time":
-        # 优先专任教师，再兼职教师
-        full = [s for s in states if s.teacher.teacher_type == "full_time" and not s.is_full]
-        part = [s for s in states if s.teacher.teacher_type == "part_time" and not s.is_full]
-        full.sort(key=_score)
-        part.sort(key=_score)
-        available = full + part
+        # 严格只返回专任教师
+        available = [s for s in states if s.teacher.teacher_type == "full_time" and not s.is_full]
+        available.sort(key=_score)
     elif priority_type == "part_time":
-        # 优先兼职教师，再专任教师
-        part = [s for s in states if s.teacher.teacher_type == "part_time" and not s.is_full]
-        full = [s for s in states if s.teacher.teacher_type == "full_time" and not s.is_full]
-        part.sort(key=_score)
-        full.sort(key=_score)
-        available = part + full
+        # 严格只返回兼职教师
+        available = [s for s in states if s.teacher.teacher_type == "part_time" and not s.is_full]
+        available.sort(key=_score)
     else:
         available = [s for s in states if not s.is_full]
         available.sort(key=_score)
 
-    return available[:need]
+    # 硬约束：超过最大天数的教师完全排除
+    if max_days is not None and candidate_day is not None:
+        available = [s for s in available if not s.would_exceed_max_days(candidate_day, max_days)]
+
+    return available
 
 
 def _match_patrol_group(name: str, pattern: str) -> bool:
@@ -230,6 +224,8 @@ def allocate_teachers_fixed(
     enable_day_continuity_constraint: bool = False,
     classroom_map: dict[int, Any] | None = None,
     pick_round: PickRound | None = None,
+    violations: list[str] | None = None,
+    alloc_log: list[dict] | None = None,
 ) -> list[TeacherAssignment]:
     """
     为固定监考分配教师。
@@ -244,6 +240,7 @@ def allocate_teachers_fixed(
         max_days: 最大监考天数上限
         enable_day_continuity_constraint: 是否启用日期连续性约束
         pick_round: 轮询序号计数器，用于在平局时打破固定顺序偏好（可选）
+        violations: 违规信息列表（可选），当硬约束导致资源不足时记录警告
 
     返回:
         TeacherAssignment列表（即使教师不足，也尽力分配至少1人/考场）
@@ -252,7 +249,7 @@ def allocate_teachers_fixed(
         - 资源充足时每考场 teachers_per_room 名，紧张时每考场至少1名
         - 优先专任教师（SC-03软约束）
         - HC-05: 不超过教师上限
-        - 约束A: 尽量不超过最大监考天数（通过优先级调整）
+        - 约束A: 硬约束，超过最大监考天数的教师完全排除
         - 约束B: 尽量保持日期连续性（通过优先级调整）
     """
     assignments: list[TeacherAssignment] = []
@@ -266,6 +263,7 @@ def allocate_teachers_fixed(
 
     # 追踪本考试已使用的教师，避免同一教师被重复分配到不同教室
     used_teacher_ids: set[int] = set()
+    constraint_relaxed = False
 
     for classroom in classrooms:
         room_id: int = classroom.classroom_id
@@ -280,6 +278,15 @@ def allocate_teachers_fixed(
             max_days=max_days if enable_max_days_constraint else None,
             prefer_continuous=enable_day_continuity_constraint,
         )
+
+        # 记录 candidates 前5名（用于日志分析）
+        candidates_top5 = [
+            f"{s.teacher.id}:{s.teacher.name}(slots={s.assigned_slots},days={len(s.assigned_days)},round={s.last_picked_round})"
+            for s in list(candidates)[:5]
+        ]
+
+        fallback_triggered = False
+        fallback_level = "-"
 
         for _ in range(needed):
             assigned: bool = False
@@ -304,31 +311,82 @@ def allocate_teachers_fixed(
                     candidates.remove(state)
 
             if not assigned:
-                fallback = _get_available_by_priority(
-                    teacher_states, "any", 1,
-                    candidate_day=exam_day,
-                    max_days=max_days if enable_max_days_constraint else None,
-                    prefer_continuous=enable_day_continuity_constraint,
-                )
-                for state in list(fallback):
-                    if state.teacher.id in used_teacher_ids:
-                        continue
-                    if state.assign(1, day=exam_day):
-                        assignments.append(TeacherAssignment(
-                            teacher_id=state.teacher.id,
-                            teacher_name=state.teacher.name,
-                            role="fixed",
-                            classroom_id=room_id,
-                        ))
-                        used_teacher_ids.add(state.teacher.id)
-                        assigned = True
-                        if pick_round is not None:
-                            state.last_picked_round = pick_round.next()
+                fallback_triggered = True
+                # 先尝试专任教师（仍启用硬约束），再尝试专任教师（禁用 max_days）
+                for fb_type, fb_max_days in [("full_time", max_days), ("full_time", None)]:
+                    fallback = _get_available_by_priority(
+                        teacher_states, "full_time", 1,
+                        candidate_day=exam_day,
+                        max_days=fb_max_days if enable_max_days_constraint else None,
+                        prefer_continuous=enable_day_continuity_constraint,
+                    )
+                    for state in list(fallback):
+                        if state.teacher.id in used_teacher_ids:
+                            continue
+                        if state.assign(1, day=exam_day):
+                            assignments.append(TeacherAssignment(
+                                teacher_id=state.teacher.id,
+                                teacher_name=state.teacher.name,
+                                role="fixed",
+                                classroom_id=room_id,
+                            ))
+                            used_teacher_ids.add(state.teacher.id)
+                            assigned = True
+                            if pick_round is not None:
+                                state.last_picked_round = pick_round.next()
+                            break
+                    if assigned:
+                        fallback_level = fb_type
+                        if fb_max_days is None and enable_max_days_constraint and not constraint_relaxed:
+                            constraint_relaxed = True
+                            if violations is not None:
+                                violations.append(
+                                    f"考试 {exam_id} 固定监考：教师资源不足，"
+                                    f"最大监考天数约束({max_days}天)被临时放宽"
+                                )
                         break
+
+                # 最后一道防线：专任教师完全枯竭，才允许兼任教师
+                if not assigned:
+                    fallback = _get_available_by_priority(
+                        teacher_states, "part_time", 1,
+                        candidate_day=exam_day,
+                        max_days=None,
+                        prefer_continuous=False,
+                    )
+                    for state in list(fallback):
+                        if state.teacher.id in used_teacher_ids:
+                            continue
+                        if state.assign(1, day=exam_day):
+                            assignments.append(TeacherAssignment(
+                                teacher_id=state.teacher.id,
+                                teacher_name=state.teacher.name,
+                                role="fixed",
+                                classroom_id=room_id,
+                            ))
+                            used_teacher_ids.add(state.teacher.id)
+                            assigned = True
+                            if pick_round is not None:
+                                state.last_picked_round = pick_round.next()
+                            fallback_level = "part_time"
+                            if violations is not None:
+                                violations.append(
+                                    f"考试 {exam_id} 固定监考：专任教师池完全枯竭，"
+                                    f"启用兼任教师 fallback"
+                                )
+                            break
 
             # 若完全无法分配，跳过该考场（后续生成警告）
             if not assigned:
                 break
+
+        if alloc_log is not None:
+            alloc_log.append({
+                "role": "fixed",
+                "candidates_top5": candidates_top5,
+                "fallback_triggered": "是" if fallback_triggered else "否",
+                "fallback_level": fallback_level,
+            })
 
     return assignments
 
@@ -347,6 +405,8 @@ def allocate_teachers_patrol(
     max_days: int | None = None,
     enable_day_continuity_constraint: bool = False,
     pick_round: PickRound | None = None,
+    violations: list[str] | None = None,
+    alloc_log: list[dict] | None = None,
 ) -> list[TeacherAssignment]:
     """
     为流动监考分配教师。
@@ -365,6 +425,8 @@ def allocate_teachers_patrol(
         max_days: 最大监考天数上限
         enable_day_continuity_constraint: 是否启用日期连续性约束
         pick_round: 轮询序号计数器，用于在平局时打破固定顺序偏好（可选）
+        violations: 违规信息列表（可选），当硬约束导致资源不足时记录警告
+        alloc_log: 分配决策日志列表（可选）
 
     返回:
         TeacherAssignment列表，尽量 patrol_count 名流动监考，不足时尽力分配
@@ -373,7 +435,7 @@ def allocate_teachers_patrol(
         - HC-06: 每个上下午场次对尽量 patrol_count 名流动监考
         - 优先兼职教师（SC-04软约束）
         - HC-05: 不超过教师上限
-        - 约束A: 尽量不超过最大监考天数（通过优先级调整）
+        - 约束A: 硬约束，超过最大监考天数的教师完全排除
         - 约束B: 尽量保持日期连续性（通过优先级调整）
     """
     if used_slot_pairs is None:
@@ -397,6 +459,16 @@ def allocate_teachers_patrol(
         prefer_continuous=enable_day_continuity_constraint,
     )
 
+    # 记录 candidates 前5名（用于日志分析）
+    candidates_top5 = [
+        f"{s.teacher.id}:{s.teacher.name}(slots={s.assigned_slots},days={len(s.assigned_days)},round={s.last_picked_round})"
+        for s in list(candidates)[:5]
+    ]
+
+    constraint_relaxed = False
+    fallback_triggered = False
+    fallback_level = "-"
+
     for _ in range(needed):
         assigned: bool = False
 
@@ -418,32 +490,84 @@ def allocate_teachers_patrol(
                 break
 
         if not assigned:
-            fallback = _get_available_by_priority(
-                teacher_states, "any", needed,
-                candidate_day=day_of_week,
-                max_days=max_days if enable_max_days_constraint else None,
-                prefer_continuous=enable_day_continuity_constraint,
-            )
-            for state in fallback:
-                if state.teacher.id in used_ids:
-                    continue
-                if state.assign(1, day=day_of_week):
-                    assignments.append(TeacherAssignment(
-                        teacher_id=state.teacher.id,
-                        teacher_name=state.teacher.name,
-                        role="patrol",
-                        classroom_id=None,
-                        patrol_group_name=None,
-                    ))
-                    used_ids.add(state.teacher.id)
-                    assigned = True
-                    if pick_round is not None:
-                        state.last_picked_round = pick_round.next()
+            fallback_triggered = True
+            # 先尝试兼任教师（仍启用硬约束），再尝试兼任教师（禁用 max_days）
+            for fb_type, fb_max_days in [("part_time", max_days), ("part_time", None)]:
+                fallback = _get_available_by_priority(
+                    teacher_states, "part_time", needed,
+                    candidate_day=day_of_week,
+                    max_days=fb_max_days if enable_max_days_constraint else None,
+                    prefer_continuous=enable_day_continuity_constraint,
+                )
+                for state in fallback:
+                    if state.teacher.id in used_ids:
+                        continue
+                    if state.assign(1, day=day_of_week):
+                        assignments.append(TeacherAssignment(
+                            teacher_id=state.teacher.id,
+                            teacher_name=state.teacher.name,
+                            role="patrol",
+                            classroom_id=None,
+                            patrol_group_name=None,
+                        ))
+                        used_ids.add(state.teacher.id)
+                        assigned = True
+                        if pick_round is not None:
+                            state.last_picked_round = pick_round.next()
+                        break
+                if assigned:
+                    fallback_level = fb_type
+                    if fb_max_days is None and enable_max_days_constraint and not constraint_relaxed:
+                        constraint_relaxed = True
+                        if violations is not None:
+                            violations.append(
+                                f"时段({day_of_week},{slot_pair}) 流动监考：教师资源不足，"
+                                f"最大监考天数约束({max_days}天)被临时放宽"
+                            )
                     break
+
+            # 最后一道防线：兼任教师完全枯竭，才允许专任教师
+            if not assigned:
+                fallback = _get_available_by_priority(
+                    teacher_states, "full_time", needed,
+                    candidate_day=day_of_week,
+                    max_days=None,
+                    prefer_continuous=False,
+                )
+                for state in fallback:
+                    if state.teacher.id in used_ids:
+                        continue
+                    if state.assign(1, day=day_of_week):
+                        assignments.append(TeacherAssignment(
+                            teacher_id=state.teacher.id,
+                            teacher_name=state.teacher.name,
+                            role="patrol",
+                            classroom_id=None,
+                            patrol_group_name=None,
+                        ))
+                        used_ids.add(state.teacher.id)
+                        assigned = True
+                        if pick_round is not None:
+                            state.last_picked_round = pick_round.next()
+                        fallback_level = "full_time"
+                        if violations is not None:
+                            violations.append(
+                                f"时段({day_of_week},{slot_pair}) 流动监考：兼任教师池完全枯竭，"
+                                f"启用专任教师 fallback"
+                            )
+                        break
 
         if not assigned:
             # 无法继续分配，返回已分配的教师
             break
+
+    if alloc_log is not None:
+        alloc_log.append({
+            "role": "patrol",
+            "candidates_top5": candidates_top5,
+            "fallback_triggered": "是" if fallback_triggered else "否",
+            "fallback_level": fallback_level,
+        })
 
     # 确定活跃分组并按轮询分配
     active_group_names: list[str] = []
