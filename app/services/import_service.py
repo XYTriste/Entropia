@@ -286,6 +286,41 @@ async def _import_courses_from_rows(db: AsyncSession, rows: list[dict]) -> Impor
         report.add_error(f"缺少必要列: {missing}")
         return report
 
+    # 预检查：Excel 内是否有重复课程名
+    seen_names: set[str] = set()
+    duplicate_lines: dict[str, list[int]] = {}
+    for line_no, row in enumerate(rows, 2):
+        name = str(row.get("name", "")).strip()
+        if name:
+            if name in seen_names:
+                duplicate_lines.setdefault(name, []).append(line_no)
+            seen_names.add(name)
+
+    if duplicate_lines:
+        for name, lines in duplicate_lines.items():
+            report.add_error(
+                f"课程名 '{name}' 在Excel中重复出现（第{', '.join(map(str, lines))}行），"
+                f"请删除重复行或修改课程名以区分不同课程"
+            )
+        return report
+
+    # 预检查：数据库中是否已存在同名课程
+    result = await db.execute(select(Course.name))
+    existing_names = set(result.scalars().all())
+    duplicates_with_db: list[tuple[str, int]] = []
+    for line_no, row in enumerate(rows, 2):
+        name = str(row.get("name", "")).strip()
+        if name and name in existing_names:
+            duplicates_with_db.append((name, line_no))
+
+    if duplicates_with_db:
+        for name, line_no in duplicates_with_db:
+            report.add_error(
+                f"第{line_no}行: 课程 '{name}' 已存在于数据库中，"
+                f"如需更新请使用编辑功能，不要重复导入"
+            )
+        return report
+
     courses_to_create = []
     for line_no, row in enumerate(rows, 2):
         valid, errors = validate_csv_course_row(row, line_no)
