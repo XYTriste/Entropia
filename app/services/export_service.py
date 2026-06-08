@@ -496,10 +496,24 @@ def _build_teacher_invigilation_stats_sheet(ws, exams, time_slots, teachers):
     - 前8列为固定信息：序号、学院、教工号、姓名、联系电话、类别、本次承担任务、承担监考场次
     - 后续列为日期×时段矩阵，每天4个时段，有监考填1
     """
-    # 按 (day_of_week, slot_code) 排序时段，并分组
-    sorted_ts = sorted(time_slots, key=lambda t: (t.day_of_week, t.slot_code))
+    # 只保留实际被考试使用的时段，避免数据库垃圾数据导致重复列
+    used_slot_ids = set()
+    for exam in exams:
+        if exam.time_slot_id:
+            used_slot_ids.add(exam.time_slot_id)
+
+    # 过滤出被使用的时段，并按 (day_of_week, slot_code) 去重
+    filtered_ts = [ts for ts in time_slots if ts.id in used_slot_ids]
+    seen: set[tuple[int, str]] = set()
+    unique_ts: list = []
+    for ts in sorted(filtered_ts, key=lambda t: (t.day_of_week, t.slot_code, t.id)):
+        key = (ts.day_of_week, ts.slot_code)
+        if key not in seen:
+            seen.add(key)
+            unique_ts.append(ts)
 
     # 按 day_of_week 分组
+    sorted_ts = sorted(unique_ts, key=lambda t: (t.day_of_week, t.slot_code))
     day_groups: dict[int, list] = {}
     for ts in sorted_ts:
         day_groups.setdefault(ts.day_of_week, []).append(ts)
@@ -507,7 +521,6 @@ def _build_teacher_invigilation_stats_sheet(ws, exams, time_slots, teachers):
     # 确保每天恰好4个时段（模板固定格式）
     # 如果某天时段不足，用占位符补齐以维持矩阵对齐
     fixed_cols = 8
-    dynamic_cols = sum(max(len(day_groups.get(d, [])), 4) for d in range(1, 6))
 
     # ---------- 构建教师-时段映射 ----------
     teacher_slot_map: dict[int, set[int]] = {}
