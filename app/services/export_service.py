@@ -589,7 +589,7 @@ def _build_teacher_invigilation_stats_sheet(ws, exams, time_slots, teachers):
     ws.row_dimensions[2].height = 22
 
     # ---------- 数据行 ----------
-    sorted_teachers = sorted(teachers, key=lambda t: t.name)
+    sorted_teachers = sorted(teachers, key=lambda t: t.id)
     for seq, teacher in enumerate(sorted_teachers, 1):
         slots = teacher_slot_map.get(teacher.id, set())
         type_str = "专职" if teacher.teacher_type.value == "full_time" else "兼职"
