@@ -33,7 +33,7 @@ from app.models.exam_teacher import ExamTeacher
 from app.models.patrol_teacher import PatrolTeacher
 from app.models.schedule_version import ScheduleVersion
 from app.models.audit_log import AuditLog
-from app.services.export_service import export_excel, export_json, export_sql
+from app.services.export_service import export_excel, export_json, export_sql, export_teacher_stats_excel
 from app.services.import_service import (
     import_classrooms_csv,
     import_course_classes_csv,
@@ -163,6 +163,30 @@ async def export_excel_file(
     filename_ascii = f"exam_schedule_v{version_id}.xlsx" if version_id else "exam_schedule.xlsx"
     filename_cn = f"排考结果_v{version_id}.xlsx" if version_id else "排考结果.xlsx"
     # RFC 5987: filename*=UTF-8''%XX%XX%XX...
+    import urllib.parse
+    encoded_name = urllib.parse.quote(filename_cn, safe='')
+    header_value = f"attachment; filename=\"{filename_ascii}\"; filename*=UTF-8''{encoded_name}"
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": header_value},
+    )
+
+
+@router.get("/export/teacher-stats")
+async def export_teacher_stats_file(
+    version_id: int | None = Query(None, description="指定版本ID，导出版本对应的排考数据"),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """导出教师监考场次统计表（矩阵格式）
+
+    - 不指定 version_id：导出所有已排考的考试对应的教师监考统计
+    - 指定 version_id：仅导出版本对应的教师监考统计
+    """
+    excel_bytes = await export_teacher_stats_excel(db, version_id=version_id)
+    today = datetime.now().strftime("%Y-%m-%d")
+    filename_ascii = f"teacher_invigilation_stats_v{version_id}_{today}.xlsx" if version_id else f"teacher_invigilation_stats_{today}.xlsx"
+    filename_cn = f"教师监考场次统计表_v{version_id}_{today}.xlsx" if version_id else f"教师监考场次统计表_{today}.xlsx"
     import urllib.parse
     encoded_name = urllib.parse.quote(filename_cn, safe='')
     header_value = f"attachment; filename=\"{filename_ascii}\"; filename*=UTF-8''{encoded_name}"

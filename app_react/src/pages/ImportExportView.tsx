@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Loader2,
   X,
+  Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -22,6 +23,7 @@ import {
   exportExcel,
   exportJson,
   exportSql,
+  exportTeacherStats,
   clearAllData,
   type ImportEntity,
 } from '@/api/importExport';
@@ -50,7 +52,7 @@ export default function ImportExportView() {
   } | null>(null);
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [exporting, setExporting] = useState<'excel' | 'json' | 'sql' | null>(null);
+  const [exporting, setExporting] = useState<'excel' | 'json' | 'sql' | 'teacher-stats' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 拖拽上传
@@ -173,6 +175,19 @@ export default function ImportExportView() {
     try {
       await exportSql();
       toast.success('SQL 导出成功');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || '导出失败');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // 导出教师监考场次统计表
+  const handleExportTeacherStats = async () => {
+    setExporting('teacher-stats');
+    try {
+      await exportTeacherStats();
+      toast.success('教师监考场次统计表导出成功');
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || '导出失败');
     } finally {
@@ -454,6 +469,30 @@ export default function ImportExportView() {
                 </div>
               </div>
               <Download size={18} className="text-[#C8CDD3] dark:text-[#484F58] group-hover:text-[#9C81AF] transition-colors" />
+            </button>
+
+            {/* Teacher Stats Export */}
+            <button
+              onClick={handleExportTeacherStats}
+              disabled={exporting !== null}
+              className="w-full glass-card rounded-2xl p-5 flex items-center gap-4 text-left hover:-translate-y-0.5 transition-all group cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="w-12 h-12 rounded-xl bg-[#C27A63]/10 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                {exporting === 'teacher-stats' ? (
+                  <Loader2 size={22} className="text-[#C27A63] animate-spin" />
+                ) : (
+                  <Users size={22} className="text-[#C27A63]" />
+                )}
+              </div>
+              <div className="flex-1">
+                <div className="text-sm font-medium text-[#1F2328] dark:text-[#E6EDF3] group-hover:text-[#C27A63] transition-colors">
+                  教师监考场次统计表
+                </div>
+                <div className="text-xs text-[#8C959F] dark:text-[#8B949E]">
+                  导出教师监考任务分配矩阵，含日期时段明细
+                </div>
+              </div>
+              <Download size={18} className="text-[#C8CDD3] dark:text-[#484F58] group-hover:text-[#C27A63] transition-colors" />
             </button>
 
             {/* Worksheet badges */}

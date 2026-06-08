@@ -159,6 +159,20 @@ export async function exportSql(): Promise<void> {
   downloadBlob(blob, filename);
 }
 
+/**
+ * 导出教师监考场次统计表
+ */
+export async function exportTeacherStats(): Promise<void> {
+  const response = await apiClient.get('/import-export/export/teacher-stats', {
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const filename = `教师监考场次统计表_${new Date().toISOString().split('T')[0]}.xlsx`;
+  downloadBlob(blob, filename);
+}
+
 // ============================================================
 // 清除数据
 // ============================================================

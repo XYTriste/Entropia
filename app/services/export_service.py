@@ -197,6 +197,34 @@ async def export_excel(db: AsyncSession, version_id: int | None = None) -> bytes
     wb.create_sheet("流动监考巡查表")
     _build_patrol_sheet(wb["流动监考巡查表"], time_slots, teachers)
 
+    # Sheet 6: 教师监考场次统计表
+    wb.create_sheet("教师监考场次统计表")
+    _build_teacher_invigilation_stats_sheet(
+        wb["教师监考场次统计表"], exams, time_slots, teachers
+    )
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer.read()
+
+
+async def export_teacher_stats_excel(
+    db: AsyncSession, version_id: int | None = None
+) -> bytes:
+    """单独导出教师监考场次统计表
+
+    Args:
+        version_id: 可选，指定版本ID，仅导出版本对应的排考数据
+    """
+    wb = Workbook()
+    exams = await _load_exams_with_relations(db, version_id=version_id)
+    time_slots = await _load_time_slots(db)
+    teachers = await _load_teachers(db)
+
+    _build_teacher_invigilation_stats_sheet(wb.active, exams, time_slots, teachers)
+    wb.active.title = "教师监考场次统计表"
+
     buffer = BytesIO()
     wb.save(buffer)
     buffer.seek(0)
@@ -456,6 +484,147 @@ def _build_patrol_sheet(ws, time_slots, teachers):
             _set_cell_style(cell)
 
     _auto_width(ws)
+
+
+# ---------- Sheet 6: 教师监考场次统计表 ----------
+
+
+def _build_teacher_invigilation_stats_sheet(ws, exams, time_slots, teachers):
+    """构建教师监考场次统计表（矩阵格式）
+
+    格式与教务处模板一致：
+    - 前8列为固定信息：序号、学院、教工号、姓名、联系电话、类别、本次承担任务、承担监考场次
+    - 后续列为日期×时段矩阵，每天4个时段，有监考填1
+    """
+    # 按 (day_of_week, slot_code) 排序时段，并分组
+    sorted_ts = sorted(time_slots, key=lambda t: (t.day_of_week, t.slot_code))
+
+    # 按 day_of_week 分组
+    day_groups: dict[int, list] = {}
+    for ts in sorted_ts:
+        day_groups.setdefault(ts.day_of_week, []).append(ts)
+
+    # 确保每天恰好4个时段（模板固定格式）
+    # 如果某天时段不足，用占位符补齐以维持矩阵对齐
+    fixed_cols = 8
+    dynamic_cols = sum(max(len(day_groups.get(d, [])), 4) for d in range(1, 6))
+
+    # ---------- 构建教师-时段映射 ----------
+    teacher_slot_map: dict[int, set[int]] = {}
+    for exam in exams:
+        if exam.time_slot_id is None:
+            continue
+        for et in exam.teacher_assignments:
+            teacher_slot_map.setdefault(et.teacher_id, set()).add(exam.time_slot_id)
+
+    # 流动监考也计入
+    teacher_map = {t.id: t for t in teachers}
+    for ts in time_slots:
+        for pt in ts.patrol_teachers:
+            teacher_slot_map.setdefault(pt.teacher_id, set()).add(ts.id)
+
+    # ---------- 表头第1行：日期行 ----------
+    header_row1 = ["序号", "学院", "教工号", "姓名", "联系电话", "类别", "本次承担任务", "承担监考场次"]
+    merge_ranges = []
+    col_idx = fixed_cols + 1  # openpyxl 列号从1开始
+
+    for day in range(1, 6):
+        ts_list = day_groups.get(day, [])
+        # 如果某天没有时段，也要占4列保持对齐
+        span = max(len(ts_list), 4)
+        # 日期显示：优先用 exam_date，否则用星期名称
+        if ts_list and ts_list[0].exam_date:
+            date_label = str(ts_list[0].exam_date)
+        else:
+            date_label = DAY_NAMES.get(day, f"周{day}")
+        header_row1.append(date_label)
+        # 后续补空占位以填满合并区域
+        for _ in range(span - 1):
+            header_row1.append("")
+        if span > 1:
+            merge_ranges.append((1, col_idx, 1, col_idx + span - 1))
+        col_idx += span
+
+    ws.append(header_row1)
+    for cell in ws[1]:
+        _set_header_style(cell)
+    # 设置第1行高度
+    ws.row_dimensions[1].height = 22
+
+    # 执行合并单元格
+    for start_row, start_col, end_row, end_col in merge_ranges:
+        ws.merge_cells(start_row=start_row, start_column=start_col,
+                       end_row=end_row, end_column=end_col)
+
+    # ---------- 表头第2行：时段行 ----------
+    header_row2 = ["", "", "", "", "", "", "", ""]
+    for day in range(1, 6):
+        ts_list = day_groups.get(day, [])
+        span = max(len(ts_list), 4)
+        for i in range(span):
+            if i < len(ts_list):
+                # 提取时段编号数字：T1->1, T2->2, ...
+                sc = ts_list[i].slot_code
+                num = sc.replace("T", "").replace("t", "") if sc else str(i + 1)
+                header_row2.append(num)
+            else:
+                header_row2.append(str(i + 1))
+
+    ws.append(header_row2)
+    for cell in ws[2]:
+        _set_header_style(cell)
+    ws.row_dimensions[2].height = 22
+
+    # ---------- 数据行 ----------
+    sorted_teachers = sorted(teachers, key=lambda t: t.name)
+    for seq, teacher in enumerate(sorted_teachers, 1):
+        slots = teacher_slot_map.get(teacher.id, set())
+        type_str = "专职" if teacher.teacher_type.value == "full_time" else "兼职"
+
+        row_data = [
+            seq,       # 序号
+            "",        # 学院
+            "",        # 教工号
+            teacher.name,
+            "",        # 联系电话
+            type_str,
+            "",        # 本次承担任务（留空）
+            len(slots),  # 承担监考场次
+        ]
+
+        for day in range(1, 6):
+            ts_list = day_groups.get(day, [])
+            span = max(len(ts_list), 4)
+            for i in range(span):
+                if i < len(ts_list):
+                    ts = ts_list[i]
+                    row_data.append(1 if ts.id in slots else "")
+                else:
+                    row_data.append("")
+
+        ws.append(row_data)
+        row_num = ws.max_row
+        for cell in ws[row_num]:
+            _set_cell_style(cell)
+            # 序号、监考场次居中
+            if cell.column == 1 or cell.column == 8:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            # 姓名单元格左对齐
+            if cell.column == 4:
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    # ---------- 列宽调整 ----------
+    # 固定列
+    col_widths = [6, 12, 10, 10, 12, 8, 14, 14]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    # 动态列统一宽度
+    for col in range(fixed_cols + 1, ws.max_column + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 5.5
+
+    # 冻结窗格：冻结前8列和前2行
+    ws.freeze_panes = "I3"
 
 
 # ============================================================
