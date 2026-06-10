@@ -207,6 +207,9 @@ async def run_scheduler(
         if max_days is None:
             max_days = config.max_days if config else None
 
+        ab_major_preference = config.ab_major_preference if config else False
+        ab_major_tolerance = config.ab_major_tolerance if config else 0.15
+
         engine = SchedulingEngine(
             max_solve_time=300,
             fixed_teachers_per_room=fixed_teachers_per_room,
@@ -216,6 +219,8 @@ async def run_scheduler(
             enable_max_days_constraint=enable_max_days_constraint,
             enable_day_continuity_constraint=enable_day_continuity_constraint,
             max_days=max_days,
+            ab_major_preference=ab_major_preference,
+            ab_major_tolerance=ab_major_tolerance,
         )
 
         engine_courses = []
@@ -829,6 +834,8 @@ class ScheduleConfigUpdate(BaseModel):
     max_days: int = Field(3, ge=1, le=5, description="最大监考天数上限")
     exam_start_date: Optional[date] = Field(None, description="考试起始日期")
     exam_weeks: int = Field(1, ge=1, le=4, description="考试周数")
+    ab_major_preference: bool = Field(False, description="AB卷同专业集中偏好")
+    ab_major_tolerance: float = Field(0.15, ge=0.0, le=1.0, description="AB卷同专业集中人数均衡容忍度")
 
 
 @router.get("/config", response_model=dict)
@@ -858,6 +865,8 @@ async def get_schedule_config(
                 "max_days": 3,
                 "exam_start_date": None,
                 "exam_weeks": 1,
+                "ab_major_preference": False,
+                "ab_major_tolerance": 0.15,
             },
         }
     import json
@@ -874,6 +883,8 @@ async def get_schedule_config(
             "max_days": config.max_days,
             "exam_start_date": config.exam_start_date.isoformat() if config.exam_start_date else None,
             "exam_weeks": config.exam_weeks,
+            "ab_major_preference": config.ab_major_preference,
+            "ab_major_tolerance": config.ab_major_tolerance,
         },
     }
 
@@ -900,6 +911,8 @@ async def update_schedule_config(
     config.max_days = req.max_days
     config.exam_start_date = req.exam_start_date
     config.exam_weeks = req.exam_weeks
+    config.ab_major_preference = req.ab_major_preference
+    config.ab_major_tolerance = req.ab_major_tolerance
 
     await db.commit()
     await db.refresh(config)
@@ -917,6 +930,8 @@ async def update_schedule_config(
             "max_days": config.max_days,
             "exam_start_date": config.exam_start_date.isoformat() if config.exam_start_date else None,
             "exam_weeks": config.exam_weeks,
+            "ab_major_preference": config.ab_major_preference,
+            "ab_major_tolerance": config.ab_major_tolerance,
         },
     }
 

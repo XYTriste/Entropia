@@ -11,7 +11,7 @@
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -99,6 +99,22 @@ class ScheduleConfig(Base):
         nullable=False,
         default=1,
         comment="考试周数 (1-4)",
+    )
+
+    # AB卷分配：是否优先将同专业班级集中到同一卷
+    ab_major_preference: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="AB卷同专业集中偏好",
+    )
+
+    # AB卷分配：人数均衡容忍度（0.0~1.0）
+    ab_major_tolerance: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.15,
+        comment="AB卷同专业集中的人数均衡容忍度",
     )
 
     created_at: Mapped[datetime] = mapped_column(

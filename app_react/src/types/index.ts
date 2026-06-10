@@ -184,4 +184,8 @@ export interface SchedulerConfig {
   examStartDate?: string;
   // 考试周数
   examWeeks?: number;
+  // AB卷同专业集中偏好
+  ab_major_preference: boolean;
+  // AB卷同专业集中人数均衡容忍度
+  ab_major_tolerance: number;
 }

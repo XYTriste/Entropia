@@ -72,9 +72,13 @@ export default function SchedulerView() {
   const [advancedConfig, setAdvancedConfig] = useState<{
     patrol_teacher_count_per_slot_pair: number;
     enable_max_days_constraint: boolean;
+    ab_major_preference: boolean;
+    ab_major_tolerance: number;
   }>({
     patrol_teacher_count_per_slot_pair: 2,
     enable_max_days_constraint: true,
+    ab_major_preference: false,
+    ab_major_tolerance: 0.15,
   });
 
   // 获取课程列表
@@ -224,6 +228,8 @@ export default function SchedulerView() {
       setAdvancedConfig({
         patrol_teacher_count_per_slot_pair: serverConfig.patrol_teacher_count_per_slot_pair || 2,
         enable_max_days_constraint: serverConfig.enable_max_days_constraint ?? true,
+        ab_major_preference: serverConfig.ab_major_preference ?? false,
+        ab_major_tolerance: serverConfig.ab_major_tolerance ?? 0.15,
       });
     }
   }, [serverConfig]);
@@ -268,6 +274,8 @@ export default function SchedulerView() {
       max_days: config.maxProctorDays,
       exam_start_date: config.examStartDate || undefined,
       exam_weeks: config.examWeeks,
+      ab_major_preference: advancedConfig.ab_major_preference,
+      ab_major_tolerance: advancedConfig.ab_major_tolerance,
     }),
     onSuccess: (data) => {
       setJobId(data.job_id);
@@ -355,6 +363,8 @@ export default function SchedulerView() {
       max_days: config.maxProctorDays,
       exam_start_date: config.examStartDate || undefined,
       exam_weeks: config.examWeeks,
+      ab_major_preference: advancedConfig.ab_major_preference,
+      ab_major_tolerance: advancedConfig.ab_major_tolerance,
     });
   };
 
@@ -598,6 +608,54 @@ export default function SchedulerView() {
                           <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#C8CDD3] pointer-events-none" />
                         </div>
                       </div>
+
+                      {/* AB卷同专业集中 */}
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm text-[#8C959F] dark:text-[#8B949E]">
+                          AB卷同专业集中
+                          <span className="block text-xs text-[#C8CDD3]">相同专业尽量考同一种试卷</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="checkbox"
+                            checked={advancedConfig.ab_major_preference}
+                            onChange={(e) => setAdvancedConfig({
+                              ...advancedConfig,
+                              ab_major_preference: e.target.checked,
+                            })}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-[#E5E7EB] dark:bg-[#30363D] rounded-full peer transition-all peer-checked:bg-[#D4A373]" />
+                          <div className="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5" />
+                        </div>
+                      </div>
+
+                      {advancedConfig.ab_major_preference && (
+                        <div>
+                          <label className="block text-sm text-[#8C959F] dark:text-[#8B949E] mb-2">
+                            人数均衡容忍度
+                            <span className="text-xs text-[#C8CDD3] ml-2">
+                              当前: {(advancedConfig.ab_major_tolerance * 100).toFixed(0)}%
+                            </span>
+                          </label>
+                          <input
+                            type="range"
+                            min={5}
+                            max={50}
+                            step={5}
+                            value={Math.round(advancedConfig.ab_major_tolerance * 100)}
+                            onChange={(e) => setAdvancedConfig({
+                              ...advancedConfig,
+                              ab_major_tolerance: Number(e.target.value) / 100,
+                            })}
+                            className="w-full accent-[#D4A373]"
+                          />
+                          <div className="flex justify-between text-xs text-[#C8CDD3] mt-1">
+                            <span>5%</span>
+                            <span>50%</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

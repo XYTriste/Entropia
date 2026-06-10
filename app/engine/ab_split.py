@@ -102,6 +102,82 @@ def split_ab_classes(classes: list) -> tuple[list, list]:
     return group_a, group_b
 
 
+def split_ab_classes_major_preferred(
+    classes: list, tolerance: float = 0.15
+) -> tuple[list, list]:
+    """将班级列表划分为A、B两组，优先保证同专业班级集中在同一卷。
+
+    策略：
+        1. 按 major_id 将班级聚合成"专业块"
+        2. 按专业块人数从大到小排序
+        3. 贪心地将每个专业块放入当前人数较少的组
+        4. 检查人数均衡度：|A-B| / total <= tolerance
+        5. 满足则返回，否则回退到原DP算法（split_ab_classes）
+
+    参数:
+        classes: 涉考班级列表，每个元素需含 student_count 和 major_id 字段
+        tolerance: 人数均衡容忍度，默认0.15（15%）
+
+    返回:
+        (group_a, group_b): 两组班级的元组
+    """
+    if not classes:
+        return [], []
+
+    if len(classes) == 1:
+        return [classes[0]], []
+
+    total_students: int = sum(c.student_count for c in classes)
+    target: int = total_students // 2
+    max_diff: int = int(total_students * tolerance)
+
+    # --------------------------------------------------------
+    # 步骤1: 按 major_id 聚合成专业块
+    # --------------------------------------------------------
+    from collections import defaultdict
+
+    major_blocks: dict[int, list] = defaultdict(list)
+    for cls in classes:
+        major_blocks[cls.major_id].append(cls)
+
+    # 单专业块的班级列表 + 块总人数
+    block_list: list[tuple[int, list]] = []
+    for major_id, block_classes in major_blocks.items():
+        block_sum = sum(c.student_count for c in block_classes)
+        block_list.append((block_sum, block_classes))
+
+    # 按块人数从大到小排序（贪心：先处理大块）
+    block_list.sort(key=lambda x: x[0], reverse=True)
+
+    # --------------------------------------------------------
+    # 步骤2: 贪心分配专业块到A/B组
+    # --------------------------------------------------------
+    group_a: list = []
+    group_b: list = []
+    sum_a: int = 0
+    sum_b: int = 0
+
+    for block_sum, block_classes in block_list:
+        # 将当前专业块放入人数较少的组
+        if sum_a <= sum_b:
+            group_a.extend(block_classes)
+            sum_a += block_sum
+        else:
+            group_b.extend(block_classes)
+            sum_b += block_sum
+
+    # --------------------------------------------------------
+    # 步骤3: 检查均衡度，不满足则回退到原DP算法
+    # --------------------------------------------------------
+    actual_diff: int = abs(sum_a - sum_b)
+    if actual_diff <= max_diff:
+        # 均衡度在容忍范围内，接受贪心结果
+        return group_a, group_b
+
+    # 回退到原DP算法（保证人数最优均衡）
+    return split_ab_classes(classes)
+
+
 # ============================================================
 # 单元测试
 # ============================================================

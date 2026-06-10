@@ -23,7 +23,7 @@ from typing import Any
 
 from ortools.sat.python import cp_model
 
-from .ab_split import split_ab_classes
+from .ab_split import split_ab_classes, split_ab_classes_major_preferred
 from .classroom_alloc import allocate_classrooms, ClassroomAssignment
 from .constraints import (
     add_class_no_overlap,
@@ -101,6 +101,8 @@ class SchedulingEngine:
         enable_max_days_constraint: bool = True,
         enable_day_continuity_constraint: bool = True,
         max_days: int | None = None,
+        ab_major_preference: bool = False,
+        ab_major_tolerance: float = 0.15,
     ) -> None:
         """
         参数:
@@ -121,8 +123,16 @@ class SchedulingEngine:
         self.enable_max_days_constraint: bool = enable_max_days_constraint
         self.enable_day_continuity_constraint: bool = enable_day_continuity_constraint
         self.max_days: int | None = max_days
+        self.ab_major_preference: bool = ab_major_preference
+        self.ab_major_tolerance: float = ab_major_tolerance
         self._patrol_slot_pairs_used: set[tuple[int, int]] = set()
         self._teacher_last_picked: dict[int, int] = {}
+
+    def _split_ab(self, classes: list) -> tuple[list, list]:
+        """根据配置选择AB卷班级分配策略"""
+        if self.ab_major_preference:
+            return split_ab_classes_major_preferred(classes, self.ab_major_tolerance)
+        return split_ab_classes(classes)
         self._time_slot_map: dict[int, Any] = {}
         self.force_one_teacher_per_room: bool = False
         self._exam_count: int = 0
@@ -300,7 +310,7 @@ class SchedulingEngine:
             created_exams: list[Exam] = []
 
             if course.needs_ab:
-                group_a, group_b = split_ab_classes(classes)
+                group_a, group_b = self._split_ab(classes)
                 placed = False
 
                 for slot_id in sorted(free_slots):
@@ -669,7 +679,7 @@ class SchedulingEngine:
 
         if course.needs_ab:
             # HC-07: AB卷，班级不可拆分
-            group_a, group_b = split_ab_classes(classes)
+            group_a, group_b = self._split_ab(classes)
             # 创建A卷考试
             excluded_a = room_slot_usage.get(time_slot.id, set())
             exam_a = self._create_single_exam(
@@ -820,7 +830,7 @@ class SchedulingEngine:
         if course.needs_ab:
             # AB卷需要两个连续时段
             # HC-07: 班级不可拆分
-            group_a, group_b = split_ab_classes(classes)
+            group_a, group_b = self._split_ab(classes)
 
             # 找连续的两个空闲时段
             slot_pair = self._find_continuous_slots(available_slots, time_slot_map)
